@@ -13,7 +13,7 @@
  * 3. **النسخ ليس تنفيذًا.** الأمر المنسوخ يمرّ بهروب صدفة لأن Terminal يحتاجه؛
  *    التطبيق لا يستعمل ذلك النص أبدًا. انظر `shell-quote.ts`.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { PlanResponse, TokenRole } from './ipc';
 import { t } from './i18n';
 import { shellCommand, tokenNotes } from './shell-quote';
@@ -32,32 +32,34 @@ const ROLE_LABEL: Record<TokenRole, string> = {
   value: 'satr.arg',
 };
 
+/**
+ * مهلة بقاء الكتابة المائية بعد وصول الخطة.
+ *
+ * أطول قليلًا من `--duration-fast` كي ينتهي الخبوّ قبل أن يُنزع العنصر، فلا
+ * يُقتطع الانتقال في منتصفه. ومع `prefers-reduced-motion` تنهار مدّة الانتقال
+ * في نظام التصميم إلى ١ms، فتختفي الكتابة فورًا وتبقى هذه المهلة بلا أثر مرئي.
+ */
+const IDLE_FADE_MS = 160;
+
 export default function Satr({ plan }: { plan: PlanResponse | null }) {
-  const [copied, setCopied] = useState(false);
+  /**
+   * هل الكتابة المائية محمولة؟
+   *
+   * لا يكفي `!plan`: نزعُ العنصر لحظةَ وصول الخطة يقطع الخبوّ قبل أن يبدأ.
+   * فتبقى محمولةً بشفافية صفر طوالَ الانتقال ثم تُنزع — ولو وصلت الشاشة ومعها
+   * خطة من البداية لم تُحمل أصلًا، فلا وميض في أول رسم.
+   */
+  const [idleShown, setIdleShown] = useState(plan === null);
 
-  async function copy() {
-    if (!plan) return;
-    await navigator.clipboard.writeText(shellCommand(plan.argv_display));
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1600);
-  }
-
-  if (!plan) {
-    return (
-      <section className="satr" aria-labelledby="satr-heading">
-        <div className="satr__head">
-          <h2 id="satr-heading" className="t-section-title">
-            {t('app.satr')}
-          </h2>
-        </div>
-        <p className="t-body-sec satr__empty">{t('satr.empty')}</p>
-      </section>
-    );
-  }
-
-  // آخر وسيطين هما المصدر والمؤقّت. نعطيهما شرحًا خاصًا لأنهما بيانات لا رايات.
-  const lastIndex = plan.explain.length - 1;
-  const sourceIndex = lastIndex - 1;
+  useEffect(() => {
+    if (plan === null) {
+      setIdleShown(true);
+      return;
+    }
+    if (!idleShown) return;
+    const timer = window.setTimeout(() => setIdleShown(false), IDLE_FADE_MS);
+    return () => window.clearTimeout(timer);
+  }, [plan, idleShown]);
 
   return (
     <section className="satr" aria-labelledby="satr-heading">
@@ -65,9 +67,59 @@ export default function Satr({ plan }: { plan: PlanResponse | null }) {
         <h2 id="satr-heading" className="t-section-title">
           {t('app.satr')}
         </h2>
-        <p className="t-caption satr__subtitle">{t('satr.subtitle')}</p>
+        {plan && <p className="t-caption satr__subtitle">{t('satr.subtitle')}</p>}
       </div>
 
+      {/* مسرحٌ واحد للحالتين. ارتفاعه الأدنى يمنع العمود من الانكماش إلى سطرين
+          ثم القفز إلى مئات البكسلات حين تصل الخطة — والقفزة تجرّ معها عمود
+          «نَفِّذ» المجاور، فتبدو الشاشة كأنها انفجرت لأن المستخدم أكمل حقلًا. */}
+      <div className="satr__stage">
+        {idleShown && <Watermark leaving={plan !== null} />}
+        {plan && <Preview plan={plan} />}
+      </div>
+    </section>
+  );
+}
+
+/**
+ * الكتابة المائية: ما يُنتظر، مكتوبًا في الفراغ نفسه.
+ *
+ * بلا حدّ ولا بطاقة ولا أرضية خاصة — صندوقٌ منقّط كان يعلن «هنا عنصر فارغ»،
+ * وهذه الرسالة ليست عنصرًا بل حالة المساحة. والعنوان أوضح قليلًا من السطرين
+ * تحته (لونٌ ومقاس، لا شفافية أعلى) كي تُقرأ الكتلة كعنوانٍ وشرحه لا كثلاثة
+ * أسطر متساوية.
+ *
+ * **ليست `aria-hidden`.** هي التعليمة الوحيدة المعروضة في هذه المساحة، وإخفاؤها
+ * عن قارئ الشاشة يترك من يقرأ بالصوت أمام منطقةٍ صامتة بلا سبب. وليست
+ * `aria-live` كذلك: النصّ موجود منذ أول رسم ولا يتبدّل، فإعلانه مقاطعةٌ لا خبر.
+ * نصٌّ ساكن في ترتيب المستند: يُقرأ حين يبلغه المستخدم، ولا يقفز إليه.
+ */
+function Watermark({ leaving }: { leaving: boolean }) {
+  return (
+    <div className={`satr__watermark${leaving ? ' satr__watermark--leaving' : ''}`}>
+      <p className="satr__watermark-title">{t('satr.idle.title')}</p>
+      <p className="satr__watermark-line">{t('satr.idle.line1')}</p>
+      <p className="satr__watermark-line">{t('satr.idle.line2')}</p>
+    </div>
+  );
+}
+
+/** الأمر كما سيُنفَّذ: سطرًا واحدًا للقراءة السريعة، ثم وسيطًا وسيطًا للفهم. */
+function Preview({ plan }: { plan: PlanResponse }) {
+  const [copied, setCopied] = useState(false);
+
+  async function copy() {
+    await navigator.clipboard.writeText(shellCommand(plan.argv_display));
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1600);
+  }
+
+  // آخر وسيطين هما المصدر والمؤقّت. نعطيهما شرحًا خاصًا لأنهما بيانات لا رايات.
+  const lastIndex = plan.explain.length - 1;
+  const sourceIndex = lastIndex - 1;
+
+  return (
+    <>
       <div className="command">
         <div className="command__bar">
           <span className="command__label">{t('satr.title')}</span>
@@ -134,6 +186,6 @@ export default function Satr({ plan }: { plan: PlanResponse | null }) {
         <p className="t-body-sec">{t('satr.promotion')}</p>
         <p className="t-caption satr__fineprint">{t('satr.copy_note')}</p>
       </div>
-    </section>
+    </>
   );
 }

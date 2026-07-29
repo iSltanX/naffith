@@ -1,0 +1,224 @@
+/* أنماط شاشة الترحيب.
+   لا قيمة لونية ولا مقاسية مكتوبة هنا: كلها رموز من نظام التصميم، أو حسابٌ
+   على رموز حين احتاج المقاس قيمةً لا يعطيها رمزٌ واحد. */
+
+/* ── الإطار ───────────────────────────────────────────────────────── */
+/* السطح مقلوب في الوضعين معًا. انظر تعليق الرأس في `onboarding.tsx`: الداكن
+   هنا يعني «الطبقة التي تحت»، لا «النظام في الوضع الليلي». */
+.onboarding {
+  /* الحدّان معًا لا أحدهما: `min-height` وحده يجعل العنصر ينمو مع محتواه،
+     فلا يجد `overflow-y` ما يقتطعه ويهاجر التمرير إلى المستند كلّه. تثبيت
+     الارتفاع على المرأى يبقي التمرير داخل الشاشة حيث صُمِّم. */
+  min-height: 100vh;
+  max-height: 100vh;
+  padding: var(--space-40) var(--space-24);
+  background: var(--bg-inverse);
+  color: var(--text-on-inverse);
+
+  /* الارتفاع المحدود هو الحالة الحرجة: نافذةٌ بارتفاع ٤٨٠ لا تتّسع للبطاقة.
+     `overflow-y: auto` وحده لا يكفي مع `justify-content: center` — التوسيط
+     يقتطع أعلى المحتوى حين يفيض. `margin: auto` على عنصر مرن يتوسّط أيضًا،
+     لكن المساحة الحرّة السالبة تجعله صفرًا فيبقى المحتوى كاملًا قابلًا
+     للتمرير. هذا هو الفرق بين شاشةٍ تُقرأ وأخرى مبتورة العنوان. */
+  display: flex;
+  overflow-y: auto;
+
+  /* حلقة البؤرة مرسومة لسطحٍ فاتح؛ على هذا السطح تبهت. اللون البديل مأخوذ من
+     رموز السطح المقلوب نفسها، فيبقى التباين محسوبًا لا مخمّنًا. */
+  --focus-ring-color: var(--accent-on-inverse);
+}
+
+/* الإطار يُركَّز برمجيًا ليُقرأ من العنوان، ولا يُبوَّب إليه أبدًا. حلقةٌ حول
+   الشاشة كلها عند التركيب ضجيجٌ يشير إلى ما لا يُفعل به شيء. */
+.onboarding:focus,
+.onboarding:focus-visible {
+  outline: none;
+}
+
+.onboarding__card {
+  margin: auto;
+  width: 100%;
+  /* ٦٢٤px: أضيق قليلًا من `--width-base` كي يبقى السطر في حدود ما تريح قراءته
+     العربية دون أن يُكتب مقاسٌ خام. */
+  max-width: calc(var(--width-base) - var(--space-96));
+  padding: var(--space-48) var(--space-40);
+  background: var(--bg-inverse-elevated);
+  border: var(--border-hairline) solid var(--border-on-inverse);
+  border-radius: var(--radius-2xl);
+  box-shadow: var(--shadow-xl);
+}
+
+/* ── الرأس ────────────────────────────────────────────────────────── */
+/* العلامة رسمٌ لا نص: مقاسها ثابت ولا يتبع تكبير النص، ولا تقتطع شيئًا لأنها
+   عنصر كتلة لا تشارك أحدًا سطره. */
+.onboarding__mark {
+  display: block;
+  width: calc(var(--space-64) + var(--space-8));
+  height: calc(var(--space-64) + var(--space-8));
+  margin-block-end: var(--space-24);
+  color: var(--brand-mark);
+}
+
+.onboarding__title {
+  margin: 0;
+  color: var(--text-on-inverse);
+}
+
+/* الفاصل خفيف ومُلوَّن: هو ما يجعل الاسمين اسمًا واحدًا لا اسمين متجاورين. */
+.onboarding__sep {
+  color: var(--accent-on-inverse);
+  font-weight: var(--fw-light);
+}
+
+.onboarding__lede {
+  margin: var(--space-12) 0 0;
+  color: var(--text-on-inverse-secondary);
+}
+
+/* ── الخطوات ──────────────────────────────────────────────────────── */
+.onboarding__steps {
+  list-style: none;
+  margin: var(--space-32) 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+/* شبكة لا `flex`: عمود الرقم يبقى بعرضٍ واحد في الخطوات الثلاث، فتصطفّ
+   العناوين على خطٍّ واحد مهما تغيّر مقاس النص. */
+.onboarding__step {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-16);
+  align-items: start;
+}
+
+/* لا حالة `hover` هنا: الخطوة ليست قابلة للنقر، وردُّ فعلٍ بصريّ على ما لا
+   يُنقر يَعِد بتفاعلٍ غير موجود. */
+.onboarding__n {
+  width: var(--control-h-sm);
+  height: var(--control-h-sm);
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-full);
+  background: var(--bg-inverse);
+  border: var(--border-hairline) solid var(--border-on-inverse);
+  color: var(--accent-on-inverse);
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-bold);
+}
+
+.onboarding__step-text {
+  min-width: 0;
+}
+
+.onboarding__step-title {
+  margin: 0;
+  color: var(--text-on-inverse);
+}
+
+.onboarding__step-body {
+  margin: var(--space-2) 0 0;
+  color: var(--text-on-inverse-muted);
+}
+
+/* ── مقتطف سَطْر ───────────────────────────────────────────────────── */
+.onboarding__peek {
+  margin-block-start: var(--space-12);
+}
+.onboarding__peek .command__body {
+  padding: var(--space-8) var(--space-12);
+  font-size: var(--fs-terminal);
+}
+
+/* ── الفعل ────────────────────────────────────────────────────────── */
+.onboarding__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+.onboarding__once {
+  margin: var(--space-16) 0 0;
+  color: var(--text-on-inverse-muted);
+}
+
+/* ── الحركة ───────────────────────────────────────────────────────── */
+/* الدخول قصير ومرّة واحدة: ارتفاعٌ يسير وظهور، ثم يُفتح المقتطف تحته — وهي
+   إيماءة الهوية نفسها، سطحٌ ينطوي فيظهر السطر تحته. لا ارتداد ولا تعاقب على
+   الخطوات: شاشةٌ تُقرأ لا عرضٌ يُشاهد. */
+@keyframes onboarding-rise {
+  from {
+    opacity: 0;
+    transform: translateY(var(--space-8));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes onboarding-unfold {
+  from {
+    opacity: 0;
+    transform: scaleY(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.onboarding[data-motion='enter'] .onboarding__card {
+  animation: onboarding-rise var(--duration-base) var(--ease-out) both;
+}
+.onboarding[data-motion='enter'] .onboarding__peek .command {
+  transform-origin: top;
+  animation: onboarding-unfold var(--duration-slow) var(--ease-out) both;
+  animation-delay: var(--duration-base);
+}
+
+/* السمة تكفي في التطبيق، والاستعلام يكفي وحده لو رُكِّبت الشاشة قبل أن تُقرأ
+   `matchMedia`. الاثنان معًا: لا حركة تحت التفضيل بأي طريق. */
+@media (prefers-reduced-motion: reduce) {
+  .onboarding .onboarding__card,
+  .onboarding .onboarding__peek .command {
+    animation: none;
+  }
+}
+
+/* ── نوافذ ضيّقة أو قصيرة ─────────────────────────────────────────── */
+/* عند ٣٢٠px يبتلع الحشو نصف العرض. تقليصه أولى من تصغير النص. */
+@media (max-width: 480px) {
+  .onboarding {
+    padding: var(--space-24) var(--space-12);
+  }
+  .onboarding__card {
+    padding: var(--space-24) var(--space-20);
+  }
+  .onboarding__step {
+    gap: var(--space-12);
+  }
+}
+
+/* نافذة قصيرة: يُقلَّص الفراغ الرأسي وتصغر العلامة، فيبقى الفعل قريبًا من
+   الحافّة السفلى بدل أن يُدفَع خارج المرأى. */
+@media (max-height: 560px) {
+  .onboarding {
+    padding-block: var(--space-16);
+  }
+  .onboarding__card {
+    padding-block: var(--space-24);
+  }
+  .onboarding__mark {
+    width: var(--icon-xl);
+    height: var(--icon-xl);
+    margin-block-end: var(--space-12);
+  }
+  .onboarding__steps {
+    margin-block: var(--space-20);
+  }
+}

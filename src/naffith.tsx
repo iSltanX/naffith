@@ -4,21 +4,45 @@
  * النموذج يُشتقّ من `OperationSummary` القادم من الفهرس، لا من قائمة حقول
  * مكتوبة هنا: العملية تعلن مدخلاتها، والشاشة ترسمها. وكل تغيير يعيد التخطيط
  * فورًا، فالمعاينة والملخّص وشاشة «سَطْر» كلها ناتج نفس الخطة الحيّة.
+ *
+ * كان هذا الملف يكتب `source` و`destination` و`archive_name` بيده، فيصدق
+ * التوثيق أعلاه على الورق وحده: كل عملية جديدة كانت ستحتاج فرعًا هنا. الآن
+ * الحقول تُرسم من `operation.inputs` بترتيب النواة، والدوالُّ التي تقرّر شكل
+ * كل حقل تعيش في `operations.ts` — فلا تعرف هذه الشاشة اسم عمليةٍ واحدة.
  */
-import { useEffect, useId, useRef } from 'react';
-import type { CoreErrorShape, PlanResponse } from './ipc';
+import { useEffect, useId, useRef, type Ref } from 'react';
+import type {
+  CoreErrorShape,
+  Danger,
+  InputSummary,
+  OperationSummary,
+  PlanResponse,
+} from './ipc';
 import { asCoreError, pickDirectory } from './ipc';
-import { errorText, t } from './i18n';
+import {
+  extensionHint,
+  fieldKeys,
+  iconForCategory,
+  isComplete,
+  isDirectoryInput,
+  isDirty,
+  isFlagInput,
+  isPathInput,
+  type FormValues,
+} from './operations';
+import { errorText, t, tFirst } from './i18n';
 
 type Phase = 'idle' | 'planning' | 'running' | 'cancelling' | 'finished';
 
-export interface FormValues {
-  source: string;
-  destination: string;
-  archive_name: string;
-}
+/**
+ * `FormValues` تعريفها في `operations.ts` مع الدوالّ التي تقرأها وتكتبها.
+ * تُصدَّر من هنا كذلك لأن الشاشة الجامعة تستوردها مع المكوّن نفسه.
+ */
+export type { FormValues } from './operations';
 
 interface Props {
+  /** العملية كما أعلنتها النواة. منها يُرسم النموذج كلّه. */
+  operation: OperationSummary;
   values: FormValues;
   onChange: (next: FormValues) => void;
   plan: PlanResponse | null;
@@ -29,13 +53,60 @@ interface Props {
   onCancel: () => void;
   onReveal: () => void;
   onReset: () => void;
-  opTitleKey: string;
-  opDescriptionKey: string;
+  onBack: () => void;
 }
 
-/** حقل مسار: يُملأ بالحوار أو بالكتابة. الاثنان يمرّان بنفس التحقّق. */
+/**
+ * أيقونة الحقل، مشتقّة لا مكتوبة.
+ *
+ * المسار يأخذ أيقونته من نوعه (مجلد أو ملف)، وما ليس مسارًا يأخذ أيقونة فئة
+ * العملية نفسها: الحقل الذي يسمّي الناتج يحمل صورة ما يُنتَج. خريطةٌ من معرّف
+ * الحقل إلى أيقونة كانت ستكون قائمة الحقول المكتوبة يدويًا عائدةً من الباب
+ * الخلفي، وتُنسى فيظهر حقلٌ بلا أيقونة في أول عملية جديدة.
+ */
+function iconFor(op: OperationSummary, input: InputSummary): string {
+  if (isDirectoryInput(input)) return '#i-folder';
+  if (isPathInput(input)) return '#i-file';
+  return iconForCategory(op.category);
+}
+
+/** شارة الخطورة: خريطة مغلقة على نوعٍ مغلق، فلا تتقادم بعملية جديدة. */
+const DANGER_ICON: Record<Danger, string> = {
+  safe: '#i-check',
+  creates: '#i-plus',
+  modifies: '#i-rename',
+  destructive: '#i-delete',
+};
+
+const DANGER_CHIP: Record<Danger, string> = {
+  safe: 'chip--neutral',
+  creates: 'chip--info',
+  modifies: 'chip--info',
+  destructive: 'chip--danger',
+};
+
+/** سطر خطأ الحقل. مفصول لأن كل نوع حقل يعرضه بنفس الشكل والدور. */
+function FieldError({ id, text }: { id: string; text: string }) {
+  return (
+    <p id={id} className="field-error" role="alert">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <use href="#i-error" />
+      </svg>
+      {text}
+    </p>
+  );
+}
+
+/**
+ * حقل مسار: يُملأ بالحوار أو بالكتابة. الاثنان يمرّان بنفس التحقّق.
+ *
+ * `onPick` قد تكون `null`: حوار النظام المتاح للواجهة حوار **مجلدات**، فمدخلٌ
+ * يطلب ملفًا قائمًا يُعرض بلا زرّ اختيار بدل أن يُفتح له حوارٌ لا يستطيع
+ * انتقاءه. الكتابة واللصق يبقيان طريقًا كاملًا في الحالتين.
+ */
 function PathField({
   id,
+  icon,
   label,
   help,
   placeholder,
@@ -44,16 +115,19 @@ function PathField({
   disabled,
   onPick,
   onType,
+  inputRef,
 }: {
   id: string;
+  icon: string;
   label: string;
   help: string;
   placeholder: string;
   value: string;
   error: string | null;
   disabled: boolean;
-  onPick: () => void;
+  onPick: (() => void) | null;
   onType: (v: string) => void;
+  inputRef: Ref<HTMLInputElement> | null;
 }) {
   const errorId = `${id}-error`;
   const helpId = `${id}-help`;
@@ -66,10 +140,11 @@ function PathField({
         {/* المسار LTR داخل نموذج عربي: قراءته من اليمين تفسد ترتيب مقاطعه. */}
         <span className="field field--path">
           <svg viewBox="0 0 24 24" aria-hidden="true" className="field__icon">
-            <use href="#i-folder" />
+            <use href={icon} />
           </svg>
           <input
             id={id}
+            ref={inputRef}
             type="text"
             dir="ltr"
             spellCheck={false}
@@ -82,30 +157,140 @@ function PathField({
             onChange={(e) => onType(e.target.value)}
           />
         </span>
-        <button type="button" className="btn btn--quiet" onClick={onPick} disabled={disabled}>
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <use href="#i-folder-open" />
-          </svg>
-          {value ? t('field.chosen') : t('field.choose')}
-        </button>
+        {onPick && (
+          <button type="button" className="btn btn--quiet" onClick={onPick} disabled={disabled}>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <use href="#i-folder-open" />
+            </svg>
+            {value ? t('field.chosen') : t('field.choose')}
+          </button>
+        )}
       </div>
       <p id={helpId} className="t-helper">
         {help}
       </p>
-      {error && (
-        <p id={errorId} className="field-error" role="alert">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <use href="#i-error" />
+      {error && <FieldError id={errorId} text={error} />}
+    </div>
+  );
+}
+
+/** حقل نصّي: اسمٌ جديد أو نصّ حرّ. اللاحقة تأتي من المواصفة لا من نصٍّ مكتوب. */
+function TextField({
+  id,
+  icon,
+  label,
+  help,
+  placeholder,
+  suffix,
+  value,
+  error,
+  disabled,
+  onType,
+  inputRef,
+}: {
+  id: string;
+  icon: string;
+  label: string;
+  help: string;
+  placeholder: string;
+  suffix: string | null;
+  value: string;
+  error: string | null;
+  disabled: boolean;
+  onType: (v: string) => void;
+  inputRef: Ref<HTMLInputElement> | null;
+}) {
+  const errorId = `${id}-error`;
+  const helpId = `${id}-help`;
+  return (
+    <div className="row-field">
+      <label className="t-label" htmlFor={id}>
+        {label}
+      </label>
+      <div className="row-field__control">
+        {/* اسم الملف نصّ المستخدم، فيبقى باتجاه الصفحة لا LTR قسرًا. */}
+        <span className="field">
+          <svg viewBox="0 0 24 24" aria-hidden="true" className="field__icon">
+            <use href={icon} />
           </svg>
-          {error}
-        </p>
-      )}
+          <input
+            id={id}
+            ref={inputRef}
+            type="text"
+            spellCheck={false}
+            autoComplete="off"
+            value={value}
+            placeholder={placeholder}
+            disabled={disabled}
+            aria-describedby={error ? `${errorId} ${helpId}` : helpId}
+            aria-invalid={error ? true : undefined}
+            onChange={(e) => onType(e.target.value)}
+          />
+        </span>
+        {/* اللاحقة عرضٌ لما تضيفه النواة، لا جزءٌ من قيمة الحقل. */}
+        {suffix && (
+          <span className="suffix-hint lat" aria-hidden="true">
+            {suffix}
+          </span>
+        )}
+      </div>
+      <p id={helpId} className="t-helper">
+        {help}
+      </p>
+      {error && <FieldError id={errorId} text={error} />}
+    </div>
+  );
+}
+
+/**
+ * راية: مربّع اختيار حقيقي.
+ *
+ * مفتاحٌ مرسوم بـ`div` كان سيحتاج `role` و`aria-checked` ومعالجَ مفاتيح ليقول
+ * ما يقوله `input[type=checkbox]` مجانًا، ويظلّ يخطئ في وضع التباين العالي.
+ */
+function FlagField({
+  id,
+  label,
+  help,
+  checked,
+  error,
+  disabled,
+  onToggle,
+}: {
+  id: string;
+  label: string;
+  help: string;
+  checked: boolean;
+  error: string | null;
+  disabled: boolean;
+  onToggle: (on: boolean) => void;
+}) {
+  const errorId = `${id}-error`;
+  const helpId = `${id}-help`;
+  return (
+    <div className="row-field row-field--flag">
+      <label className="t-label row-field__flag" htmlFor={id}>
+        <input
+          id={id}
+          type="checkbox"
+          checked={checked}
+          disabled={disabled}
+          aria-describedby={error ? `${errorId} ${helpId}` : helpId}
+          onChange={(e) => onToggle(e.target.checked)}
+        />
+        <span>{label}</span>
+      </label>
+      <p id={helpId} className="t-helper">
+        {help}
+      </p>
+      {error && <FieldError id={errorId} text={error} />}
     </div>
   );
 }
 
 export default function Naffith(props: Props) {
   const {
+    operation,
     values,
     onChange,
     plan,
@@ -116,13 +301,11 @@ export default function Naffith(props: Props) {
     onCancel,
     onReveal,
     onReset,
-    opTitleKey,
-    opDescriptionKey,
+    onBack,
   } = props;
 
   const uid = useId();
-  const nameId = `${uid}-name`;
-  const nameErrorId = `${nameId}-error`;
+  const whyId = `${uid}-why`;
   const firstField = useRef<HTMLInputElement>(null);
 
   const busy = phase === 'running' || phase === 'cancelling';
@@ -132,100 +315,142 @@ export default function Naffith(props: Props) {
   const generalError = error && !error.input ? errorText(error.key, error.detail) : null;
 
   useEffect(() => {
-    if (phase === 'idle' && !values.source) firstField.current?.focus();
-  }, [phase, values.source]);
+    // النموذج البِكر يضع المؤشّر في أول حقل معلَن، لا في حقلٍ بعينه بالاسم.
+    if (phase === 'idle' && !isDirty(values)) firstField.current?.focus();
+  }, [phase, values]);
 
-  async function pick(field: 'source' | 'destination') {
+  async function pick(inputId: string) {
     try {
       const chosen = await pickDirectory();
-      if (chosen) onChange({ ...values, [field]: chosen });
+      if (chosen) onChange({ ...values, [inputId]: chosen });
     } catch {
       // فشل الحوار لا يُعطّل الحقل: الكتابة واللصق يبقيان طريقًا كاملًا.
     }
   }
 
+  /**
+   * سبب تعطّل «نفِّذ»، أو `null` إن كان ممكنًا.
+   *
+   * الترتيب مقصود: النقص أوّلًا لأنه أكثر الأسباب وقوعًا وأقلّها إثارةً للقلق،
+   * ثم التحقّق الجاري، ثم الخطأ. وغيابُ خطةٍ مع اكتمال الحقول وسلامتها لحظةٌ
+   * عابرة بين ضغطة المفتاح وبدء التخطيط، فتُقرأ «يجري التحقّق» لا شيئًا آخر.
+   */
+  const blocked: string | null = !isComplete(operation, values)
+    ? 'action.execute.why.incomplete'
+    : phase === 'planning'
+      ? 'action.execute.why.planning'
+      : error
+        ? 'action.execute.why.invalid'
+        : plan
+          ? null
+          : 'action.execute.why.planning';
+
+  // النصّ يُعرض ما دام الأمر بيد المستخدم. أثناء التشغيل تتكلّم `RunState`،
+  // فإبقاؤه هناك كان سيقول «يجري التحقّق» بينما الأداة تعمل فعلًا.
+  const showWhy = blocked !== null && !busy && phase !== 'finished';
+
+  const dangerLabelKey = `summary.danger.${operation.danger}`;
+  // مفتاحٌ غير مترجَم يعود كما هو من `t`. شارةٌ تعرض `summary.danger.modifies`
+  // أسوأ من غياب الشارة: الأولى تشوّش، والثانية تترك الوصف يقول ما تقوله.
+  const dangerLabel = t(dangerLabelKey);
+  const showDanger = dangerLabel !== dangerLabelKey;
+
   return (
     <section className="naffith card card--naffith" aria-labelledby="naffith-heading">
+      {/* الرجوع أوّل ما يُبلَغ بالمفتاح، كما هو أوّل ما تقع عليه العين في أعلى
+          البداية. والشيفرون يُترك بلا `data-directional`: رأسه يشير يمينًا،
+          واليمين في صفحة RTL هو جهة الرجوع أصلًا، فقلبُه كان سيعكس المعنى. */}
+      <div className="naffith__nav">
+        <button type="button" className="btn btn--quiet btn--sm" onClick={onBack}>
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <use href="#i-chevron" />
+          </svg>
+          {t('nav.back')}
+        </button>
+      </div>
+
       <header className="naffith__head">
         <div>
           <h2 id="naffith-heading" className="t-section-title">
             {t('app.naffith')}
           </h2>
-          <p className="t-card-title naffith__op">{t(opTitleKey)}</p>
+          <p className="t-card-title naffith__op">{t(operation.title_key)}</p>
         </div>
-        <span className="chip chip--info">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <use href="#i-plus" />
-          </svg>
-          {t('summary.danger.creates')}
-        </span>
+        {showDanger && (
+          <span className={`chip ${DANGER_CHIP[operation.danger]}`}>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <use href={DANGER_ICON[operation.danger]} />
+            </svg>
+            {dangerLabel}
+          </span>
+        )}
       </header>
 
-      <p className="t-body-sec naffith__desc">{t(opDescriptionKey)}</p>
+      <p className="t-body-sec naffith__desc">{t(operation.description_key)}</p>
 
       <div className="naffith__form">
-        <PathField
-          id={`${uid}-source`}
-          label={t('field.source.label')}
-          help={t('field.source.help')}
-          placeholder={t('field.source.placeholder')}
-          value={values.source}
-          error={errorFor('source')}
-          disabled={busy}
-          onPick={() => pick('source')}
-          onType={(v) => onChange({ ...values, source: v })}
-        />
+        {operation.inputs.map((input, index) => {
+          const id = `${uid}-${input.id}`;
+          const keys = fieldKeys(operation.id, input.id);
+          const label = tFirst(keys.label);
+          const help = tFirst(keys.help);
+          const value = values[input.id] ?? '';
+          const fieldError = errorFor(input.id);
+          // المؤشّر يقع في أول حقل، وحقل الراية لا يصلح مقصدًا: مربّعُ اختيارٍ
+          // مركَّزٌ تلقائيًا يوحي بأن الطريق يبدأ منه وهو غالبًا خيارٌ جانبي.
+          const ref = index === 0 && !isFlagInput(input) ? firstField : null;
 
-        <PathField
-          id={`${uid}-destination`}
-          label={t('field.destination.label')}
-          help={t('field.destination.help')}
-          placeholder={t('field.destination.placeholder')}
-          value={values.destination}
-          error={errorFor('destination')}
-          disabled={busy}
-          onPick={() => pick('destination')}
-          onType={(v) => onChange({ ...values, destination: v })}
-        />
-
-        <div className="row-field">
-          <label className="t-label" htmlFor={nameId}>
-            {t('field.archive_name.label')}
-          </label>
-          <div className="row-field__control">
-            {/* اسم الملف نصّ المستخدم، فيبقى باتجاه الصفحة لا LTR قسرًا. */}
-            <span className="field">
-              <svg viewBox="0 0 24 24" aria-hidden="true" className="field__icon">
-                <use href="#i-compress" />
-              </svg>
-              <input
-                id={nameId}
-                ref={firstField}
-                type="text"
-                spellCheck={false}
-                autoComplete="off"
-                value={values.archive_name}
-                placeholder={t('field.archive_name.placeholder')}
+          if (isFlagInput(input)) {
+            return (
+              <FlagField
+                key={input.id}
+                id={id}
+                label={label}
+                help={help}
+                checked={value === '1'}
+                error={fieldError}
                 disabled={busy}
-                aria-invalid={errorFor('archive_name') ? true : undefined}
-                aria-describedby={errorFor('archive_name') ? nameErrorId : undefined}
-                onChange={(e) => onChange({ ...values, archive_name: e.target.value })}
+                onToggle={(on) => onChange({ ...values, [input.id]: on ? '1' : '' })}
               />
-            </span>
-            <span className="suffix-hint lat" aria-hidden="true">
-              .zip
-            </span>
-          </div>
-          <p className="t-helper">{t('field.archive_name.help')}</p>
-          {errorFor('archive_name') && (
-            <p id={nameErrorId} className="field-error" role="alert">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <use href="#i-error" />
-              </svg>
-              {errorFor('archive_name')}
-            </p>
-          )}
-        </div>
+            );
+          }
+
+          if (isPathInput(input)) {
+            return (
+              <PathField
+                key={input.id}
+                id={id}
+                icon={iconFor(operation, input)}
+                label={label}
+                help={help}
+                placeholder={tFirst(keys.placeholder)}
+                value={value}
+                error={fieldError}
+                disabled={busy}
+                onPick={isDirectoryInput(input) ? () => pick(input.id) : null}
+                onType={(v) => onChange({ ...values, [input.id]: v })}
+                inputRef={ref}
+              />
+            );
+          }
+
+          return (
+            <TextField
+              key={input.id}
+              id={id}
+              icon={iconFor(operation, input)}
+              label={label}
+              help={help}
+              placeholder={tFirst(keys.placeholder)}
+              suffix={extensionHint(input)}
+              value={value}
+              error={fieldError}
+              disabled={busy}
+              onType={(v) => onChange({ ...values, [input.id]: v })}
+              inputRef={ref}
+            />
+          );
+        })}
       </div>
 
       <Summary plan={plan} phase={phase} />
@@ -239,39 +464,53 @@ export default function Naffith(props: Props) {
         </p>
       )}
 
-      <div className="naffith__actions">
-        {phase !== 'finished' && (
-          <>
-            <button
-              type="button"
-              className="btn btn--primary btn--lg"
-              onClick={onExecute}
-              disabled={!plan || busy || phase === 'planning'}
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <use href="#i-execute" />
-              </svg>
-              {t('action.execute')}
-            </button>
-            {busy && (
+      <div className="naffith__act">
+        <div className="naffith__actions">
+          {phase !== 'finished' && (
+            <>
+              {/* الزرّ ظاهر دائمًا ومعطّل بسببٍ مكتوب تحته. زرٌّ يظهر ويختفي مع
+                  صلاحية الخطة يجعل الفعل الأساسي يرقص مع كل ضغطة مفتاح، ويحرم
+                  من لم تكتمل حقوله من معرفة أن ثمّة زرًّا أصلًا. */}
               <button
                 type="button"
-                className="btn btn--danger"
-                onClick={onCancel}
-                disabled={phase === 'cancelling'}
+                className="btn btn--primary btn--lg"
+                onClick={onExecute}
+                disabled={blocked !== null || busy}
+                aria-describedby={showWhy ? whyId : undefined}
               >
                 <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <use href="#i-close" />
+                  <use href="#i-execute" />
                 </svg>
-                {t('action.cancel')}
+                {t('action.execute')}
               </button>
-            )}
-          </>
-        )}
-        {phase === 'finished' && (
-          <button type="button" className="btn btn--quiet btn--lg" onClick={onReset}>
-            {t('action.again')}
-          </button>
+              {busy && (
+                <button
+                  type="button"
+                  className="btn btn--danger"
+                  onClick={onCancel}
+                  disabled={phase === 'cancelling'}
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <use href="#i-close" />
+                  </svg>
+                  {t('action.cancel')}
+                </button>
+              )}
+            </>
+          )}
+          {phase === 'finished' && (
+            <button type="button" className="btn btn--quiet btn--lg" onClick={onReset}>
+              {t('action.again')}
+            </button>
+          )}
+        </div>
+
+        {/* حالة لا خطأ: `t-helper` خافتة صغيرة، بلا لون الخطر وبلا `role=alert`.
+            و`aria-live` مهذّبة لأن السبب يتبدّل تحت يد المستخدم وهو يكتب. */}
+        {showWhy && blocked && (
+          <p id={whyId} className="t-helper naffith__why" aria-live="polite">
+            {t(blocked)}
+          </p>
         )}
       </div>
 
@@ -303,18 +542,16 @@ export function readableSize(bytes: number): string {
   return `${bytes} ${t('unit.bytes')}`;
 }
 
-/** ملخّص بلغة المستخدم: ماذا يُنشأ، من أين، وما الذي لن يحدث. */
+/**
+ * ملخّص بلغة المستخدم: ماذا يُنشأ، من أين، وما الذي لن يحدث.
+ *
+ * بلا خطةٍ لا يُعرض شيء. كان هنا صندوقٌ يقول «أكمل الحقول أعلاه لتظهر المعاينة»
+ * ثم صار سبب تعطّل «نفِّذ» يقول الجملة نفسها بصياغة أخرى تحت الزرّ مباشرة —
+ * وجملتان متجاورتان تقولان أمرًا واحدًا تجعلان المستخدم يبحث عن الفرق بينهما.
+ * السبب تحت الزرّ هو الموضع الصحيح لأنه ملتصق بالفعل المعطَّل.
+ */
 function Summary({ plan, phase }: { plan: PlanResponse | null; phase: Phase }) {
-  if (phase === 'finished') return null;
-  if (!plan) {
-    return (
-      <div className="summary summary--empty">
-        <p className="t-body-sec">
-          {phase === 'planning' ? t('state.checking') : t('summary.incomplete')}
-        </p>
-      </div>
-    );
-  }
+  if (phase === 'finished' || !plan) return null;
 
   return (
     <div className="summary" aria-live="polite">
@@ -353,6 +590,15 @@ function Summary({ plan, phase }: { plan: PlanResponse | null; phase: Phase }) {
                   plan.estimate.complete ? 'summary.estimate.note' : 'summary.estimate.partial',
                 )}
               </span>
+            </dd>
+
+            {/* عدد ما مُسح: هو ما يجعل «تقدير ناقص» رقمًا لا شعورًا — المستخدم
+                يرى كم عنصرًا دخل في الحساب قبل أن يقف المسح عند حدّه. */}
+            <dt className="t-body-sec">
+              {tFirst(['summary.estimate.entries', 'summary.estimate'])}
+            </dt>
+            <dd>
+              <bdi className="num">{plan.estimate.scanned_entries}</bdi>
             </dd>
           </>
         )}

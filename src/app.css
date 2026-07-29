@@ -40,12 +40,37 @@ body { background: var(--bg-canvas); color: var(--text-primary); }
   flex-direction: column;
   gap: var(--space-16);
 }
+/* الرجوع في صفّه وحده أعلى البطاقة: صندوق مرن كي لا يتمدّد الزرّ إلى عرض
+   العمود كما يفعل أيّ ابنٍ مباشر لعمودٍ مرن. وهو أول ما يبلغه المفتاح. */
+.naffith__nav { display: flex; }
 .naffith__head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-12); }
 .naffith__head h2 { margin: 0; }
 .naffith__op { margin: var(--space-4) 0 0; }
 .naffith__desc { margin: 0; }
 .naffith__form { display: flex; flex-direction: column; gap: var(--space-16); }
+/* الفعل وسببُه كتلة واحدة: فجوة البطاقة (‏16) كانت تفصل السبب عن زرّه حتى
+   يبدو تعليقًا على ما بعده لا تفسيرًا لما فوقه. */
+.naffith__act { display: flex; flex-direction: column; gap: var(--space-8); }
 .naffith__actions { display: flex; gap: var(--space-8); flex-wrap: wrap; }
+/* سبب تعطّل «نفِّذ»: حالةٌ لا خطأ. لا أرضية حمراء ولا أيقونة تحذير ولا لون
+   خطر — نبرته إرشاد، وهي نبرة `t-helper` نفسها تحت كل حقل في النموذج. */
+.naffith__why { margin: 0; }
+
+/* راية: مربّع الاختيار وعنوانه في سطر واحد، والعنوان نفسه هو الهدف القابل
+   للنقر فيتّسع مقصد المؤشّر إلى النصّ كلّه. */
+.row-field--flag .row-field__flag {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  cursor: pointer;
+}
+.row-field--flag input[type="checkbox"] {
+  inline-size: var(--icon-sm);
+  block-size: var(--icon-sm);
+  flex: none;
+  accent-color: var(--action-primary);
+  cursor: pointer;
+}
 
 .row-field { display: flex; flex-direction: column; gap: var(--space-4); }
 .row-field__control { display: flex; align-items: center; gap: var(--space-8); }
@@ -85,8 +110,6 @@ body { background: var(--bg-canvas); color: var(--text-primary); }
   flex-direction: column;
   gap: var(--space-8);
 }
-.summary--empty { color: var(--text-muted); }
-.summary--empty p { margin: 0; }
 .summary__title { margin: 0; color: var(--text-secondary); }
 .summary__line { display: flex; flex-direction: column; gap: var(--space-2); margin: 0; }
 /* المسار الناتج LTR ومقطوع بأناقة إن طال، ولا يدفع الصندوق ليتمدّد. */
@@ -155,13 +178,66 @@ body { background: var(--bg-canvas); color: var(--text-primary); }
 .satr__head { display: flex; align-items: baseline; gap: var(--space-8); flex-wrap: wrap; }
 .satr__head h2 { margin: 0; }
 .satr__subtitle { color: var(--text-muted); margin: 0; }
-.satr__empty {
-  padding: var(--space-24);
-  border: var(--border-hairline) dashed var(--border-default);
-  border-radius: var(--radius-card);
-  color: var(--text-muted);
-  margin: 0;
+/* المسرح: مكان الأمر حين يوجد، ومكان الكتابة المائية حين لا يوجد.
+
+   الارتفاع الأدنى ليس زينة. بدونه ينكمش العمود إلى سطرين في الانتظار ثم يقفز
+   إلى مئات البكسلات لحظةَ وصول الخطة، فتتحرّك الصفحة كلّها لأن المستخدم أكمل
+   حقلًا. القيمة مركّبة من رمز المسافة لا مكتوبة رقمًا: ثلاثة أضعاف أكبر مسافة
+   في النظام تقارب ارتفاع الأمر بوسائطه الستّة، فيبقى العمودان متقاربين. */
+.satr__stage {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  min-block-size: calc(var(--space-96) * 5);
 }
+
+/* كتابة مائية لا بطاقة: تجلس في الفراغ نفسه بلا حدّ ولا أرضية ولا حشو يوحي
+   بأنها عنصر. مركزُها أعلى من مركز المساحة قليلًا لأن العين ترتاح فوق المنتصف،
+   ولأن الأمر حين يأتي يبدأ من الأعلى فيرثها في موضعها. */
+.satr__watermark {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  padding-block-end: var(--space-40);
+  text-align: center;
+  /* لا تسرق نقرةً ولا تحجب ما تحتها أثناء الخبوّ. */
+  pointer-events: none;
+  opacity: var(--opacity-muted);
+  transition: opacity var(--duration-fast) var(--ease-exit);
+}
+.satr__watermark p { margin: 0; }
+/* درجة واحدة في اللون والمقاس تفصل العنوان عن شرحه — لا قفزة. الشفافية واحدة
+   على الكتلة كلّها كي تُقرأ طبقةً واحدة خافتة لا ثلاثة أسطر متفاوتة.
+
+   والدرجتان مأخوذتان من أعلى النظام لا من أسفله (‏primary وsecondary لا muted):
+   الشفافية ٠٫٦٥ تخفتهما أصلًا، فاختيار لونٍ خافتٍ فوقها كان يضرب الخفوت في
+   الخفوت حتى يصير السطران ظلًّا لا يُقرأ — وهما التعليمة نفسها. */
+.satr__watermark-title {
+  font-family: var(--font-display);
+  font-size: var(--fs-page-title);
+  line-height: var(--lh-page-title);
+  font-weight: var(--fw-light);
+  color: var(--text-primary);
+}
+.satr__watermark-line {
+  font-family: var(--font-body);
+  font-size: var(--fs-body-secondary);
+  line-height: var(--lh-body-secondary);
+  font-weight: var(--fw-light);
+  color: var(--text-secondary);
+}
+/* الخروج: خبوّ قصير ثم نزع. النظام يُنزل المدد إلى ١ms عند طلب تقليل الحركة،
+   وهذا السطر يقطعها تمامًا فلا يبقى حتى ذلك الوميض. */
+.satr__watermark--leaving { opacity: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .satr__watermark { transition: none; }
+}
+
 .satr__notes { display: flex; flex-direction: column; gap: var(--space-8); }
 .satr__notes p { margin: 0; }
 .satr__fineprint { color: var(--text-muted); }
