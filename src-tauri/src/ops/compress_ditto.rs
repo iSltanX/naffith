@@ -23,6 +23,25 @@
 //! الوسيط الأخير هو **الاسم المؤقّت** لا النهائي، لأن الترقية إلى الاسم
 //! النهائي لا تقع إلا بعد خروج ناجح. «سَطْر» يعرض هذا كما هو ويشرحه.
 //!
+//! ## ما لا تستطيعه `ditto`، ولماذا نقوله بدل أن نسكت
+//!
+//! ثلاثة حدود قِيست على هذا الجهاز بأرشيفات حقيقية، ولا راية في `ditto` تعالج
+//! أيًّا منها (راجع `man ditto`: لا Zip64 ولا ترميز أسماء):
+//!
+//! 1. `--sequesterRsrc` تعامل **كل** ملف اسمه يبدأ بـ `._` سِجلًّا مصاحبًا لا
+//!    ملفًا. ملف المستخدم `._notes` لا يظهر في الأرشيف بأي صورة — لا في شجرته
+//!    ولا في `__MACOSX` — ويعود الفكّ بشجرة ناقصة. البديل `--norsrc` كان
+//!    سيُنقذه ويُسقط بدلًا منه البيانات الوصفية كلها، وهي سبب اختيار `ditto`
+//!    على `zip` من الأصل. فالمقايضة مرفوضة، والخسارة تُعلَن قبل التنفيذ.
+//! 2. لا Zip64: حجم مصدرٍ يتجاوز ٤ غيغابايت يُكتب مقصوصًا على ٣٢ بت. قيس:
+//!    ملف ٥ غ.ب سُجّل حجمه ١٫٠٧٣٫٧٤١٫٨٢٤ (‏٥ غ.ب مقسومة على ٢^٣٢)، و`unzip`
+//!    يستخرجه مبتورًا. `ditto -x` وحدها تقرؤه صحيحًا.
+//! 3. راية UTF-8 (‏البت ١١) لا تُضبط أبدًا مع أن الأسماء تُكتب UTF-8 خامًا.
+//!    فأداةٌ تتبع المواصفة تقرؤها CP437: `unzip -l` يعرض `??????`.
+//!
+//! لا تمنع أيٌّ من هذه التنفيذ — لكن أرشيفًا يخسر ملفًا أو يُقرأ مشوّهًا عند
+//! المستلم أسوأ من تحذيرٍ يُقرأ قبل الضغط.
+//!
 //! ## سلامة الوسائط
 //!
 //! المسارات مطلقة ومُحلّة الروابط قبل الوصول إلى هنا، فلا يبدأ أي منها بـ `-`
@@ -36,9 +55,20 @@ use crate::spec::*;
 use crate::tools;
 use crate::value::Inputs;
 use std::ffi::{OsStr, OsString};
+use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
+use std::time::{Duration, Instant};
 
 pub const ID: &str = "compress.folder.zip";
+
+/// أقصى ما تسعه حقول ZIP الكلاسيكية: أربعة بايتات للحجم والإزاحة.
+const ZIP_FIELD_LIMIT: u64 = u32::MAX as u64;
+
+/// أقصى عدد مدخلات في شجرة المصدر قبل أن يبلغ الأرشيف سقف عدّاد ZIP.
+///
+/// السقف نفسه ٦٥٥٣٥، والنصف لأن `--sequesterRsrc` تضيف مدخلة في `__MACOSX`
+/// لكل مدخلة تحمل بيانات وصفية، فعدد مدخلات الأرشيف يبلغ ضعف الشجرة.
+const ZIP_ENTRY_LIMIT: usize = u16::MAX as usize / 2;
 
 pub const SPEC: OperationSpec = OperationSpec {
     id: ID,
@@ -92,8 +122,20 @@ fn plan(inputs: &Inputs) -> Result<PlannedCommand> {
         return Err(CoreError::DestinationInsideSource.on_input("destination"));
     }
 
-    let final_path =
-        paths::new_file_in(destination, OsStr::new(name)).map_err(|e| e.on_input("destination"))?;
+    // `new_file_in` يفحص شيئين في نداء واحد: مجلد الوجهة، والاسم النهائي بعد
+    // أن أُضيف امتداده. فالنسبة لا يمكن أن تكون واحدة لكليهما.
+    //
+    // `InvalidName` تخصّ الاسم وحدها — وهي تصل هنا في الحالة التي لا يلتقطها
+    // `sanitize_name`: اسمٌ من ٢٥٥ وحدة يُقبل، ثم `.zip` تجعله ٢٥٩ فيرفضه نظام
+    // الملفات. نسبتُها إلى `destination` كانت تُبرز مربّع الوجهة، والمستخدم
+    // يبدّل مجلدًا سليمًا مرة بعد مرة بينما الحقل الذي يصلح العطب هو الاسم.
+    // وما عداها — غير موجود، ليس مجلدًا، خارج الجذور، غير قابل للكتابة — يخصّ
+    // الوجهة فعلًا.
+    let final_path = paths::new_file_in(destination, OsStr::new(name)).map_err(|e| {
+        let field =
+            if matches!(e, CoreError::InvalidName { .. }) { "archive_name" } else { "destination" };
+        e.on_input(field)
+    })?;
 
     // `symlink_metadata` لا يتبع الروابط: رابط معلَّق بالاسم النهائي ما زال
     // تضاربًا. ولا نستبدل ولا ننحّي جانبًا — القرار للمستخدم لا لنا.
@@ -103,9 +145,12 @@ fn plan(inputs: &Inputs) -> Result<PlannedCommand> {
 
     let temp = atomic::temp_path_for(&final_path)?;
 
-    // مسحة واحدة تُغذّي التحذيرات والتقدير المعروض معًا. مسحُها مرتين كان
-    // سيضاعف كلفة التخطيط، وهو يجري عند كل تغيير في النموذج.
+    // مسحة الأحجام تُغذّي التقدير المعروض وتحذيرات المساحة وحدود ZIP معًا.
     let size = estimate::tree_size(source);
+    // ومسحة الأسماء منفصلة عنها لأنها تسأل سؤالًا آخر — أسماءٌ لا أحجام —
+    // فلا تستدعي `metadata` لأي مدخلة وتتوقّف فور أن تعرف جوابيها. دمجها في
+    // `estimate::tree_size` أنظف، لكنه يوسّع `SizeEstimate` لمن لا يعنيه.
+    let names = scan_names(source);
 
     let plan_args = vec![
         flag("-c", "explain.ditto.create"),
@@ -142,15 +187,75 @@ fn plan(inputs: &Inputs) -> Result<PlannedCommand> {
         // لا مجلد عمل: كل المسارات مطلقة، فلا شيء يُحلّ نسبةً إلى مكان.
         cwd: None,
         explain,
-        warnings: warnings_for(&size, inputs, source, destination),
+        warnings: warnings_for(&size, &names, inputs, source, destination),
         artifact: Some(Artifact { temp, final_path }),
         estimate: Some(size),
     })
 }
 
+/// ما تحتاج تحذيراتُ التوافق أن تعرفه عن أسماء الشجرة.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct NameScan {
+    /// وُجد ملف اسمه يبدأ بـ `._`، وهو ما تُسقطه `--sequesterRsrc`.
+    appledouble: bool,
+    /// وُجد اسم فيه بايت خارج ASCII — أي كل اسم عربي.
+    non_ascii: bool,
+}
+
+/// سقفا المسح. أقلّ من سقفي `estimate` لأن هذه المسحة تجري بعدها، ولأن
+/// التوقّف المبكر يجعل بلوغهما نادرًا أصلًا.
+const MAX_SCANNED_NAMES: usize = 50_000;
+const MAX_SCAN_TIME: Duration = Duration::from_millis(200);
+
+/// يمسح أسماء الشجرة بحثًا عمّا يفسد الأرشيف عند المستلم.
+///
+/// بمكدّس صريح لا باستدعاء ذاتي، تمامًا كـ `estimate::tree_size`: عمق الشجرة
+/// مدخلٌ يتحكّم به المستخدم. ويتوقّف فور أن يعرف الجوابين، فالشجرة العربية —
+/// وهي الغالبة هنا — تُحسم عادةً عند أول مدخلة.
+///
+/// اسم المجلد المصدر نفسه محسوب: `--keepParent` تجعله جذر الأرشيف، فترميزه
+/// يخصّ المستلم كما يخصّه ما تحته.
+fn scan_names(root: &Path) -> NameScan {
+    let start = Instant::now();
+    let mut found = NameScan {
+        appledouble: false,
+        non_ascii: root.file_name().is_some_and(|n| !n.as_bytes().is_ascii()),
+    };
+    let mut seen: usize = 0;
+    let mut stack = vec![root.to_path_buf()];
+
+    'walk: while let Some(dir) = stack.pop() {
+        let Ok(read) = std::fs::read_dir(&dir) else { continue };
+        for entry in read.flatten() {
+            seen += 1;
+            if seen >= MAX_SCANNED_NAMES || start.elapsed() >= MAX_SCAN_TIME {
+                break 'walk;
+            }
+            let name = entry.file_name();
+            let bytes = name.as_bytes();
+            if !bytes.is_ascii() {
+                found.non_ascii = true;
+            }
+            // `file_type` على `DirEntry` لا يتبع الروابط.
+            let Ok(kind) = entry.file_type() else { continue };
+            if kind.is_dir() {
+                stack.push(entry.path());
+            } else if kind.is_file() && bytes.starts_with(b"._") {
+                found.appledouble = true;
+            }
+            if found.appledouble && found.non_ascii {
+                break 'walk;
+            }
+        }
+    }
+
+    found
+}
+
 /// تحذيرات تُعرض قبل التنفيذ. **لا تمنع** — تُخبر.
 fn warnings_for(
     size: &estimate::SizeEstimate,
+    names: &NameScan,
     inputs: &Inputs,
     source: &Path,
     destination: &Path,
@@ -182,6 +287,23 @@ fn warnings_for(
         Some(free) if size.bytes > free => warnings.push("warn.space.low"),
         None => warnings.push("warn.space.unknown"),
         Some(_) => {}
+    }
+
+    // خسارة صامتة، وهي الأسوأ: الملف لا يظهر في الأرشيف ولا في `__MACOSX`،
+    // والتشغيل يُقيَّد نجاحًا. من يحذف المصدر بعده لا يجد ما يستعيده.
+    if names.appledouble {
+        warnings.push("warn.source.appledouble");
+    }
+
+    // المقارنة بالشجرة لا بالأرشيف: الأرشيف أصغر، لكن حقل «الحجم قبل الضغط»
+    // هو الذي يفيض، وهو حجم الشجرة نفسه. والمسح الناقص لا يُخرِج التحذير —
+    // `warn.size.partial` يقول عندها إن الرقم إرشادي.
+    if size.bytes > ZIP_FIELD_LIMIT || size.entries > ZIP_ENTRY_LIMIT {
+        warnings.push("warn.size.zip_limit");
+    }
+
+    if names.non_ascii {
+        warnings.push("warn.zip.name_encoding");
     }
 
     warnings
@@ -406,6 +528,46 @@ mod tests {
     }
 
     #[test]
+    fn a_name_that_only_overflows_once_the_extension_is_added_blames_the_name_field() {
+        // ٢٥٥ وحدة يقبلها `sanitize_name`، ثم `.zip` تجعلها ٢٥٩ فيرفضها نظام
+        // الملفات. الوجهة هنا سليمة تمامًا، والحقل الذي يصلح العطب هو الاسم —
+        // والواجهة تُبرز الحقل الذي يسمّيه الخطأ.
+        let s = Scratch::new("toolong").expect("HOME must be set");
+        let src = s.dir("م");
+        let dst = s.dir("و");
+
+        let long = "ا".repeat(255);
+        assert_eq!(
+            refusal(plan_with(&src, &dst, &long)),
+            ("err.name.invalid", Some("archive_name")),
+            "an over-long final name is not the destination's fault"
+        );
+    }
+
+    #[test]
+    fn a_destination_that_vanished_after_validation_is_still_blamed_on_the_destination() {
+        // الحارس على إعادة النسبة أعلاه: `new_file_in` يفحص الوجهة والاسم
+        // معًا، وما تخصّه الوجهة يجب أن يبقى منسوبًا إليها. الوجهة تُحقَّق في
+        // `validate` قبل الوصول إلى هنا، فالحالة تُبنى مباشرة كما تقع فعلًا:
+        // مجلدٌ اختفى بين التحقّق والتخطيط.
+        let s = Scratch::new("destfield").expect("HOME must be set");
+        let src = s.dir("م");
+        let gone = s.path().join("لا-وجود-له");
+
+        let inputs = Inputs::from_pairs(vec![
+            ("source", Value::Dir(src)),
+            ("destination", Value::TargetDir(gone)),
+            ("archive_name", Value::Name("ناتج.zip".to_owned())),
+        ]);
+        let e = plan(&inputs).unwrap_err();
+        assert_eq!(
+            (e.key(), e.input()),
+            ("err.path.missing", Some("destination")),
+            "re-attributing the name error must not drag the destination errors with it"
+        );
+    }
+
+    #[test]
     fn shell_syntax_in_a_name_is_carried_literally_into_one_argument() {
         let s = Scratch::new("shellish").expect("HOME must be set");
         let src = s.dir("م");
@@ -522,6 +684,97 @@ mod tests {
             .collect();
         names.sort();
         assert_eq!(names, vec!["ملف".to_string()]);
+    }
+
+    #[test]
+    fn a_user_file_named_like_an_appledouble_sidecar_is_announced_not_lost_silently() {
+        // `--sequesterRsrc` تُسقط `._notes` من الأرشيف تمامًا. قِيس بأرشيف
+        // حقيقي: لا في الشجرة ولا في `__MACOSX`. السكوت عنه خسارة بيانات.
+        let s = Scratch::new("appledouble").expect("HOME must be set");
+        let src = s.dir("م");
+        std::fs::write(src.join("._notes"), b"user data, not a sidecar").unwrap();
+        let dst = s.dir("و");
+
+        let cmd = plan_with(&src, &dst, "ناتج").unwrap();
+        assert!(
+            cmd.warnings.contains(&"warn.source.appledouble"),
+            "a file ditto will drop must be named before execution: {:?}",
+            cmd.warnings
+        );
+    }
+
+    #[test]
+    fn an_appledouble_file_nested_deep_in_the_tree_is_found_too() {
+        let s = Scratch::new("appledeep").expect("HOME must be set");
+        let src = s.dir("م");
+        let deep = src.join("أ/ب/ج");
+        std::fs::create_dir_all(&deep).unwrap();
+        std::fs::write(deep.join("._سجل"), b"x").unwrap();
+        let dst = s.dir("و");
+
+        assert!(plan_with(&src, &dst, "ناتج")
+            .unwrap()
+            .warnings
+            .contains(&"warn.source.appledouble"));
+    }
+
+    #[test]
+    fn an_ordinary_tree_raises_no_appledouble_warning() {
+        // التحذير الذي يظهر دائمًا لا يُقرأ. هذا يثبت أنه لا يظهر دائمًا.
+        let s = Scratch::new("noappledouble").expect("HOME must be set");
+        let src = s.dir("م");
+        std::fs::write(src.join("ملف.txt"), b"x").unwrap();
+        std::fs::create_dir(src.join("مجلد")).unwrap();
+        let dst = s.dir("و");
+
+        let cmd = plan_with(&src, &dst, "ناتج").unwrap();
+        assert!(!cmd.warnings.contains(&"warn.source.appledouble"), "{:?}", cmd.warnings);
+    }
+
+    #[test]
+    fn an_arabic_tree_is_told_its_names_may_be_mojibake_elsewhere() {
+        // راية UTF-8 (‏البت ١١) لا تضبطها `ditto`. اختبار في
+        // tests/compress_integration.rs يقرأ البت من أرشيف حقيقي.
+        let s = Scratch::new("nonascii").expect("HOME must be set");
+        let src = s.dir("مصدر");
+        let dst = s.dir("و");
+
+        assert!(plan_with(&src, &dst, "ناتج")
+            .unwrap()
+            .warnings
+            .contains(&"warn.zip.name_encoding"));
+    }
+
+    #[test]
+    fn a_pure_ascii_tree_carries_no_encoding_warning() {
+        let s = Scratch::new("ascii").expect("HOME must be set");
+        let src = s.dir("source");
+        std::fs::write(src.join("file.txt"), b"x").unwrap();
+        let dst = s.dir("dest");
+
+        let cmd = plan_with(&src, &dst, "archive").unwrap();
+        assert!(!cmd.warnings.contains(&"warn.zip.name_encoding"), "{:?}", cmd.warnings);
+    }
+
+    #[test]
+    fn a_tree_past_the_classic_zip_limits_is_warned_about_before_the_wait() {
+        // لا يمكن بناء شجرة ٤ غيغابايت في اختبار وحدة، والتحذير قرار خالص على
+        // أرقام التقدير — فيُختبر عند حدّه مباشرة. الحدّ نفسه قِيس بأرشيف
+        // حقيقي: ملف ٥ غ.ب سُجّل ١٫٠٧٣٫٧٤١٫٨٢٤.
+        let names = NameScan::default();
+        let inputs = Inputs::from_pairs(vec![]);
+        let here = Path::new("/tmp");
+
+        let over =
+            estimate::SizeEstimate { bytes: ZIP_FIELD_LIMIT + 1, entries: 1, complete: true };
+        assert!(warnings_for(&over, &names, &inputs, here, here).contains(&"warn.size.zip_limit"));
+
+        let many =
+            estimate::SizeEstimate { bytes: 1024, entries: ZIP_ENTRY_LIMIT + 1, complete: true };
+        assert!(warnings_for(&many, &names, &inputs, here, here).contains(&"warn.size.zip_limit"));
+
+        let fine = estimate::SizeEstimate { bytes: ZIP_FIELD_LIMIT, entries: 2, complete: true };
+        assert!(!warnings_for(&fine, &names, &inputs, here, here).contains(&"warn.size.zip_limit"));
     }
 
     #[test]

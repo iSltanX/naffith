@@ -35,15 +35,26 @@ pub fn reveal(path: &Path) -> Result<()> {
     let program = tools::OPEN.resolve()?;
     // مصفوفة وسائط، لا صدفة. والمسار مطلق (خرج من `canonicalize`) فلا يُقرأ راية.
     debug_assert!(path.is_absolute(), "reveal must be given an absolute path");
-    std::process::Command::new(program)
-        .arg("-R")
-        .arg(path)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(CoreError::Io)?;
-    Ok(())
+    let mut command = std::process::Command::new(program);
+    command.arg("-R").arg(path).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+    spawn_and_reap(command).map(|_| ())
+}
+
+/// يطلق عملية عابرة **ويحصدها**، ويعيد رقمها.
+///
+/// `std::process::Child` لا ينتظر في `Drop` — الوثيقة تنصّ على ذلك صراحة —
+/// فإسقاطه دون `wait` يترك عملية زومبي لكل نقرة «أظهر في Finder»، تبقى في
+/// جدول عمليات التطبيق حتى يُغلق. خيطٌ قصير ينتظر خروجها أرخص من جرّ وقت
+/// تشغيل غير متزامن إلى هذا المسار، وهو الموضع الوحيد في النواة الذي يطلق
+/// عملية خارج `executor::run`.
+fn spawn_and_reap(mut command: std::process::Command) -> Result<u32> {
+    let child = command.spawn().map_err(CoreError::Io)?;
+    let pid = child.id();
+    std::thread::spawn(move || {
+        let mut child = child;
+        let _ = child.wait();
+    });
+    Ok(pid)
 }
 
 #[cfg(test)]
@@ -122,5 +133,26 @@ mod tests {
     fn the_reveal_tool_is_an_absolute_system_path() {
         assert_eq!(tools::OPEN.absolute, "/usr/bin/open");
         assert!(tools::OPEN.resolve().is_ok());
+    }
+
+    #[test]
+    fn a_revealed_process_is_reaped_and_leaves_no_zombie() {
+        // `/usr/bin/true` لا `open`: نختبر الحصاد لا نافذة Finder. البرنامج
+        // يخرج فورًا، فما بقي بعده في جدول العمليات زومبي لا عملية عاملة.
+        let mut command = std::process::Command::new("/usr/bin/true");
+        command.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+        let pid = spawn_and_reap(command).unwrap() as i32;
+
+        // `kill(pid, 0)` ينجح على الزومبي أيضًا: القيد باقٍ حتى يُحصد. فشلها
+        // هو الدليل على أن أحدًا انتظر العملية.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        // SAFETY: نداء فحص لا يرسل إشارة.
+        while unsafe { libc::kill(pid, 0) } == 0 {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "pid {pid} stayed a zombie: nobody waited on it"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
     }
 }

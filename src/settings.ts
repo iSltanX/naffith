@@ -164,7 +164,14 @@ export function loadSettings(storage: SettingsStorage | null): SettingsLoad {
 export function saveSettings(storage: SettingsStorage | null, settings: Settings): boolean {
   if (!storage) return false;
   try {
-    storage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+    // الإصدار يُبصم هنا لا يُنقل كما وصل: مستدعٍ يبني الإعداد بيده — أو يمرّر
+    // قيمةً نجت من بناءٍ أقدم — كان سيكتب إصدارًا لا تقبله `loadSettings`، فتضيع
+    // القيمة صامتةً في التشغيل التالي بوصفها «تالفة». الكتابة وحدها تعرف إصدار
+    // هذا البناء، فهي الموضع الوحيد القادر على ضمان الوعد.
+    storage.setItem(
+      SETTINGS_STORAGE_KEY,
+      JSON.stringify({ ...settings, schemaVersion: SETTINGS_SCHEMA_VERSION }),
+    );
     return true;
   } catch {
     return false;

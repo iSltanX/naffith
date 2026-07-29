@@ -15,7 +15,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import Naffith from './naffith';
 import { AR } from './i18n';
-import type { OperationSummary } from './ipc';
+import type { OperationSummary, PlanResponse } from './ipc';
 import type { FormValues } from './operations';
 import { emptyValues } from './operations';
 
@@ -168,6 +168,61 @@ describe('زرّ «نفِّذ»', () => {
     expect(why?.className).toContain('t-helper');
     expect(why?.className).not.toContain('field-error');
     expect(why?.getAttribute('role')).not.toBe('alert');
+  });
+});
+
+describe('ملخّص «ما الذي سيحدث»', () => {
+  /** خطةٌ كما تعيدها النواة، بتقديرٍ كامل. */
+  const PLAN: PlanResponse = {
+    token: 'tok',
+    plan_id: 'p1',
+    op_id: COMPRESS.id,
+    title_key: COMPRESS.title_key,
+    description_key: COMPRESS.description_key,
+    danger: 'creates',
+    argv_display: ['/usr/bin/ditto', '-c', '-k', '/Users/x/src', '/Users/x/dst/.n.part'],
+    explain: [],
+    warnings: [],
+    tool: { id: 'ditto', path: '/usr/bin/ditto' },
+    conflict: 'refuse',
+    estimate: { approx_source_bytes: 12_400_000, scanned_entries: 1843, complete: true },
+    produces: '/Users/x/dst/n.zip',
+    writes_to: '/Users/x/dst/.n.part',
+    working_directory: null,
+  };
+
+  /** كل صفٍّ في `dl` الملخّص: عنوانه وقيمته. */
+  function metaRows(container: HTMLElement): Array<{ label: string; value: string }> {
+    const meta = container.querySelector('.summary__meta');
+    const dts = [...(meta?.querySelectorAll('dt') ?? [])];
+    const dds = [...(meta?.querySelectorAll('dd') ?? [])];
+    return dts.map((dt, i) => ({
+      label: dt.textContent ?? '',
+      value: dds[i]?.textContent ?? '',
+    }));
+  }
+
+  it('لا يعطي عدد العناصر المفحوصة عنوان الحجم', () => {
+    // العطل الذي حرسه هذا الاختبار: سلسلة رجوعٍ إلى `summary.estimate` كانت
+    // تُلبس الرقم ١٨٤٣ عنوانَ «حجم المصدر تقديريًا»، فيقرأ المستخدم عدّادًا
+    // على أنه حجم. رجوعٌ إلى معنى آخر ليس صياغةً أعمّ — هو خبرٌ كاذب.
+    const { container } = view(COMPRESS, { plan: PLAN });
+    const rows = metaRows(container);
+    const labels = rows.map((r) => r.label);
+    expect(new Set(labels).size, `عنوان مكرّر في الملخّص: ${labels.join(' | ')}`).toBe(
+      labels.length,
+    );
+
+    const entries = rows.find((r) => r.value.includes(String(PLAN.estimate?.scanned_entries)));
+    expect(entries, 'عدد العناصر المفحوصة غير معروض').toBeTruthy();
+    expect(entries?.label).not.toBe(AR['summary.estimate']);
+  });
+
+  it('يبقي عنوان الحجم على الحجم وحده', () => {
+    const { container } = view(COMPRESS, { plan: PLAN });
+    const size = metaRows(container).find((r) => r.label === AR['summary.estimate']);
+    expect(size?.value).toContain('≈');
+    expect(size?.value).toContain(AR['unit.mb']);
   });
 });
 

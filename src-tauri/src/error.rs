@@ -121,6 +121,15 @@ pub enum StaleReason {
     DestinationNotWritable,
     /// ظهر ملف بالاسم النهائي بين التخطيط والتنفيذ.
     FinalPathAppeared,
+    /// شُغل **المسار المؤقّت** الذي حجزته الخطة — بملف أو برابط رمزي — فتعذّر
+    /// حجزه حصريًا قبل الإطلاق.
+    ///
+    /// منفصل عن `FinalPathAppeared` لأن الموضعين مختلفان: هذا اسمٌ داخلي
+    /// يخترعه `atomic::temp_path_for`، وذاك الاسم الذي كتبه المستخدم. إعارةُ
+    /// السبب كانت تقول للمستخدم إن ملفًا ظهر باسم أرشيفه، فيفتح المجلد ولا
+    /// يجد شيئًا — والحالة الوحيدة التي تنتجه عمليًا هي محاولة زرع رابط رمزي
+    /// مكان المؤقّت، أي بالضبط ما يستحق أن يُسمّى باسمه.
+    TempPathTaken,
     /// اختفت الأداة أو لم تعد تنفيذية بين التخطيط والتنفيذ.
     ToolGone,
 }
@@ -242,6 +251,17 @@ mod tests {
         assert_eq!(wire.key, "err.name.invalid");
         assert_eq!(wire.input, Some("archive_name"));
         assert_eq!(wire.detail, Some(serde_json::json!("empty")));
+    }
+
+    #[test]
+    fn a_taken_temporary_path_is_its_own_stale_reason_on_the_wire() {
+        // السبب كان مُعارًا من `FinalPathAppeared`، فكانت الشاشة تقول «ظهر ملف
+        // بالاسم النهائي» عن موضعٍ داخلي لا يراه المستخدم أصلًا. المفتاح يبقى
+        // `err.plan.stale`، والتفصيل هو ما يفرّق.
+        let e = CoreError::PlanStale { detail: StaleReason::TempPathTaken };
+        let wire = e.wire();
+        assert_eq!(wire.key, "err.plan.stale");
+        assert_eq!(wire.detail, Some(serde_json::json!("temp_path_taken")));
     }
 
     #[test]

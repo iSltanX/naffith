@@ -82,6 +82,11 @@ function backTarget(from: Screen): Screen | null {
 
 /** الوجهة المطلوبة لحدثٍ ما، بصرف النظر عن كلفة المغادرة. */
 function destination(current: Screen, event: NavEvent): Screen | null {
+  // الترحيب مغلق: «ابدأ الآن» وحده يُغادره. حدثٌ آخر يُخرج منه إلى داخل التطبيق
+  // قبل إتمامه يترك الإعداد «لم يُتمّ»، فيعود الترحيب في التشغيل القادم بلا سبب
+  // يفهمه المستخدم. الحارس هنا لا في الشاشات كي لا يُنسى في واحدةٍ منها.
+  if (current.name === 'onboarding' && event.type !== 'onboarding.finished') return null;
+
   switch (event.type) {
     case 'onboarding.finished':
       // الترحيب وحده يُنهى. الحدث نفسه من شاشة أخرى لا معنى له.

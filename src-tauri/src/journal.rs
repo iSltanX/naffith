@@ -30,6 +30,12 @@
 //! يبدأ بسطر جديد إن لم ينتهِ الملف بفاصل أسطر، فلا يلتصق قيدُه بالمبتور
 //! فيُفسد قيدين بدل واحد.
 //!
+//! ## النموّ
+//!
+//! السجلّ يُقرأ عند الإقلاع لتُبنى منه نافذة العرض، ويُضغط عند تجاوز سقفه
+//! المعلَن فيبقى منه آخر ما يُراجَع. ولا يوجد في حدّ IPC أمرٌ يمسحه — الحدّ
+//! ستة أوامر ولا سابع — فالسقف هو ما يمنعه من النموّ ما دام التطبيق مثبَّتًا.
+//!
 //! ## ما لا يُسجَّل
 //!
 //! * **رمز الخطة** — قدرة تُنفَّذ بها العملية. يُستبدل بمعرّف عام لا يفتح شيئًا.
@@ -136,17 +142,80 @@ impl Entry {
     }
 }
 
+/// نافذة الذاكرة: أحدث القيود التي تُعرض بلا لمس القرص.
+const MAX_RECENT: usize = 200;
+
+/// أقصى عدد قيود `planned` داخل نافذة الذاكرة.
+///
+/// حدٌّ منفصل لأن هذه القيود ليست قرارات: الواجهة تعيد التخطيط بعد ٢٥٠ مِلّي
+/// ثانية من سكون الكتابة، فتعديل اسم ملف واحد يولّد عشرات المعاينات. بحدٍّ
+/// واحد كانت هذه المعاينات تطرد تشغيلًا انتهى للتوّ من النافذة، فتفقد
+/// `reveal` مساره وتمتلئ شاشة السجل بضغطات المفاتيح بدل ما جاء المستخدم
+/// ليراجعه.
+pub const MAX_RECENT_PLANNED: usize = 40;
+
+/// سقف حجم ملف السجل على القرص قبل الضغط.
+///
+/// معلَن كثابت عامّ أسوة بحدود الخرج في `executor`: حدٌّ لا يُقاس لا يُصدَّق.
+pub const MAX_JOURNAL_BYTES: u64 = 1_048_576;
+
+/// عدد القيود التي تبقى بعد الضغط.
+pub const RETAINED_ENTRIES: usize = 500;
+
 pub struct Journal {
     path: Option<PathBuf>,
     /// يُسلسل الكتابة داخل هذه العملية. `flock` يتكفّل بما بين العمليات.
     write_lock: Mutex<()>,
     recent: Mutex<Vec<Entry>>,
     max_recent: usize,
+    max_bytes: u64,
+    retained: usize,
 }
 
 impl Journal {
     pub fn new(path: Option<PathBuf>) -> Self {
-        Self { path, write_lock: Mutex::new(()), recent: Mutex::new(Vec::new()), max_recent: 200 }
+        Self::with_limits(path, MAX_RECENT, MAX_JOURNAL_BYTES, RETAINED_ENTRIES)
+    }
+
+    /// حدود مصغّرة للاختبار: الدوران يُختبر بحدّ صغير لا بكتابة ميغابايت.
+    fn with_limits(
+        path: Option<PathBuf>,
+        max_recent: usize,
+        max_bytes: u64,
+        retained: usize,
+    ) -> Self {
+        let journal = Self {
+            path,
+            write_lock: Mutex::new(()),
+            recent: Mutex::new(Vec::new()),
+            max_recent,
+            max_bytes,
+            retained,
+        };
+        journal.reload();
+        journal
+    }
+
+    /// يستعيد نافذة الذاكرة من القرص عند الإقلاع.
+    ///
+    /// بدون هذا كان السجلّ يُكتب ولا يُقرأ: بعد إعادة التشغيل تعود
+    /// `recent_runs` فارغة و`reveal` تفشل لكل تشغيل سابق، والملف على القرص
+    /// يحمل التاريخ كاملًا. أي أن «الأثر القابل للمراجعة» الذي يوجد هذا الملف
+    /// من أجله كان أثرًا لا يقرأه أحد.
+    fn reload(&self) {
+        let Some(path) = &self.path else { return };
+        match read_all(path) {
+            Ok(read) => {
+                if read.damaged > 0 {
+                    eprintln!("naffith: skipped {} damaged journal line(s)", read.damaged);
+                }
+                let mut recent = self.recent.lock().unwrap_or_else(|e| e.into_inner());
+                *recent = read.entries;
+                trim(&mut recent, self.max_recent);
+            }
+            // سجلّ لا يُقرأ لا يمنع تشغيلًا جديدًا من أن يُقيَّد.
+            Err(e) => eprintln!("naffith: could not read journal: {e}"),
+        }
     }
 
     pub fn record(&self, entry: Entry) {
@@ -158,10 +227,7 @@ impl Journal {
         }
         let mut recent = self.recent.lock().unwrap_or_else(|e| e.into_inner());
         recent.push(entry);
-        let overflow = recent.len().saturating_sub(self.max_recent);
-        if overflow > 0 {
-            recent.drain(0..overflow);
-        }
+        trim(&mut recent, self.max_recent);
     }
 
     pub fn recent(&self) -> Vec<Entry> {
@@ -172,12 +238,20 @@ impl Journal {
     ///
     /// هذا هو المصدر الوحيد لما يمكن «إظهاره في Finder»: الواجهة تعطي معرّفًا،
     /// والنواة تُخرج المسار من سجلّها. لا مسار يعبر الحدّ في الاتجاه الآخر.
+    ///
+    /// والبحث لا يقف عند النافذة: النافذة محدودة والأرشيف ليس كذلك. تشغيلٌ
+    /// خرج منها — بإعادة تشغيل التطبيق أو بازدحام قيود لاحقة — ما زال ملفه على
+    /// القرص وقيده في الملف، فالرجوع إلى الملف أصدق من قول «لا شيء لإظهاره».
     pub fn produced_for(&self, id: &str) -> Option<String> {
-        let recent = self.recent.lock().unwrap_or_else(|e| e.into_inner());
-        recent.iter().rev().find_map(|e| match &e.state {
-            State::Succeeded { produced: Some(p) } if e.id == id => Some(p.clone()),
-            _ => None,
-        })
+        {
+            let recent = self.recent.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(found) = produced_in(&recent, id) {
+                return Some(found);
+            }
+        }
+        let path = self.path.as_ref()?;
+        let read = read_all(path).ok()?;
+        produced_in(&read.entries, id)
     }
 
     fn append(&self, entry: &Entry) -> std::io::Result<()> {
@@ -192,6 +266,12 @@ impl Journal {
 
         let _lock = FileLock::acquire(&file)?;
 
+        // سقفٌ على الملف نفسه لا على الذاكرة وحدها: بلا هذا ينمو `runs.jsonl`
+        // ما دام التطبيق مثبَّتًا، وليس في حدّ IPC أمرٌ يمسحه.
+        if file.metadata()?.len() > self.max_bytes {
+            compact(&mut file, self.retained)?;
+        }
+
         let mut line = Vec::with_capacity(256);
         // سطر سابق مبتور (انهيار في منتصف كتابة) لا يبتلع قيدنا.
         if needs_leading_newline(&mut file)? {
@@ -204,6 +284,90 @@ impl Journal {
         file.write_all(&line)?;
         file.flush()
     }
+}
+
+fn produced_in(entries: &[Entry], id: &str) -> Option<String> {
+    entries.iter().rev().find_map(|e| match &e.state {
+        State::Succeeded { produced: Some(p) } if e.id == id => Some(p.clone()),
+        _ => None,
+    })
+}
+
+/// يقلّم نافذة الذاكرة على مستويين.
+///
+/// المستوى الأول يخصّ `planned` وحدها لأنها معاينات لا أحداث، والثاني هو
+/// السقف العامّ. ترتيبهما مقصود: تُطرح المعاينات القديمة أولًا، فلا يدفع
+/// تشغيلٌ منتهٍ ثمن ضغطات المفاتيح.
+fn trim(entries: &mut Vec<Entry>, max_recent: usize) {
+    let planned = entries.iter().filter(|e| matches!(e.state, State::Planned)).count();
+    if planned > MAX_RECENT_PLANNED {
+        let mut excess = planned - MAX_RECENT_PLANNED;
+        entries.retain(|e| {
+            if excess > 0 && matches!(e.state, State::Planned) {
+                excess -= 1;
+                false
+            } else {
+                true
+            }
+        });
+    }
+    let overflow = entries.len().saturating_sub(max_recent);
+    if overflow > 0 {
+        entries.drain(0..overflow);
+    }
+}
+
+/// يضغط ملف السجل في مكانه: يُبقي آخر `retained` قيدًا سليمًا ويطرح ما قبلها.
+///
+/// في المكان لا بملف جانبي ثم `rename`: القفل الذي نحمله هو قفل هذا الـ inode،
+/// و`rename` كان سيتركنا نحرس inode مهجورًا بينما تكتب عمليةٌ أخرى في الملف
+/// الجديد بلا قفل — أي أن البديل «الأأمن ضدّ الانهيار» يشتري الأمان بكسر
+/// التسلسل بين العمليات الذي يقوم عليه هذا الملف. والضغط يطرح أيضًا الأسطر
+/// المعطوبة، فالانهيار القديم لا يُورَّث إلى الأبد.
+///
+/// والمعاينات تُطرح قبل غيرها، للسبب نفسه الذي يحكم نافذة الذاكرة: الملف هو
+/// ما ترجع إليه `produced_for` حين تخرج التشغيلة من النافذة، فلو ملأته
+/// المعاينات لصار الرجوع إليه بلا فائدة.
+fn compact(file: &mut std::fs::File, retained: usize) -> std::io::Result<()> {
+    file.seek(SeekFrom::Start(0))?;
+    let mut raw = Vec::new();
+    file.read_to_end(&mut raw)?;
+
+    let mut kept: Vec<(&[u8], bool)> = raw
+        .split(|b| *b == b'\n')
+        .filter_map(|line| match serde_json::from_slice::<Entry>(line) {
+            Ok(entry) => Some((line, matches!(entry.state, State::Planned))),
+            Err(_) => None,
+        })
+        .collect();
+
+    let planned_budget = retained / 5;
+    let planned = kept.iter().filter(|(_, is_planned)| *is_planned).count();
+    if planned > planned_budget {
+        let mut excess = planned - planned_budget;
+        kept.retain(|(_, is_planned)| {
+            if excess > 0 && *is_planned {
+                excess -= 1;
+                false
+            } else {
+                true
+            }
+        });
+    }
+    if kept.len() > retained {
+        kept.drain(0..kept.len() - retained);
+    }
+
+    let mut out = Vec::new();
+    for (line, _) in kept {
+        out.extend_from_slice(line);
+        out.push(b'\n');
+    }
+
+    file.set_len(0)?;
+    // الواصف مفتوح بـ `O_APPEND`، والنهاية صارت صفرًا، فالكتابة تبدأ من أوّله.
+    file.write_all(&out)?;
+    file.flush()
 }
 
 /// هل ينتهي الملف بمحتوى بلا فاصل أسطر؟
@@ -252,18 +416,24 @@ pub struct ReadResult {
 ///
 /// سطرٌ لا يُحلَّل يُعدّ ولا يوقف القراءة. الغرض ألّا يُفقد السجلّ كله بسبب
 /// انقطاع في اللحظة الخطأ.
+///
+/// والقراءة **بايتات لا نصًّا**: `read_to_string` كان يفشل على الملف كلّه إن
+/// وُجد فيه بايت واحد غير صالح. وبتر السطر في منتصف حرف عربي — وحروف مسارات
+/// المستخدم عربية غالبًا، وكلّ منها بايتان — ينتج بالضبط هذا البايت. أي أن
+/// الانهيار الذي وعد رأس الملف بأن يكلّف حدثًا واحدًا كان يكلّف السجلّ كلّه،
+/// وإلى الأبد: القيود التالية تُلحق بملف صار غير مقروء أصلًا.
 pub fn read_all(path: &Path) -> std::io::Result<ReadResult> {
-    let text = match std::fs::read_to_string(path) {
-        Ok(t) => t,
+    let raw = match std::fs::read(path) {
+        Ok(b) => b,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(ReadResult::default()),
         Err(e) => return Err(e),
     };
     let mut out = ReadResult::default();
-    for line in text.lines() {
-        if line.trim().is_empty() {
+    for line in raw.split(|b| *b == b'\n') {
+        if line.iter().all(|b| b.is_ascii_whitespace()) {
             continue;
         }
-        match serde_json::from_str::<Entry>(line) {
+        match serde_json::from_slice::<Entry>(line) {
             Ok(e) => out.entries.push(e),
             Err(_) => out.damaged += 1,
         }
@@ -471,6 +641,137 @@ mod tests {
         }
         assert_eq!(j.recent().len(), 200);
         assert_eq!(j.recent().first().unwrap().id, "300", "oldest entries drop first");
+    }
+
+    #[test]
+    fn a_restart_finds_the_journal_where_it_left_it() {
+        // الأثر القابل للمراجعة يعني: بعد إغلاق التطبيق وفتحه. النسخة السابقة
+        // كانت تكتب الملف ثم تبدأ الجلسة التالية بنافذة فارغة، فتعرض شاشة
+        // السجل «لا تشغيلات» وملفُّ القرص يحمل التاريخ كاملًا.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("runs.jsonl");
+
+        let first = Journal::new(Some(path.clone()));
+        first.record(entry("abc", State::Planned));
+        first
+            .record(entry("abc", State::Succeeded { produced: Some("/Users/x/أرشيف.zip".into()) }));
+        drop(first);
+
+        let after_restart = Journal::new(Some(path));
+        assert_eq!(after_restart.recent().len(), 2, "the run log must survive a restart");
+        assert_eq!(
+            after_restart.produced_for("abc").as_deref(),
+            Some("/Users/x/أرشيف.zip"),
+            "and reveal must still know what that run produced"
+        );
+    }
+
+    #[test]
+    fn a_line_torn_inside_an_arabic_character_costs_one_line_not_the_history() {
+        // البتر عند بايت ASCII هو الحالة السهلة. الحالة الواقعية أن المسار
+        // عربي، فكل حرف بايتان، والقطع يقع داخل الحرف أكثر مما يقع بينه.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("runs.jsonl");
+        let j = Journal::new(Some(path.clone()));
+        j.record(entry("1", State::Succeeded { produced: Some("/Users/x/أ.zip".into()) }));
+        j.record(entry("2", State::Cancelled));
+        drop(j);
+
+        // انهيار في منتصف كتابة القيد الثالث، والقطع داخل حرف عربي:
+        // 0xD9 أول بايتَي «م» بلا ثانيهما.
+        let mut f = std::fs::OpenOptions::new().append(true).open(&path).unwrap();
+        f.write_all(b"{\"id\":\"3\",\"op_id\":\"c\",\"program\":\"/Users/x/\xd9").unwrap();
+        drop(f);
+
+        let read = read_all(&path).unwrap();
+        assert_eq!(read.damaged, 1, "one torn line must cost one line");
+        assert_eq!(read.entries.len(), 2, "and the intact history must survive it");
+
+        let after_restart = Journal::new(Some(path));
+        assert_eq!(after_restart.recent().len(), 2);
+        assert_eq!(after_restart.produced_for("1").as_deref(), Some("/Users/x/أ.zip"));
+    }
+
+    #[test]
+    fn plan_previews_never_evict_a_run_that_just_finished() {
+        // بلا قرص: الاختبار على النافذة وحدها، كي لا يسترها الرجوع إلى الملف.
+        let j = Journal::new(None);
+        j.record(entry("done", State::Succeeded { produced: Some("/Users/x/أرشيف.zip".into()) }));
+        // تعديل اسم ملف واحد على واجهة تعيد التخطيط كل ٢٥٠ مِلّي ثانية.
+        for i in 0..400 {
+            j.record(entry(&format!("preview-{i}"), State::Planned));
+        }
+
+        assert_eq!(
+            j.produced_for("done").as_deref(),
+            Some("/Users/x/أرشيف.zip"),
+            "keystrokes must not revoke reveal for a run whose archive is still on disk"
+        );
+        let planned = j.recent().iter().filter(|e| matches!(e.state, State::Planned)).count();
+        assert!(planned <= MAX_RECENT_PLANNED, "previews are bounded on their own: {planned}");
+    }
+
+    #[test]
+    fn compaction_drops_previews_before_it_drops_a_finished_run() {
+        // الملف هو ما ترجع إليه `produced_for` بعد خروج التشغيلة من النافذة.
+        // ضغطٌ يُبقي آخر ما كُتب فحسب كان سيملأه بالمعاينات ويُفرغه من معناه.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("runs.jsonl");
+        let j = Journal::with_limits(Some(path.clone()), 8, 6_000, 40);
+        j.record(entry("done", State::Succeeded { produced: Some("/Users/x/أرشيف.zip".into()) }));
+        for i in 0..400 {
+            j.record(entry(&format!("preview-{i}"), State::Planned));
+        }
+
+        assert!(std::fs::metadata(&path).unwrap().len() <= 6_000 + 1_024);
+        assert_eq!(
+            j.produced_for("done").as_deref(),
+            Some("/Users/x/أرشيف.zip"),
+            "a finished run must outlive the keystrokes that followed it"
+        );
+    }
+
+    #[test]
+    fn a_run_pushed_out_of_the_window_is_still_resolvable_from_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("runs.jsonl");
+        let j = Journal::with_limits(Some(path), 8, MAX_JOURNAL_BYTES, RETAINED_ENTRIES);
+        j.record(entry("done", State::Succeeded { produced: Some("/Users/x/أرشيف.zip".into()) }));
+        for i in 0..50 {
+            j.record(entry(&format!("later-{i}"), State::Running));
+        }
+
+        assert!(
+            !j.recent().iter().any(|e| e.id == "done"),
+            "the window must really have dropped it, or the test proves nothing"
+        );
+        assert_eq!(
+            j.produced_for("done").as_deref(),
+            Some("/Users/x/أرشيف.zip"),
+            "a bounded window may not shrink what the user can reveal"
+        );
+    }
+
+    #[test]
+    fn the_file_is_compacted_once_it_passes_its_declared_ceiling() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("runs.jsonl");
+        // حدود مصغّرة: الدوران سلوكٌ يُختبر بحدّ صغير لا بكتابة ميغابايت.
+        let j = Journal::with_limits(Some(path.clone()), 200, 8_000, 10);
+        for i in 0..200 {
+            j.record(entry(&i.to_string(), State::Running));
+        }
+
+        let size = std::fs::metadata(&path).unwrap().len();
+        assert!(size <= 8_000 + 1_024, "the journal file must stay bounded, it is {size} bytes");
+
+        let read = read_all(&path).unwrap();
+        assert_eq!(read.damaged, 0, "compaction must not tear a line");
+        assert_eq!(
+            read.entries.last().unwrap().id,
+            "199",
+            "compaction drops the oldest, never the newest"
+        );
     }
 
     #[test]

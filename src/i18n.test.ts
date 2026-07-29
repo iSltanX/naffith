@@ -6,13 +6,19 @@
  *
  * هذا الاختبار يقرأ مصدر Rust نفسه ويستخرج كل مفتاح يمكن أن يصدر عنه، ثم
  * يتأكّد أن لكلٍّ ترجمة. لا قائمة يدوية تتقادم — المصدر هو المرجع.
+ *
+ * والاتجاه الثاني مثله: الواجهة تطلب مفاتيح لا تصدر عن النواة أصلًا
+ * (`summary.*` و`nav.*` و`action.*`)، فحراسةُ اتجاهٍ واحد تترك نصفَ العقد بلا
+ * حارس — وهذا ما أوقع `summary.estimate.entries` معروضًا بحروف لاتينية داخل
+ * واجهة عربية. لذا يُمسح مصدر الواجهة أيضًا أدناه.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { AR, errorText, t } from './i18n';
 
 const CORE_SRC = new URL('../src-tauri/src', import.meta.url).pathname;
+const APP_SRC = new URL('.', import.meta.url).pathname;
 
 function rustSources(dir: string): string[] {
   return readdirSync(dir).flatMap((entry) => {
@@ -142,6 +148,145 @@ describe('قاموس الواجهة', () => {
     // نصٌّ يبدأ بـ `err.` أو `explain.` يعني أن أحدهم نسخ المفتاح في مكان النص.
     const suspicious = Object.entries(AR).filter(([, v]) => /^(err|warn|explain|op)\./.test(v));
     expect(suspicious).toEqual([]);
+  });
+});
+
+// ── الاتجاه الثاني: ما تطلبه الواجهة ───────────────────────────────────
+
+/** ملفات الواجهة عدا الاختبارات: الاختبارات تذكر مفاتيح غائبة عمدًا. */
+function frontendSources(dir: string): string[] {
+  return readdirSync(dir).flatMap((entry) => {
+    const full = join(dir, entry);
+    if (statSync(full).isDirectory()) return frontendSources(full);
+    if (/\.test\.tsx?$/.test(entry)) return [];
+    return /\.tsx?$/.test(entry) ? [full] : [];
+  });
+}
+
+/** شكل المفتاح: مقطعان لاتينيان فأكثر. يفصل المفاتيح عن بقية النصوص. */
+const KEY_SHAPE = /^[a-z][a-z0-9_]*(?:\.[a-z0-9_]+)+$/;
+
+/**
+ * نصّ وسائط النداء الذي قوسه عند `open`، بموازنة الأقواس.
+ *
+ * لا يكفي التقاط `t('key')` بتعبير نمطي واحد: في `naffith.tsx` نداءٌ وسيطُه
+ * شرطيّ يمتدّ على أسطر — `t(complete ? 'a' : 'b')` — ومفتاحاه معًا مطلوبان.
+ */
+function argsAt(text: string, open: number): string {
+  let depth = 0;
+  for (let i = open; i < text.length; i += 1) {
+    if (text[i] === '(') depth += 1;
+    else if (text[i] === ')') {
+      depth -= 1;
+      if (depth === 0) return text.slice(open + 1, i);
+    }
+  }
+  return '';
+}
+
+/**
+ * طلبُ ترجمة واحد.
+ *
+ * `all`: نداء `t` — كل مفتاح في وسيطه معروضٌ في حالةٍ ما، فكلٌّ مطلوب.
+ * `any`: نداء `tFirst` — عقدُه «أوّل موجودٍ يفوز، وآخرُ السلسلة هو المعروض
+ * حين تغيب كلها»، فيكفي وجود واحد. اشتراط الكل كان سيرفض السلسلة
+ * `[field.<op>.<input>.label, field.<input>.label]` التي تبنيها `fieldKeys`
+ * في `operations.ts`: أوّلها تخصيصٌ اختياري لا يُكتب إلا عند الحاجة.
+ */
+type Request = { keys: string[]; any: boolean; where: string };
+
+function requestsFromUi(): Request[] {
+  const out: Request[] = [];
+  for (const file of frontendSources(APP_SRC)) {
+    const text = readFileSync(file, 'utf8');
+    const where = relative(APP_SRC, file);
+    // ‏`(?<![\w$.])` يمنع التقاط `errorText(` و`.t(` ونحوهما.
+    for (const call of text.matchAll(/(?<![\w$.])(t|tFirst)\(/g)) {
+      const open = (call.index ?? 0) + call[0].length - 1;
+      const args = argsAt(text, open);
+      // مفتاحٌ يُبنى وقت التشغيل (قالبٌ نصّي أو متغيّر) لا يُقرأ من المصدر.
+      // تخطّيه هنا مقصود، وعائلاته المغلقة تُفتح في الاختبار الذي يليه —
+      // فلا يمرّ هذا الفحص فارغًا من ناحيتها.
+      if (args.includes('`')) continue;
+      const keys = [...args.matchAll(/['"]([^'"]+)['"]/g)]
+        .map((m) => m[1] as string)
+        .filter((k) => KEY_SHAPE.test(k));
+      if (keys.length > 0) out.push({ keys, any: call[1] === 'tFirst', where });
+    }
+  }
+  return out;
+}
+
+describe('مفاتيح تطلبها الواجهة', () => {
+  it('يستخرج مفاتيح فعلية من مصدر الواجهة', () => {
+    // حارس على الحارس: تعبيرٌ نمطيّ معطوب يجعل الفحص التالي يمرّ بلا أن يفحص.
+    const keys = new Set(requestsFromUi().flatMap((r) => r.keys));
+    expect(keys.size).toBeGreaterThan(20);
+    expect(keys.has('summary.estimate.entries')).toBe(true);
+    expect(keys.has('summary.estimate.partial')).toBe(true);
+    expect(keys.has('action.execute')).toBe(true);
+  });
+
+  it('يترجم كل مفتاح ثابت تطلبه الواجهة', () => {
+    const missing = new Set<string>();
+    for (const req of requestsFromUi()) {
+      if (req.any) {
+        if (!req.keys.some((k) => k in AR)) missing.add(`${req.where}: ${req.keys.join(' ← ')}`);
+      } else {
+        for (const key of req.keys) if (!(key in AR)) missing.add(`${req.where}: ${key}`);
+      }
+    }
+    const list = [...missing].sort();
+    expect(list, `مفاتيح تطلبها الواجهة بلا ترجمة: ${list.join('، ')}`).toEqual([]);
+  });
+
+  it('يترجم كل عائلة مفاتيح تبنيها الواجهة وقت التشغيل', () => {
+    // القوالب النصّية يتخطّاها المسح أعلاه، فتُفتح هنا بمتغيّراتها مقروءةً من
+    // المصدر لا مكتوبةً يدويًا — قائمةٌ يدوية تتقادم بصمت.
+    //
+    // ‏`summary.conflict.*` مفتوحةٌ في اختبار سياسة التضارب أعلاه.
+    // ‏`log.state.*` و`op.*.title` في `run-log.tsx` تأتيان من سجلّ النواة،
+    // والأولى مغلقة فتُفتح هنا؛ والثانية مفتوحة عمدًا لأن السجل قد يحمل عملية
+    // لا تعرفها هذه النسخة، ولهذا يقارن `run-log.tsx` النصّ بالمفتاح نفسه.
+    const families: Array<{ variants: string[]; keys: (v: string) => string[] }> = [];
+
+    // أسباب المغادرة: `ExitCost` بلا `free` — «بلا كلفة» لا حوار له.
+    const nav = readFileSync(join(APP_SRC, 'nav.ts'), 'utf8');
+    const costBody = nav.slice(nav.indexOf('export type ExitCost'));
+    families.push({
+      variants: [...costBody.slice(0, costBody.indexOf(';')).matchAll(/\|\s*'([a-z_]+)'/g)]
+        .map((m) => m[1] as string)
+        .filter((c) => c !== 'free'),
+      keys: (v) => ['title', 'body', 'stay', 'leave'].map((p) => `nav.leave.${v}.${p}`),
+    });
+
+    // خطوات الترحيب: `STEPS` في `onboarding.tsx`.
+    const onboarding = readFileSync(join(APP_SRC, 'onboarding.tsx'), 'utf8');
+    const stepsBody = onboarding.slice(onboarding.indexOf('const STEPS'));
+    families.push({
+      variants: [...stepsBody.slice(0, stepsBody.indexOf(']')).matchAll(/'([a-z0-9_]+)'/g)].map(
+        (m) => m[1] as string,
+      ),
+      keys: (v) => ['title', 'body'].map((p) => `onboarding.${v}.${p}`),
+    });
+
+    // حالات السجل: `State` في `journal.rs`، وserde يكتبها snake_case.
+    const journal = readFileSync(join(CORE_SRC, 'journal.rs'), 'utf8');
+    const stateBody = journal.slice(journal.indexOf('pub enum State {'));
+    families.push({
+      variants: [...stateBody.slice(0, stateBody.indexOf('\n}')).matchAll(/^ {4}(\w+)\s*[,{]/gm)]
+        .map((m) => (m[1] as string).replace(/(?<!^)([A-Z])/g, '_$1').toLowerCase()),
+      keys: (v) => [`log.state.${v}`],
+    });
+
+    for (const family of families) {
+      expect(family.variants.length, 'لم تُقرأ متغيّرات العائلة من المصدر').toBeGreaterThan(1);
+      for (const variant of family.variants) {
+        for (const key of family.keys(variant)) {
+          expect(key in AR, `${key} غير مترجم`).toBe(true);
+        }
+      }
+    }
   });
 });
 

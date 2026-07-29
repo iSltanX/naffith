@@ -66,18 +66,13 @@ describe('الترحيب', () => {
   });
 
   /**
-   * عيبٌ مرصود لا سلوكٌ مطلوب — ولذلك `it.fails`.
+   * يحرس أن يبقى الترحيب مغلقًا: من `onboarding` لا وجهة إلا `onboarding.finished`.
    *
-   * تعليق `backTarget` يقول إن الترحيب «يُغادَر بابدأ الآن لا بالرجوع»، لكن
-   * `destination` لا تحرس إلا الرجوع: `settings.opened` و`log.opened`
-   * و`operation.selected` تُخرج من الترحيب إلى داخل التطبيق قبل إتمامه، فيبقى
-   * الإعداد «لم يُتمّ» ويعود الترحيب في التشغيل القادم بلا سبب مفهوم للمستخدم.
-   * الحارس الصحيح: من `onboarding` لا وجهة إلا `onboarding.finished`.
-   *
-   * حين يُسدّ العيب سيصير هذا الاختبار ناجحًا، فيسقط بوصفه `it.fails` — وهذا
-   * هو المقصود: إشارةٌ صريحة إلى تحويله إلى `it` عاديًّا.
+   * `settings.opened` و`log.opened` و`operation.selected` لو أخرجت من الترحيب
+   * إلى داخل التطبيق قبل إتمامه لبقي الإعداد «لم يُتمّ»، فيعود الترحيب في
+   * التشغيل القادم بلا سبب مفهوم للمستخدم.
    */
-  it.fails('الترحيب مغلق: لا يُغادَر بحدثٍ آخر', () => {
+  it('الترحيب مغلق: لا يُغادَر بحدثٍ آخر', () => {
     expect(navigate(ONBOARDING, { type: 'settings.opened' })).toEqual({ kind: 'ignore' });
     expect(navigate(ONBOARDING, { type: 'log.opened' })).toEqual({ kind: 'ignore' });
     expect(navigate(ONBOARDING, { type: 'operation.selected', opId: 'x.y' })).toEqual({

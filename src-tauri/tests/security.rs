@@ -67,14 +67,82 @@ fn compress_inputs(source: &Path, destination: &Path, name: &str) -> BTreeMap<St
 
 // ── ١. الواجهة لا تستطيع التعبير عن أمر ────────────────────────────────
 
-/// حارس بنيوي: يقرأ مصدر حدّ IPC ويثبت أن لا أمر يقبل برنامجًا أو وسائط.
+/// السمة كما تُطابَق: **بادئة** لا حرفًا مغلقًا.
+///
+/// كانت الحرّاس تطابق `#[tauri::command]` بقوسه المغلق، و`#[tauri::command(
+/// rename_all = "snake_case")]` صيغة قياسية في Tauri لا تطابقها. أمرٌ مكتوب
+/// بالصيغة ذات الخيارات كان يمرّ من تحت كل حارس في هذا الملف وهو يعلن
+/// `program` و`args` و`cwd` صراحةً.
+const COMMAND_ATTRIBUTE: &str = "#[tauri::command";
+
+fn manifest_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+}
+
+/// كل ملفات `src/` مقروءة، لا `lib.rs` وحده.
+///
+/// `include_str!("../src/lib.rs")` كان يجعل الحرّاس عمياء عن أبسط إعادة
+/// تنظيم: `pub mod backdoor;` ثم `backdoor::run_raw` في `generate_handler!`.
+/// الماكرو يقبل مسارًا مؤهَّلًا بوحدة، فالأمر يُسجَّل ولا يراه أي حارس.
+fn source_files() -> Vec<(PathBuf, String)> {
+    fn walk(dir: &Path, out: &mut Vec<(PathBuf, String)>) {
+        let mut entries: Vec<PathBuf> =
+            std::fs::read_dir(dir).unwrap().map(|e| e.unwrap().path()).collect();
+        entries.sort();
+        for path in entries {
+            if path.is_dir() {
+                walk(&path, out);
+            } else if path.extension().is_some_and(|e| e == "rs") {
+                let text = std::fs::read_to_string(&path).unwrap();
+                out.push((path, text));
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(&manifest_dir().join("src"), &mut out);
+    assert!(out.len() > 1, "the source walk found nothing — the guards below would be vacuous");
+    out
+}
+
+/// توقيع كل دالة تحمل سمة أمر، في كل ملف مصدر.
+///
+/// التوقيع يمتدّ من السمة إلى أول `{`، أي جسم الدالة.
+fn command_signatures() -> Vec<(PathBuf, String)> {
+    let mut out = Vec::new();
+    for (path, src) in source_files() {
+        for (idx, _) in src.match_indices(COMMAND_ATTRIBUTE) {
+            let sig_end = src[idx..].find('{').map(|e| idx + e).unwrap_or(src.len());
+            out.push((path.clone(), src[idx..sig_end].replace('\n', " ")));
+        }
+    }
+    out
+}
+
+/// أسماء الأوامر كما هي **مسجَّلة** في `generate_handler!`.
+///
+/// هذه هي القائمة الموثوقة: ما ليس فيها لا تصل إليه الواجهة مهما حمل من
+/// سمات، وما فيها يصل مهما كُتب أو أين وُضع. عدّ السمات وحده كان يقيس
+/// الشيء الخطأ.
+fn registered_commands() -> Vec<String> {
+    let src = std::fs::read_to_string(manifest_dir().join("src/lib.rs")).unwrap();
+    let start = src.find("generate_handler![").expect("the handler list must exist");
+    let open = start + "generate_handler![".len();
+    let close = open + src[open..].find(']').expect("unterminated handler list");
+    src[open..close]
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+/// حارس بنيوي: لا أمر يقبل برنامجًا أو وسائط.
 ///
 /// اختبار سلوكي لا يمكنه إثبات غياب شيء؛ هذا يثبته. إن أضاف أحدهم لاحقًا
-/// `#[tauri::command] fn run_raw(argv: Vec<String>)` يسقط البناء هنا.
+/// `fn run_raw(argv: Vec<String>)` بسمة أمر — في أي ملف، وبأي صيغة للسمة —
+/// يسقط البناء هنا.
 #[test]
 fn no_ipc_command_accepts_a_program_or_arguments() {
-    let src = include_str!("../src/lib.rs");
-
     let forbidden = [
         "argv",
         "args:",
@@ -89,14 +157,10 @@ fn no_ipc_command_accepts_a_program_or_arguments() {
     ];
 
     let mut offenders = Vec::new();
-    for (idx, _) in src.match_indices("#[tauri::command]") {
-        // توقيع الدالة يقع بعد السمة مباشرة وينتهي عند أول `{`.
-        let rest = &src[idx..];
-        let sig_end = rest.find('{').map(|e| idx + e).unwrap_or(src.len());
-        let signature = &src[idx..sig_end];
+    for (path, signature) in command_signatures() {
         for needle in forbidden {
             if signature.contains(needle) {
-                offenders.push(format!("`{needle}` in: {}", signature.replace('\n', " ")));
+                offenders.push(format!("`{needle}` in {}: {signature}", path.display()));
             }
         }
     }
@@ -114,37 +178,94 @@ fn no_ipc_command_accepts_a_program_or_arguments() {
 /// مباشرة كان سيتجاوز ذلك كلّه.
 #[test]
 fn no_ipc_command_accepts_a_bare_path() {
-    let src = include_str!("../src/lib.rs");
     let mut offenders = Vec::new();
-    for (idx, _) in src.match_indices("#[tauri::command]") {
-        let rest = &src[idx..];
-        let sig_end = rest.find('{').map(|e| idx + e).unwrap_or(src.len());
-        let signature = &src[idx..sig_end];
+    for (path, signature) in command_signatures() {
         for needle in ["path:", "PathBuf", "dir:", "file:", "target:", "source:"] {
             if signature.contains(needle) {
-                offenders.push(format!("`{needle}` in: {}", signature.replace('\n', " ")));
+                offenders.push(format!("`{needle}` in {}: {signature}", path.display()));
             }
         }
     }
     assert!(offenders.is_empty(), "an IPC command takes a raw path:\n{}", offenders.join("\n"));
 }
 
+/// القائمة المسجَّلة هي الحدّ، وهي ستة بالاسم.
 #[test]
-fn the_ipc_surface_is_exactly_the_six_declared_commands() {
-    let src = include_str!("../src/lib.rs");
-    let count = src.matches("#[tauri::command]").count();
+fn the_ipc_surface_is_exactly_the_six_registered_commands() {
     assert_eq!(
-        count, 6,
+        registered_commands(),
+        vec!["list_operations", "plan", "execute", "cancel", "recent_runs", "reveal"],
         "the IPC surface changed. Every command is attack surface — \
          update this test deliberately, and say why in the commit.\n\
          M1 raised this from 5 to 6 by adding `reveal`, whose only parameter is a run id: \
          the core looks the produced path up in its own journal, so the frontend still \
          cannot express a path. The alternative (an opener plugin) would have given it one."
     );
-    for expected in
-        ["fn list_operations", "fn plan", "fn execute", "fn cancel", "fn recent_runs", "fn reveal"]
-    {
-        assert!(src.contains(expected), "missing expected command: {expected}");
+}
+
+/// كل أمر معلَن يقع في `lib.rs` وحده.
+///
+/// بلا هذا يظلّ الحدّ قابلًا للتوسّع بملف جديد: الماكرو يقبل `backdoor::run_raw`
+/// بلا اعتراض، وكل الحرّاس البنيوية هنا تقرأ ما تعرف مكانه. حصر الإعلان في
+/// ملفٍ واحد هو ما يجعل «اقرأ حدّ IPC» جملةً لها معنى.
+#[test]
+fn every_command_is_declared_in_the_ipc_boundary_file() {
+    let mut elsewhere = Vec::new();
+    let mut in_lib = 0;
+    for (path, src) in source_files() {
+        let count = src.matches(COMMAND_ATTRIBUTE).count();
+        if count == 0 {
+            continue;
+        }
+        if path.ends_with("lib.rs") {
+            in_lib = count;
+        } else {
+            elsewhere.push(format!("{} declares {count} command(s)", path.display()));
+        }
+    }
+    assert!(
+        elsewhere.is_empty(),
+        "a Tauri command is declared outside the IPC boundary file:\n{}",
+        elsewhere.join("\n")
+    );
+    assert_eq!(
+        in_lib,
+        registered_commands().len(),
+        "lib.rs declares {in_lib} commands but registers {} — every declared command must be \
+         accounted for, and every registered one must be visible to the guards in this file",
+        registered_commands().len()
+    );
+}
+
+/// لا قفلٍ في حدّ IPC يُترجَم إلى خطأ في المجال.
+///
+/// كان كل موضع يكتب `.lock().map_err(|_| CoreError::PlanNotFound)`، فذعرٌ
+/// واحد يسمّم القفل ويصير كل تخطيط بعده «الخطة غير موجودة» إلى نهاية الجلسة:
+/// عطبٌ دائم يُبلَّغ عنه بخطأ كاذب. التعافي مركزيّ الآن في `recover`، وهذا
+/// الحارس يمنع عودة النمط بالسهو.
+#[test]
+fn no_lock_failure_is_reported_as_a_domain_error() {
+    let src = std::fs::read_to_string(manifest_dir().join("src/lib.rs")).unwrap();
+    assert!(
+        !src.contains(".lock().map_err"),
+        "a poisoned lock must be recovered, not translated into a plan or run error — \
+         a transient panic would otherwise brick planning for the rest of the session"
+    );
+}
+
+/// وكل اسم مسجَّل له دالة بذلك الاسم.
+#[test]
+fn every_registered_command_names_a_function_in_the_boundary_file() {
+    let src = std::fs::read_to_string(manifest_dir().join("src/lib.rs")).unwrap();
+    for name in registered_commands() {
+        assert!(
+            !name.contains("::"),
+            "`{name}` is registered through a module path, which puts it outside the guards"
+        );
+        assert!(
+            src.contains(&format!("fn {name}(")),
+            "registered command `{name}` has no function"
+        );
     }
 }
 
@@ -174,26 +295,75 @@ fn reveal_takes_only_a_run_id() {
     }
 }
 
-/// الإضافة الوحيدة خارج النواة هي حوار اختيار مجلد. هذا الاختبار يثبّت
-/// صلاحياتها كي لا تتوسّع بالسهو إلى الحفظ أو الرسائل أو نظام الملفات.
+/// الإضافة الوحيدة خارج النواة هي حوار الفتح. هذا الاختبار يثبّت الصلاحيات
+/// **المحلولة** كي لا تتوسّع بالسهو إلى الحفظ أو النوافذ أو نظام الملفات.
+///
+/// قراءة `default.json` وحده كانت تكذب: `tauri-build` يجمع
+/// `capabilities/**/*` كلّه، فملفٌ ثانٍ يمنح
+/// `core:webview:allow-create-webview-window` — أي نافذة عرض على عنوان
+/// اعتباطي، وهي قناة تسريب تلتفّ حول `default-src 'self'` — كان يمرّ والاختبار
+/// أخضر. الملف المحلول في `gen/schemas` هو ما يُبنى منه التطبيق فعلًا.
 #[test]
-fn the_capability_file_grants_nothing_beyond_the_folder_picker() {
-    let capability = include_str!("../capabilities/default.json");
-    let parsed: serde_json::Value = serde_json::from_str(capability).unwrap();
-    let granted: Vec<&str> =
-        parsed["permissions"].as_array().unwrap().iter().map(|p| p.as_str().unwrap()).collect();
+fn the_resolved_capability_set_grants_nothing_beyond_the_open_dialog() {
+    let path = manifest_dir().join("gen/schemas/capabilities.json");
+    let resolved = std::fs::read_to_string(&path).unwrap_or_else(|e| {
+        panic!("{} is written by tauri-build; build the crate before testing: {e}", path.display())
+    });
+
+    let parsed: serde_json::Value = serde_json::from_str(&resolved).unwrap();
+    let mut granted: Vec<&str> = parsed
+        .as_object()
+        .expect("the resolved file is a map of capability id to capability")
+        .values()
+        .flat_map(|cap| cap["permissions"].as_array().unwrap())
+        .map(|p| p.as_str().unwrap())
+        .collect();
+    granted.sort_unstable();
 
     assert_eq!(
         granted,
         vec!["core:default", "dialog:allow-open"],
-        "the capability set changed. Every permission is attack surface — widen it deliberately."
+        "the resolved capability set changed. Every permission is attack surface — \
+         widen it deliberately."
     );
-    for banned in ["fs:", "shell:", "http:", "process:", "dialog:allow-save", "opener:"] {
-        assert!(
-            !capability.contains(banned),
-            "`{banned}` must never appear in the capability file"
-        );
+    for banned in [
+        "fs:",
+        "shell:",
+        "http:",
+        "process:",
+        "dialog:allow-save",
+        "opener:",
+        "allow-create-webview",
+        "core:window:allow-create",
+    ] {
+        assert!(!resolved.contains(banned), "`{banned}` must never appear in the resolved ACL");
     }
+}
+
+/// ولا ملف صلاحيات ثانٍ أصلًا.
+///
+/// الاختبار السابق يمسك التوسّع بعد البناء؛ هذا يمسكه في المصدر، ويجعل جملة
+/// «الصلاحيات في ملف واحد» صحيحة بدل أن تكون عادةً.
+///
+/// الفرز بالامتداد لا بالنقطة البادئة: جرّبتُ `capabilities/.sneaky.json`
+/// فوجدته يُمنح كاملًا في المجموعة المحلولة، بينما `.DS_Store` — لا امتداد
+/// له — يتجاهله `tauri-build`. استثناء الملفات المخفيّة كان سيفتح ثغرة،
+/// واستثناء عديم الامتداد يمنع فشلًا كاذبًا لا يمنح شيئًا.
+#[test]
+fn the_capabilities_directory_holds_exactly_one_capability_file() {
+    let dir = manifest_dir().join("capabilities");
+    let mut names: Vec<String> = std::fs::read_dir(&dir)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| p.extension().is_some_and(|e| e == "json" || e == "json5" || e == "toml"))
+        .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    assert_eq!(
+        names,
+        vec!["default.json"],
+        "tauri-build globs capabilities/**/* — anything parseable here is granted"
+    );
 }
 
 // ── ٢. الفهرس والسياسة ─────────────────────────────────────────────────

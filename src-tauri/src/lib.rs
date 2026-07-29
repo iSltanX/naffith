@@ -68,6 +68,77 @@ impl AppState {
     }
 }
 
+/// قفلٌ يتعافى من التسميم بدل أن يترجمه إلى خطأ في المجال.
+///
+/// كان كل موضع قفل هنا يكتب `map_err(|_| CoreError::PlanNotFound)`، فذعرٌ
+/// واحدٌ داخل المخطّط — أو داخل مهمة تشغيل تمسك القفل — يسمّم `Mutex` إلى
+/// الأبد، فيصير كل تخطيط لاحق «الخطة غير موجودة». عطبٌ دائم لسبب عابر،
+/// وأسوأ من ذلك أنه يكذب: الخطة موجودة، والقفل هو المكسور.
+///
+/// البديل المرفوض كان استيراد قفل لا يُسمَّم (`parking_lot`). اعتماد جديد
+/// كامل مقابل ما يفعله `clear_poison` في سطرين لا يستحق.
+///
+/// والتعافي آمن هنا لأن ما تحرسه هذه الأقفال بنى بيانات بسيطة: خريطة خطط
+/// وخريطة تشغيلات. أقصى ما يخلّفه ذعرٌ في منتصف عملية هو مدخلة ناقصة، لا
+/// بنية مكسورة.
+fn recover<T>(lock: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    lock.lock().unwrap_or_else(|poisoned| {
+        lock.clear_poison();
+        poisoned.into_inner()
+    })
+}
+
+/// يحرّر ما يحرسه مهما كان سبب الخروج — بما في ذلك فكّ المكدّس بعد ذعر.
+///
+/// حذف خانة التشغيل كان تعليمةً بعد `await`، فذعرٌ داخل المنفّذ يتخطّاها،
+/// وتبقى الخانة محجوزة إلى نهاية الجلسة. أربع حالات ذعر تستنفد
+/// `MAX_CONCURRENT_RUNS` فلا يعود المستخدم قادرًا على تشغيل شيء. `Drop`
+/// يعمل على مسار الفكّ أيضًا، وهذا كل الفرق.
+struct SlotGuard<F: FnMut()>(F);
+
+impl<F: FnMut()> Drop for SlotGuard<F> {
+    fn drop(&mut self) {
+        (self.0)();
+    }
+}
+
+/// يفحص حدّ التزامن ويستهلك الرمز ويحجز الخانة في قسم حرج **واحد**.
+///
+/// الترتيب مقصود بأكمله:
+///
+/// - الفحص قبل الاستهلاك. كان الرمز يُنتزع أولًا ثم يُرفض الطلب لبلوغ الحدّ،
+///   فتتلف خطةٌ صالحة لسبب لا علاقة له بها ويعيد المستخدم ملء النموذج كلّه.
+///   الرمز أحادي الاستخدام، فإتلافه عقوبةٌ على ازدحامٍ ليس من فعله.
+/// - قفلٌ واحد يمتدّ من الفحص إلى الإدراج. كان الفحص في قفل والإدراج في قفل
+///   آخر، فتشغيلان متزامنان يريان «ثلاثة» ثم يصيران خمسة.
+///
+/// مفصولة عن `execute` كي تُختبر بلا تشغيل تطبيق Tauri كامل.
+fn reserve_run(
+    runs: &Mutex<HashMap<String, Handle>>,
+    plans: &Mutex<PlanStore>,
+    session: &SessionId,
+    token: String,
+    cancel: oneshot::Sender<()>,
+) -> Result<plans::StoredPlan> {
+    let mut runs = recover(runs);
+    if runs.len() >= MAX_CONCURRENT_RUNS {
+        return Err(CoreError::PlanLimitReached);
+    }
+
+    // `take` أحادي الاستخدام: إعادة إرسال نفس الرمز تفشل هنا.
+    let stored = {
+        let mut store = recover(plans);
+        store.take(&PlanToken::from(token), session)?
+    };
+
+    // إعادة التحقّق من الشروط قبل الإطلاق مباشرة. الفجوة بين التخطيط والضغط
+    // على «نفّذ» فجوة حقيقية يمكن أن يُحذف فيها المصدر أو يظهر الاسم النهائي.
+    stored.verify_still_valid()?;
+
+    runs.insert(stored.id.clone(), Handle { cancel });
+    Ok(stored)
+}
+
 #[derive(Debug, Serialize, Clone)]
 pub struct RunStarted {
     pub run_id: String,
@@ -91,8 +162,12 @@ pub struct RunFinished {
 //  حدّ IPC — ستة أوامر. لا سابع.
 //
 //  لاحظ ما لا يوجد هنا: لا أمر يقبل `program`، ولا `args`، ولا `cwd`، ولا
-//  سلسلة أمر، ولا **مسارًا** خارج مدخلات عملية موصوفة. اختبار في
-//  tests/security.rs يثبّت هذه القائمة كي لا تتوسّع بالسهو.
+//  سلسلة أمر، ولا **مسارًا** خارج مدخلات عملية موصوفة. اختبارات في
+//  tests/security.rs تثبّت هذه القائمة كي لا تتوسّع بالسهو، وهي تقرأ قائمة
+//  `generate_handler!` نفسها لا عدد السمات: التسجيل هو الحدّ، والسمة مجرد
+//  إعلان. وتُلزم أن يكون كل أمر معلَنًا في هذا الملف وحده، فتبقى «اقرأ حدّ
+//  IPC» جملةً كاملة الصدق. أضِف أمرًا في وحدة أخرى، أو بصيغة السمة ذات
+//  الخيارات (‏`rename_all`‎)، وسيسقط البناء — وكلاهما كان يمرّ صامتًا.
 //
 //  M1 أضافت `reveal` وحده، ومعاملها معرّف تشغيل لا مسار: النواة تُخرج المسار
 //  من سجلّها هي. البديل — إضافة `opener` — كان سيمنح الواجهة «افتح هذا
@@ -117,7 +192,7 @@ fn plan(
     inputs: BTreeMap<String, value::RawValue>,
 ) -> Result<PlanResponse> {
     let response = {
-        let mut store = state.plans.lock().map_err(|_| CoreError::PlanNotFound)?;
+        let mut store = recover(&state.plans);
         planner::plan(&mut store, &state.session, state.policy, &op_id, &inputs)?
     };
 
@@ -143,32 +218,12 @@ async fn execute(
     state: State<'_, AppState>,
     token: String,
 ) -> Result<String> {
-    let stored = {
-        let mut store = state.plans.lock().map_err(|_| CoreError::PlanNotFound)?;
-        // `take` أحادي الاستخدام: إعادة إرسال نفس الرمز تفشل هنا.
-        store.take(&PlanToken::from(token), &state.session)?
-    };
-
-    // إعادة التحقّق من الشروط قبل الإطلاق مباشرة. الفجوة بين التخطيط والضغط
-    // على «نفّذ» فجوة حقيقية يمكن أن يُحذف فيها المصدر أو يظهر الاسم النهائي.
-    stored.verify_still_valid()?;
-
-    {
-        let runs = state.runs.lock().map_err(|_| CoreError::PlanNotFound)?;
-        if runs.len() >= MAX_CONCURRENT_RUNS {
-            return Err(CoreError::PlanLimitReached);
-        }
-    }
+    let (cancel_tx, cancel_rx) = oneshot::channel();
+    let stored = reserve_run(&state.runs, &state.plans, &state.session, token, cancel_tx)?;
 
     // معرّف التشغيل هو معرّف الخطة نفسه، فيتّصل قيد `planned` بما بعده في
     // السجل بدل أن يكون حدثًا يتيمًا.
     let run_id = stored.id.clone();
-    let (cancel_tx, cancel_rx) = oneshot::channel();
-    state
-        .runs
-        .lock()
-        .map_err(|_| CoreError::PlanNotFound)?
-        .insert(run_id.clone(), Handle { cancel: cancel_tx });
 
     let command = stored.command.clone();
     let op_id = stored.op_id;
@@ -195,14 +250,27 @@ async fn execute(
 
     let done_app = app.clone();
     let done_run = run_id.clone();
+    let slot_app = app.clone();
+    let slot_run = run_id.clone();
     tokio::spawn(async move {
+        // الحارس يمسك الخانة طوال التشغيل ويحرّرها في `Drop`، فيشمل التحرير
+        // مسار الذعر لا مسار النجاح وحده.
+        let slot = SlotGuard(move || {
+            let state: State<'_, AppState> = slot_app.state();
+            recover(&state.runs).remove(&slot_run);
+        });
+
         let started = Instant::now();
         // `Outcome::Success` لا يُبنى إلا بعد ترقية الناتج إلى اسمه النهائي،
         // فقيد `succeeded` لا يمكن أن يسبقها. انظر `executor::run`.
         let outcome = executor::run(command, out_tx, cancel_rx).await;
 
+        // التحرير صراحةً هنا لا عند نهاية المهمة: الواجهة قد تُطلق تشغيلًا
+        // تاليًا فور وصول `run://finished`، فلا يجوز أن تكون الخانة محجوزة
+        // بينما يُكتب السجل.
+        drop(slot);
+
         let state: State<'_, AppState> = done_app.state();
-        state.runs.lock().map(|mut r| r.remove(&done_run)).ok();
         state.journal.record(
             Entry::new(done_run.clone(), op_id, journal::State::from_outcome(&outcome))
                 .with_command(program, args, cwd)
@@ -219,12 +287,7 @@ async fn execute(
 /// يلغي تشغيلًا جاريًا. الإشارة تطال مجموعة العمليات كلها، والمؤقّت يُنظَّف.
 #[tauri::command]
 fn cancel(state: State<'_, AppState>, run_id: String) -> Result<()> {
-    let handle = state
-        .runs
-        .lock()
-        .map_err(|_| CoreError::RunNotFound)?
-        .remove(&run_id)
-        .ok_or(CoreError::RunNotFound)?;
+    let handle = recover(&state.runs).remove(&run_id).ok_or(CoreError::RunNotFound)?;
     let _ = handle.cancel.send(());
     Ok(())
 }
@@ -264,4 +327,136 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running naffith");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use spec::PlannedCommand;
+
+    fn dummy_command() -> PlannedCommand {
+        PlannedCommand {
+            program: std::path::PathBuf::from("/bin/echo"),
+            args: vec![],
+            cwd: None,
+            explain: vec![],
+            warnings: vec![],
+            artifact: None,
+            estimate: None,
+        }
+    }
+
+    fn slot() -> Handle {
+        Handle { cancel: oneshot::channel().0 }
+    }
+
+    /// قفلٌ مسموم يُتعافى منه ويعود سليمًا.
+    ///
+    /// الحالة الحقيقية: ذعرٌ في المخطّط يترك `plans` مسمومًا، وكل تخطيط بعده
+    /// كان يعود بـ «الخطة غير موجودة» إلى نهاية الجلسة.
+    #[test]
+    fn a_poisoned_lock_is_recovered_not_treated_as_a_missing_plan() {
+        let store: Mutex<PlanStore> = Mutex::new(PlanStore::new());
+
+        let poisoner = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = store.lock().unwrap();
+            panic!("planner exploded");
+        }));
+        assert!(poisoner.is_err(), "the panic must have happened");
+        assert!(store.is_poisoned(), "and it must have poisoned the lock");
+
+        let mut guard = recover(&store);
+        let session = guard.register_session().expect("planning still works after the panic");
+        assert!(guard
+            .insert(&session, "internal.echo", Default::default(), dummy_command())
+            .is_ok());
+        drop(guard);
+
+        assert!(!store.is_poisoned(), "the poison must be cleared, not carried to the next caller");
+    }
+
+    /// ذعرٌ داخل مهمة التشغيل لا يترك الخانة محجوزة.
+    #[test]
+    fn a_panic_inside_the_run_task_releases_the_slot() {
+        let runs: Mutex<HashMap<String, Handle>> = Mutex::new(HashMap::new());
+        recover(&runs).insert("r1".to_owned(), slot());
+
+        let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = SlotGuard(|| {
+                recover(&runs).remove("r1");
+            });
+            panic!("executor exploded");
+        }));
+
+        assert!(panicked.is_err());
+        assert!(recover(&runs).is_empty(), "a panicking run must not hold its slot forever");
+    }
+
+    /// بلوغ حدّ التزامن يرفض الطلب ولا يحرق الخطة.
+    #[test]
+    fn hitting_the_run_limit_leaves_the_plan_token_usable() {
+        let plans = Mutex::new(PlanStore::new());
+        let session = recover(&plans).register_session().unwrap();
+        let (token, _) = recover(&plans)
+            .insert(&session, "internal.echo", Default::default(), dummy_command())
+            .unwrap();
+
+        let runs: Mutex<HashMap<String, Handle>> = Mutex::new(HashMap::new());
+        for i in 0..MAX_CONCURRENT_RUNS {
+            recover(&runs).insert(format!("busy-{i}"), slot());
+        }
+
+        let refused =
+            reserve_run(&runs, &plans, &session, token.as_str().to_owned(), oneshot::channel().0);
+        assert!(
+            matches!(refused, Err(CoreError::PlanLimitReached)),
+            "the limit must refuse before the token is touched"
+        );
+
+        // وهذا بيت القصيد: الرمز ما زال صالحًا. المستخدم ينتظر ويضغط «نفّذ»
+        // مرة أخرى بدل أن يعيد ملء النموذج.
+        recover(&runs).remove("busy-0");
+        assert!(
+            reserve_run(&runs, &plans, &session, token.as_str().to_owned(), oneshot::channel().0)
+                .is_ok(),
+            "the token must survive a refusal that had nothing to do with the plan"
+        );
+    }
+
+    /// الحدّ يصمد تحت التزامن: الفحص والحجز قسمٌ حرج واحد لا فحصٌ ثم فعل.
+    #[test]
+    fn the_run_limit_holds_when_many_executions_race() {
+        for _ in 0..200 {
+            let plans = Mutex::new(PlanStore::new());
+            let session = recover(&plans).register_session().unwrap();
+            let tokens: Vec<String> = (0..plans::MAX_PLANS_PER_SESSION)
+                .map(|_| {
+                    recover(&plans)
+                        .insert(&session, "internal.echo", Default::default(), dummy_command())
+                        .unwrap()
+                        .0
+                        .as_str()
+                        .to_owned()
+                })
+                .collect();
+
+            let runs: Mutex<HashMap<String, Handle>> = Mutex::new(HashMap::new());
+            let barrier = std::sync::Barrier::new(tokens.len());
+
+            std::thread::scope(|scope| {
+                for token in &tokens {
+                    let token = token.clone();
+                    let (runs, plans, session, barrier) = (&runs, &plans, &session, &barrier);
+                    scope.spawn(move || {
+                        barrier.wait();
+                        let _ = reserve_run(runs, plans, session, token, oneshot::channel().0);
+                    });
+                }
+            });
+
+            // لا شيء يحرّر خانة هنا، فالعدد النهائي هو عدد ما نجح حجزه.
+            let held = recover(&runs).len();
+            assert!(held <= MAX_CONCURRENT_RUNS, "{held} concurrent runs exceeded the limit");
+        }
+    }
 }

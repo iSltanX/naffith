@@ -14,8 +14,8 @@ use naffith_core::journal::{Journal, State};
 use naffith_core::planner::{self, PlanResponse};
 use naffith_core::plans::{PlanStore, PlanToken, SessionId};
 use naffith_core::policy::Policy;
-use naffith_core::spec::Conflict;
-use naffith_core::value::RawValue;
+use naffith_core::spec::{Artifact, Conflict, PlannedCommand};
+use naffith_core::value::{Inputs, RawValue};
 use std::collections::BTreeMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -27,11 +27,45 @@ use tokio::sync::{mpsc, oneshot};
 /// بالمسار الإنتاجي لا بدّ أن يمرّ بسياسة المسارات كاملة.
 struct Scratch(PathBuf);
 
+/// البادئة التي تملكها هذه الاختبارات وحدها داخل المنزل.
+const SCRATCH_PREFIX: &str = ".naffith-it-";
+
+/// يحذف مساحات تشغيلٍ سابق قُتل قبل أن يعمل `Drop`.
+///
+/// `Drop` لا يعمل تحت SIGKILL ولا تحت `cargo test` مقطوعًا بـ Ctrl-C، فتتراكم
+/// مجلدات في منزل المستخدم. الشرط قبل الحذف أن تكون العملية صاحبة المجلد قد
+/// ماتت فعلًا: `cargo test` آخر يعمل الآن بالتوازي مجلداتُه ليست قمامة.
+fn sweep_stale_scratch() {
+    let Some(home) = std::env::var_os("HOME").map(PathBuf::from) else { return };
+    let Ok(read) = std::fs::read_dir(&home) else { return };
+    for entry in read.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let Some(rest) = name.strip_prefix(SCRATCH_PREFIX) else { continue };
+        // الشكل: `<وسم>-<معرّف العملية>-<عشوائي>`، والمعرّف قبل الأخير.
+        let mut parts = rest.rsplit('-');
+        let _random = parts.next();
+        let Some(Ok(pid)) = parts.next().map(str::parse::<u32>) else { continue };
+        if pid == std::process::id() || process_alive(pid) {
+            continue;
+        }
+        let _ = std::fs::remove_dir_all(entry.path());
+    }
+}
+
+fn process_alive(pid: u32) -> bool {
+    std::process::Command::new("/bin/ps")
+        .args(["-p", &pid.to_string()])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(true)
+}
+
 impl Scratch {
     fn new(tag: &str) -> Option<Self> {
+        sweep_stale_scratch();
         let home = std::env::var_os("HOME").map(PathBuf::from)?;
         let base = home.join(format!(
-            ".naffith-it-{tag}-{}-{}",
+            "{SCRATCH_PREFIX}{tag}-{}-{}",
             std::process::id(),
             naffith_core::plans::random_suffix()
         ));
@@ -104,31 +138,35 @@ impl TinyVolume {
     /// يعيد `None` إن تعذّر إنشاء القرص أو تركيبه — لا نُفشل الحزمة كلها
     /// لأن البيئة لا تسمح بـ `hdiutil`.
     fn new(megabytes: u32) -> Option<Self> {
+        Self::formatted(megabytes, "HFS+")
+    }
+
+    /// نفسه بصيغة نظام ملفات مُعطاة. `ExFAT` هنا ليست ترفًا: هي صيغة كل ذاكرة
+    /// USB وبطاقة كاميرا، و`/Volumes` جذرٌ مسموح من أجلها تحديدًا.
+    fn formatted(megabytes: u32, fs: &str) -> Option<Self> {
         sweep_leaked_volumes();
         let image = PathBuf::from(format!(
             "{TINY_IMAGE_PREFIX}{}-{}.dmg",
             std::process::id(),
             naffith_core::plans::random_suffix()
         ));
-        let volname = format!("naffith-{}", naffith_core::plans::random_suffix());
-        let ok = std::process::Command::new("/usr/bin/hdiutil")
-            .args([
-                "create",
-                "-size",
-                &format!("{megabytes}m"),
-                "-fs",
-                "HFS+",
-                "-volname",
-                &volname,
-                "-quiet",
-            ])
+        // ١١ محرفًا بالضبط: هذا سقف لصيقة FAT/exFAT، و`hdiutil create` يخرج
+        // بـ ١ إن تجاوزته. `naffith-<١٦ خانة>` كان يتجاوزه، فكان القرص لا
+        // يُنشأ والاختبار «ينجح» بتخطّيه صامتًا — وهو أسوأ من فشله.
+        let volname = format!("naf{}", &naffith_core::plans::random_suffix()[..8]);
+        let created = std::process::Command::new("/usr/bin/hdiutil")
+            .args(["create", "-size", &format!("{megabytes}m"), "-fs", fs, "-volname", &volname])
             .arg(&image)
-            .status()
-            .ok()?
-            .success();
-        if !ok {
-            return None;
-        }
+            .output()
+            .ok()?;
+        // بيئةٌ بلا `hdiutil` تُتخطّى بصمت، أما `hdiutil` موجودة ترفض أمرنا
+        // فخطأٌ فينا نحن ويجب أن يُسمَع: التخطّي الصامت هو ما جعل اختبار exFAT
+        // «يمرّ» وهو لم يعمل أصلًا.
+        assert!(
+            created.status.success(),
+            "hdiutil refused to create a {fs} volume — fix the arguments, do not skip:\n{}",
+            String::from_utf8_lossy(&created.stderr)
+        );
         let out = std::process::Command::new("/usr/bin/hdiutil")
             .args(["attach", "-nobrowse"])
             .arg(&image)
@@ -156,7 +194,12 @@ impl Drop for TinyVolume {
 
 /// بصمة شجرة: المسار النسبي ← محتواه. تُستخدم لإثبات التطابق ولإثبات أن
 /// المصدر لم يتغيّر.
+///
+/// الروابط الرمزية تُبصم بهدفها لا بمحتوى هدفها، وبسابقة تميّزها عن ملف عادي:
+/// كانت تُهمَل صمتًا على طرفَي المقارنة معًا، فرابطٌ يضيع في الأرشيف أو ينقلب
+/// نسخةً من هدفه كان يمرّ دون أن يسقط شيء.
 fn snapshot(root: &Path) -> BTreeMap<String, Vec<u8>> {
+    use std::os::unix::ffi::OsStrExt;
     let mut out = BTreeMap::new();
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
@@ -164,7 +207,11 @@ fn snapshot(root: &Path) -> BTreeMap<String, Vec<u8>> {
             let path = entry.path();
             let kind = entry.file_type().unwrap();
             let rel = path.strip_prefix(root).unwrap().to_string_lossy().into_owned();
-            if kind.is_dir() {
+            if kind.is_symlink() {
+                let mut mark = b"symlink -> ".to_vec();
+                mark.extend_from_slice(std::fs::read_link(&path).unwrap().as_os_str().as_bytes());
+                out.insert(rel, mark);
+            } else if kind.is_dir() {
                 out.insert(format!("{rel}/"), Vec::new());
                 stack.push(path);
             } else if kind.is_file() {
@@ -249,6 +296,10 @@ fn build_source(root: &Path) {
     let deeper = nested.join("أعمق");
     std::fs::create_dir(&deeper).unwrap();
     std::fs::write(deeper.join("deep.bin"), vec![7u8; 4096]).unwrap();
+
+    // رابط رمزي نسبي: يجب أن يعود من الأرشيف رابطًا بنفس الهدف، لا نسخةً من
+    // الملف ولا لا شيء.
+    std::os::unix::fs::symlink("ملف عربي.txt", root.join("اختصار")).unwrap();
 }
 
 // ════════════════════════════════════════════════════════════════════════
@@ -262,6 +313,13 @@ async fn a_real_folder_is_compressed_extracted_and_compared_byte_for_byte() {
     build_source(&source);
 
     let before = snapshot(&source);
+    // حارس على البصمة نفسها: لو عادت تتجاهل الروابط لصارت المقارنة أدناه
+    // تقارن غيابًا بغياب وتمرّ على رابط ضائع.
+    assert_eq!(
+        before.get("اختصار").map(|v| String::from_utf8_lossy(v).into_owned()),
+        Some("symlink -> ملف عربي.txt".to_owned()),
+        "the snapshot must actually record symlinks for the comparison to mean anything"
+    );
 
     let mut store = PlanStore::new();
     let session = store.register_session().unwrap();
@@ -463,6 +521,86 @@ async fn a_run_that_cannot_be_promoted_is_not_recorded_as_a_success() {
 }
 
 #[tokio::test]
+async fn a_tool_that_exits_zero_without_writing_never_becomes_a_zero_byte_archive() {
+    // الدرز بين ملفّين، مقطوعًا بالمسار الكامل لا بالنيّة.
+    //
+    // `plans::Preconditions::claim_temp` صار يُنشئ المؤقّت حصريًا قبل الإطلاق
+    // (‏سدًّا لسباق زرع رابط رمزي مكانه)، فصار المؤقّت **موجودًا دائمًا** لحظة
+    // `atomic::ArtifactGuard::commit`. وشرط «لم تُنتج الأداة شيئًا» هناك كان
+    // `!temp.exists()` — أي شرطٌ لم يعد يتحقّق أبدًا. النتيجة: أداةٌ تخرج بصفر
+    // دون أن تكتب بايتًا واحدًا تُرقّي أرشيفًا بحجم صفر إلى اسمه النهائي،
+    // ويُبلَّغ المستخدم **نجاحًا**، ويُقيَّد في السجل ناتجًا قابلًا للإظهار.
+    //
+    // الاختبار الوحيد الذي كان يغطّي الحالة يبني الحارس مباشرة بلا `verify`،
+    // فلا يمرّ بالحجز ولا يمكن أن يلتقط الانحراف. هذا يمرّ بالسلسلة كلها:
+    // ‏`insert` → `take` → `verify_still_valid` (‏فيقع الحجز) → `executor::run`
+    // (‏فتقع الترقية). فإن عاد أحد الطرفين إلى شرط الوجود سقط هنا.
+    //
+    // `ditto` اليوم لا تخرج بصفر دون أن تكتب — والمقصود أن الثابتة لا تتّكل
+    // على ذلك، فالحارس يَعِد بها في تعليقه هو.
+    let Some(s) = Scratch::new("emptyoutput") else { return };
+    let destination = s.dir("وجهة");
+    let final_path = destination.join("ناتج.zip");
+    let temp = naffith_core::atomic::temp_path_for(&final_path).unwrap();
+
+    let command = PlannedCommand {
+        // تخرج بصفر ولا تكتب شيئًا: محاكاة الأداة التي «نجحت» بلا ناتج.
+        program: PathBuf::from("/usr/bin/true"),
+        args: vec![],
+        cwd: None,
+        explain: vec![],
+        warnings: vec![],
+        artifact: Some(Artifact { temp: temp.clone(), final_path: final_path.clone() }),
+        estimate: None,
+    };
+
+    let mut store = PlanStore::new();
+    let session = store.register_session().unwrap();
+    let (token, _) =
+        store.insert(&session, "compress.folder.zip", Inputs::default(), command).unwrap();
+
+    let stored = store.take(&token, &session).unwrap();
+    stored.verify_still_valid().expect("preconditions must hold on a clean destination");
+
+    // الطرف الأول من الدرز: الحجز وقع فعلًا، والمؤقّت الآن موجود وفارغ.
+    assert!(temp.exists(), "claim_temp must create the temporary file, not merely inspect it");
+    assert_eq!(
+        std::fs::metadata(&temp).unwrap().len(),
+        0,
+        "and it must be empty — which is exactly what makes exists() a dead check"
+    );
+
+    let (tx, mut rx) = mpsc::channel(256);
+    let (_cancel_tx, cancel_rx) = oneshot::channel();
+    let task = tokio::spawn(executor::run(stored.command.clone(), tx, cancel_rx));
+    while rx.recv().await.is_some() {}
+    let outcome = task.await.unwrap();
+
+    // والطرف الثاني: الترقية رفضت.
+    assert_eq!(
+        outcome,
+        Outcome::Error { key: "err.output.empty" },
+        "a tool that produced nothing must not be reported as a success"
+    );
+    assert!(!final_path.exists(), "no zero-byte archive may carry the name the user chose");
+    assert!(!temp.exists(), "and the claimed placeholder must not be left in the destination");
+    assert_eq!(
+        std::fs::read_dir(&destination).unwrap().count(),
+        0,
+        "the destination must be exactly as it was"
+    );
+
+    // ولا شيء يمكن إظهاره: النتيجة خطأ لا نجاح.
+    let journal = Journal::new(None);
+    journal.record(naffith_core::journal::Entry::new(
+        "run-empty",
+        "compress.folder.zip",
+        State::from_outcome(&outcome),
+    ));
+    assert_eq!(journal.produced_for("run-empty"), None);
+}
+
+#[tokio::test]
 async fn re_verification_before_execute_catches_a_source_deleted_after_planning() {
     let scratch =
         Scratch::new("stale").expect("HOME must be set for the path policy to be exercised");
@@ -625,6 +763,254 @@ async fn a_destination_that_runs_out_of_space_leaves_nothing_behind() {
             .any(|e| e.file_name().to_string_lossy().starts_with(".naffith-")),
         "no temporary artefact may survive a failed run"
     );
+}
+
+#[tokio::test]
+async fn compressing_onto_an_exfat_volume_produces_the_archive_instead_of_destroying_it() {
+    // الترقية كانت `hard_link` وحدها، و exFAT لا تعرف الروابط الصلبة فترجع
+    // ENOTSUP. النتيجة: `ditto` تكتب الأرشيف كاملًا، ثم يُحذف ويرى المستخدم
+    // `err.commit`. و exFAT ليست حالة طرفية — هي صيغة ذاكرة USB المعتادة،
+    // و`/Volumes` فُتح جذرًا مسموحًا من أجلها.
+    let Some(vol) = TinyVolume::formatted(16, "ExFAT") else {
+        eprintln!("skipped: hdiutil could not create an ExFAT volume in this environment");
+        return;
+    };
+    let Some(s) = Scratch::new("exfat") else { return };
+    let source = s.dir("مشروع");
+    std::fs::write(source.join("ملف عربي.txt"), "محتوى").unwrap();
+    std::fs::write(source.join("data.bin"), vec![3u8; 2048]).unwrap();
+
+    let mut store = PlanStore::new();
+    let session = store.register_session().unwrap();
+    let plan = plan_compress(&mut store, &session, &source, vol.path(), "نسخة");
+    let final_path = PathBuf::from(plan.produces.clone().unwrap());
+    let temp_path = PathBuf::from(plan.writes_to.clone().unwrap());
+
+    let (outcome, _) = execute_plan(&mut store, &session, plan.token.as_str()).await;
+
+    assert_eq!(
+        outcome,
+        Outcome::Success { produced: Some(final_path.display().to_string()) },
+        "a filesystem without hard links must not cost the user the finished archive"
+    );
+    assert!(final_path.exists(), "the archive must exist at its final name on ExFAT");
+    assert!(!temp_path.exists(), "and the temporary file must not survive");
+    assert_eq!(&std::fs::read(&final_path).unwrap()[..2], b"PK");
+
+    // ويُفكّ فعلًا: الترقية نقلت الملف كاملًا لا صدفةً منه.
+    let extracted = s.dir("فكّ");
+    extract(&final_path, &extracted);
+    assert_eq!(std::fs::read_to_string(extracted.join("مشروع/ملف عربي.txt")).unwrap(), "محتوى");
+}
+
+#[tokio::test]
+async fn an_existing_name_on_an_exfat_volume_is_still_never_replaced() {
+    // القيمة كلها في هذا: البديل الذي يصلح exFAT لا يجوز أن يفتح بابًا
+    // للاستبدال الصامت الذي وُجد `hard_link` أصلًا كي يغلقه.
+    let Some(vol) = TinyVolume::formatted(16, "ExFAT") else {
+        eprintln!("skipped: hdiutil could not create an ExFAT volume in this environment");
+        return;
+    };
+    let Some(s) = Scratch::new("exfatclash") else { return };
+    let source = s.dir("مصدر");
+    std::fs::write(source.join("ملف"), b"data").unwrap();
+
+    let mut store = PlanStore::new();
+    let session = store.register_session().unwrap();
+    let plan = plan_compress(&mut store, &session, &source, vol.path(), "ناتج");
+    let final_path = PathBuf::from(plan.produces.clone().unwrap());
+    let temp_path = PathBuf::from(plan.writes_to.clone().unwrap());
+
+    let stored = store.take(&PlanToken::from(plan.token.as_str().to_owned()), &session).unwrap();
+    // شخص آخر سبقنا إلى الاسم بعد التخطيط، فلا تلتقطه إعادة التحقّق.
+    std::fs::write(&final_path, b"PRECIOUS EXISTING DATA").unwrap();
+
+    let (tx, mut rx) = mpsc::channel(256);
+    let (_cancel_tx, cancel_rx) = oneshot::channel();
+    let task = tokio::spawn(executor::run(stored.command.clone(), tx, cancel_rx));
+    while rx.recv().await.is_some() {}
+    let outcome = task.await.unwrap();
+
+    assert_eq!(outcome, Outcome::Error { key: "err.dest.exists" });
+    assert_eq!(std::fs::read(&final_path).unwrap(), b"PRECIOUS EXISTING DATA");
+    assert!(!temp_path.exists(), "and the temporary file must still be cleaned up");
+}
+
+#[tokio::test]
+async fn extended_attributes_and_resource_forks_survive_the_round_trip() {
+    // هذا هو المبرّر المعلَن كله لاختيار `ditto` على `zip`: `zip` تُسقط هذه
+    // البيانات صامتة. مبرّرٌ بلا اختبار ادّعاء.
+    let scratch = Scratch::new("metadata").expect("HOME must be set");
+    let source = scratch.dir("مشروع");
+    let destination = scratch.dir("وجهة");
+    let file = source.join("ملف موسوم.txt");
+    std::fs::write(&file, b"body").unwrap();
+
+    // `/usr/bin/xattr` لا `libc`: مكتبة `libc` تبعيةٌ للنواة لا للاختبارات،
+    // والأداة موجودة في كل macOS.
+    let set = std::process::Command::new("/usr/bin/xattr")
+        .args(["-w", "com.naffith.test", "قيمة عربية"])
+        .arg(&file)
+        .status()
+        .expect("xattr must be runnable");
+    assert!(set.success());
+    // الشوكة المصدرية تُكتب بمسارها الخاص، وهي أقدم من xattr وتُحفظ كذلك.
+    std::fs::write(file.join("..namedfork/rsrc"), b"RESOURCE FORK DATA").unwrap();
+
+    let mut store = PlanStore::new();
+    let session = store.register_session().unwrap();
+    let plan = plan_compress(&mut store, &session, &source, &destination, "موسوم");
+    let (outcome, _) = execute_plan(&mut store, &session, plan.token.as_str()).await;
+    assert!(outcome.is_success(), "got {outcome:?}");
+
+    let extracted = scratch.dir("فكّ");
+    extract(Path::new(&plan.produces.unwrap()), &extracted);
+    let out = extracted.join("مشروع/ملف موسوم.txt");
+
+    let read = std::process::Command::new("/usr/bin/xattr")
+        .args(["-p", "com.naffith.test"])
+        .arg(&out)
+        .output()
+        .expect("xattr must be runnable");
+    assert_eq!(
+        String::from_utf8_lossy(&read.stdout).trim(),
+        "قيمة عربية",
+        "the extended attribute must survive — losing it is what zip does and why ditto was chosen"
+    );
+    assert_eq!(
+        std::fs::read(out.join("..namedfork/rsrc")).unwrap(),
+        b"RESOURCE FORK DATA",
+        "the resource fork must survive too"
+    );
+}
+
+/// يقرأ الفهرس المركزي لأرشيف ZIP: (‏رايات عامة، اسم خام).
+///
+/// قراءة بايتات لا استدعاء `unzip`: البتّ الذي نفحصه (‏١١) لا تعرضه أي أداة،
+/// وأثره يظهر مشوّهًا فقط.
+fn central_directory(archive: &Path) -> Vec<(u16, Vec<u8>)> {
+    let bytes = std::fs::read(archive).unwrap();
+    let u16_at = |i: usize| u16::from_le_bytes([bytes[i], bytes[i + 1]]);
+    let u32_at = |i: usize| {
+        u32::from_le_bytes([bytes[i], bytes[i + 1], bytes[i + 2], bytes[i + 3]]) as usize
+    };
+
+    let eocd = (0..bytes.len().saturating_sub(3))
+        .rev()
+        .find(|&i| &bytes[i..i + 4] == b"PK\x05\x06")
+        .expect("every zip ends with an end-of-central-directory record");
+    let count = u16_at(eocd + 10) as usize;
+    let mut at = u32_at(eocd + 16);
+
+    let mut entries = Vec::with_capacity(count);
+    for _ in 0..count {
+        assert_eq!(&bytes[at..at + 4], b"PK\x01\x02", "malformed central directory");
+        let flags = u16_at(at + 8);
+        let (name_len, extra_len, comment_len) =
+            (u16_at(at + 28) as usize, u16_at(at + 30) as usize, u16_at(at + 32) as usize);
+        entries.push((flags, bytes[at + 46..at + 46 + name_len].to_vec()));
+        at += 46 + name_len + extra_len + comment_len;
+    }
+    entries
+}
+
+#[tokio::test]
+async fn the_archive_carries_utf8_names_without_the_utf8_flag_and_the_plan_says_so() {
+    // `ditto` تكتب الأسماء UTF-8 خامًا وتترك البت ١١ صفرًا. أداةٌ تتبع
+    // APPNOTE.TXT تقرؤها CP437 فتخرج مشوّهة: `unzip -l` يعرض `??????`.
+    // لا راية في `ditto` تضبط البت (‏راجع `man ditto`)، والترقيع بعد الإنتاج
+    // يخصّ ملفًا آخر — فالواجب هنا شيئان: أن يُقال قبل التنفيذ، وأن يُثبَّت
+    // السلوك كي يكون تغيّره غدًا قرارًا واعيًا لا مفاجأة.
+    let scratch = Scratch::new("efs").expect("HOME must be set");
+    let source = scratch.dir("مجلد عربي");
+    let destination = scratch.dir("و");
+    std::fs::write(source.join("ملف تجريبي.txt"), "نص").unwrap();
+
+    let mut store = PlanStore::new();
+    let session = store.register_session().unwrap();
+    let plan = plan_compress(&mut store, &session, &source, &destination, "أرشيف");
+    assert!(
+        plan.warnings.contains(&"warn.zip.name_encoding"),
+        "an Arabic tree must be told its names may not read correctly elsewhere: {:?}",
+        plan.warnings
+    );
+
+    let (outcome, _) = execute_plan(&mut store, &session, plan.token.as_str()).await;
+    assert!(outcome.is_success(), "got {outcome:?}");
+
+    let entries = central_directory(Path::new(&plan.produces.unwrap()));
+    let arabic: Vec<_> = entries.iter().filter(|(_, name)| !name.is_ascii()).collect();
+    assert!(!arabic.is_empty(), "the archive must actually contain non-ASCII names");
+    for (flags, name) in &arabic {
+        assert!(
+            std::str::from_utf8(name).is_ok(),
+            "ditto writes raw UTF-8 name bytes: {:?}",
+            String::from_utf8_lossy(name)
+        );
+        assert_eq!(
+            flags & 0x0800,
+            0,
+            "pinned: ditto leaves the UTF-8 (EFS) bit clear. If this ever fails, ditto changed \
+             and warn.zip.name_encoding should go — check before deleting this assertion."
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_file_named_like_an_appledouble_sidecar_is_dropped_and_the_plan_warned_first() {
+    // خسارة بيانات صامتة: `--sequesterRsrc` تعامل `._*` سِجلًّا مصاحبًا لا
+    // ملفًا، فلا يظهر في الأرشيف ولا في `__MACOSX`. لا يمكن منعها دون
+    // `--norsrc` التي تُسقط البيانات الوصفية كلها — فتُعلَن.
+    let scratch = Scratch::new("appledouble").expect("HOME must be set");
+    let source = scratch.dir("مصدر");
+    let destination = scratch.dir("وجهة");
+    std::fs::write(source.join("ordinary.txt"), b"kept").unwrap();
+    std::fs::write(source.join("._notes"), b"user data, not a sidecar").unwrap();
+
+    let mut store = PlanStore::new();
+    let session = store.register_session().unwrap();
+    let plan = plan_compress(&mut store, &session, &source, &destination, "ناتج");
+    assert!(
+        plan.warnings.contains(&"warn.source.appledouble"),
+        "the loss must be announced before the user commits to it: {:?}",
+        plan.warnings
+    );
+
+    let (outcome, _) = execute_plan(&mut store, &session, plan.token.as_str()).await;
+    assert!(outcome.is_success(), "got {outcome:?}");
+
+    // وهذا ما يثبّت أن التحذير ليس احتياطًا نظريًا: الملف يضيع فعلًا.
+    let extracted = scratch.dir("فكّ");
+    extract(Path::new(&plan.produces.unwrap()), &extracted);
+    assert!(extracted.join("مصدر/ordinary.txt").is_file());
+    assert!(
+        !extracted.join("مصدر/._notes").exists(),
+        "pinned: ditto drops it. If this ever fails, --sequesterRsrc changed and the warning \
+         should go — check before deleting this assertion."
+    );
+}
+
+#[test]
+fn a_scratch_directory_left_by_a_killed_run_is_swept_and_a_live_one_is_not() {
+    // `Drop` لا يعمل تحت SIGKILL، فمجلدات الاختبار كانت تتراكم في منزل
+    // المستخدم بلا حدّ. والشرط الآخر أهمّ: `cargo test` يعمل الآن بالتوازي
+    // مجلداتُه ليست قمامة، وكنسُها كان سيُفشل تشغيلًا سليمًا.
+    let home = PathBuf::from(std::env::var_os("HOME").expect("HOME must be set"));
+    // معرّف لا يمكن أن يكون حيًّا: أعلى من سقف معرّفات العمليات على macOS.
+    let dead = home.join(format!("{SCRATCH_PREFIX}killed-4294967290-{}", "0".repeat(16)));
+    let live = home.join(format!(
+        "{SCRATCH_PREFIX}running-{}-{}",
+        std::process::id(),
+        naffith_core::plans::random_suffix()
+    ));
+    std::fs::create_dir_all(dead.join("محتوى")).unwrap();
+    std::fs::create_dir_all(&live).unwrap();
+
+    sweep_stale_scratch();
+
+    assert!(!dead.exists(), "a scratch directory whose owner is gone must be removed");
+    assert!(live.exists(), "a scratch directory of a running process must be left alone");
+    let _ = std::fs::remove_dir_all(&live);
 }
 
 #[test]

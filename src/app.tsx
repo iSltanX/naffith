@@ -15,7 +15,7 @@
  * تغييرٌ في حقل يحرّك الاثنين في اللحظة نفسها، لأنهما قراءتان لنفس
  * `PlanResponse`.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import Naffith from './naffith';
 import Satr from './satr';
 import Onboarding from './onboarding';
@@ -359,7 +359,7 @@ export default function App() {
 
   if (screen.name === 'operations-list') {
     return (
-      <>
+      <Page>
         <OperationsList
           state={opsState}
           onSelect={(opId) => go({ type: 'operation.selected', opId })}
@@ -368,29 +368,29 @@ export default function App() {
           onOpenSettings={() => go({ type: 'settings.opened' })}
         />
         {leaveDialog}
-      </>
+      </Page>
     );
   }
 
   if (screen.name === 'settings') {
     return (
-      <>
+      <Page>
         <SettingsScreen
           onBack={() => go({ type: 'back' })}
           onReplayOnboarding={replayOnboarding}
           storageAvailable={storageAvailable}
         />
         {leaveDialog}
-      </>
+      </Page>
     );
   }
 
   if (screen.name === 'run-log') {
     return (
-      <>
+      <Page>
         <RunLog onBack={() => go({ type: 'back' })} />
         {leaveDialog}
-      </>
+      </Page>
     );
   }
 
@@ -398,18 +398,18 @@ export default function App() {
   // بين اختيارها وفتحها — والحالتان مختلفتان ولا يجوز أن تُعرضا نصًّا واحدًا.
   if (!operation) {
     return (
-      <div className="app app--message">
+      <Page variant="message">
         <p className="t-body">{operations === null ? t('ops.loading') : t('ops.gone')}</p>
         <button type="button" className="btn btn--quiet" onClick={() => go({ type: 'back' })}>
           {t('nav.back')}
         </button>
-      </div>
+      </Page>
     );
   }
 
   return (
-    <div className="app">
-      <main className="app__body">
+    <Page>
+      <main className="page__body">
         <Naffith
           operation={operation}
           values={values}
@@ -427,8 +427,33 @@ export default function App() {
         <Satr plan={shownPlan} />
       </main>
       {leaveDialog}
-    </div>
+    </Page>
   );
+}
+
+/**
+ * وعاء الشاشة — الحشوة والعرض الأقصى والتوسيط.
+ *
+ * مكوّنٌ في الغلاف لا صنفٌ تكتبه كل شاشة في وسمها: الشاشات الثلاث الثانوية
+ * كانت تُعاد عاريةً من `App` بينما شاشة العملية وحدها ملفوفة في وعاءٍ مبطّن،
+ * فظهرت قائمة العمليات والإعدادات والسجلّ ملاصقةً لحافّتي النافذة — يُقصّ
+ * العنوان عند الحافة، وتُقصّ حلقةُ التركيز حول البطاقة المحاذية لها.
+ *
+ * الوعاء هنا يجعل الحشوة أثرًا للتركيب لا شيئًا يُتذكَّر: شاشةٌ تُضاف غدًا
+ * تمرّ من الموضع نفسه، فترث ما ورثته أخواتها.
+ *
+ * وحوارُ المغادرة ابنٌ له بلا ضرر: `.scrim` مثبّت `fixed` بلا محوّل على
+ * الوعاء، فلا يقيّده عرضه الأقصى ولا يشارك في تخطيطه المرن.
+ */
+function Page({
+  children,
+  variant,
+}: {
+  children: ReactNode;
+  /** `message` لسطرٍ وزرّ: يُوسَّط رأسيًا بدل أن يبدأ من الأعلى. */
+  variant?: 'message';
+}) {
+  return <div className={variant ? `page page--${variant}` : 'page'}>{children}</div>;
 }
 
 /**

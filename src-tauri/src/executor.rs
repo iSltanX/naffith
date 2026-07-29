@@ -15,7 +15,9 @@
 use crate::atomic::ArtifactGuard;
 use crate::spec::PlannedCommand;
 use serde::Serialize;
-use std::process::Stdio;
+use std::process::{ExitStatus, Stdio};
+use std::sync::atomic::AtomicUsize;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::{mpsc, oneshot};
@@ -30,6 +32,14 @@ pub const MAX_OUTPUT_LINES: usize = 5_000;
 
 /// أقصى طول سطر واحد بالبايتات. سطر أطول يُقصّ ويُعلَّم بعلامة القصّ.
 pub const MAX_LINE_BYTES: usize = 4_000;
+
+/// أقصى ما يُحجز في الذاكرة لسطر واحد قبل إهمال بقيّته.
+///
+/// بايت واحد فوق `MAX_LINE_BYTES` بالضبط: يكفي كي يعلم `clip` أن السطر تجاوز
+/// فيضع علامة القصّ، ولا يزيد الحجز على السقف المعلَن. القارئ السابق كان
+/// يراكم حتى الفاصل مهما بلغ، فخرجٌ بلا أسطر — شريط تقدّم بـ `\r` مثلًا —
+/// كان يُحجز كاملًا في الذاكرة قبل أن يصل إلى القصّ أصلًا.
+const LINE_BUFFER_BYTES: usize = MAX_LINE_BYTES + 1;
 
 /// العلامة التي تُلحق بسطر قُصّ.
 pub const TRUNCATION_MARK: &str = " …";
@@ -140,8 +150,8 @@ pub async fn run(
 
     // عدّاد مشترك بين المجريين: السقف على مجموع الخرج لا على كل مجرى وحده،
     // وإلا صار السقف الفعلي ضِعف المعلَن.
-    let emitted = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let dropped = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let emitted = Arc::new(AtomicUsize::new(0));
+    let dropped = Arc::new(AtomicUsize::new(0));
 
     let out_tx = output.clone();
     let out_emitted = emitted.clone();
@@ -165,8 +175,7 @@ pub async fn run(
         }
         _ = &mut cancel => {
             cancelled = true;
-            terminate_group(pid).await;
-            child.wait().await
+            terminate_group(pid, &mut child).await
         }
     };
 
@@ -221,29 +230,102 @@ pub async fn run(
 }
 
 /// يقرأ مجرًى سطرًا سطرًا ضمن الحدود المعلَنة.
+///
+/// القراءة **بالبايتات لا بالنصّ**، ولهذا سببان كلاهما كلّف المستخدم شيئًا:
+///
+/// 1. خرج الأداة بايتات لا نصّ. اسم ملف ليس UTF-8 صالحًا مشروع على macOS،
+///    و`ditto` تردّده كما هو حين تشتكي منه. القارئ النصّي `lines()` كان يعيد
+///    `Err` عند أول بايت كهذا، والنمط `Ok(Some(_))` يعامل الخطأ معاملة نهاية
+///    المجرى: تنتهي المهمّة، فيُسقَط طرف القراءة من الأنبوب، فتموت الأداة
+///    بـ `SIGPIPE` ويُحذف أرشيفٌ كان قد اكتمل. بايتٌ واحد لا يجوز أن يكلّف
+///    المستخدم عمله. الآن يصير المعطوب محرف استبدال ويُعرض.
+///
+/// 2. السقف يجب أن يسبق الحجز. `read_line` تراكم حتى الفاصل مهما بلغ،
+///    و`clip` لا يعمل إلا بعد أن يصير السطر كلّه في الذاكرة. الحدّ هنا على
+///    المخزَن نفسه، فما فوقه يُهمل ولا يُحجز.
+///
+/// والقاعدة الثابتة في الحالين: **لا نكفّ عن تفريغ الأنبوب**. الكفّ يجمّد
+/// الأداة أو يقتلها بدل أن ينهيها.
 async fn pump<R>(
     stream: Option<R>,
     tx: mpsc::Sender<OutputLine>,
-    emitted: std::sync::Arc<std::sync::atomic::AtomicUsize>,
-    dropped: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    emitted: Arc<AtomicUsize>,
+    dropped: Arc<AtomicUsize>,
     wrap: fn(String) -> OutputLine,
 ) where
     R: tokio::io::AsyncRead + Unpin,
 {
-    use std::sync::atomic::Ordering::Relaxed;
     let Some(s) = stream else { return };
-    let mut lines = BufReader::new(s).lines();
-    while let Ok(Some(line)) = lines.next_line().await {
-        if emitted.load(Relaxed) >= MAX_OUTPUT_LINES {
-            // لا نتوقّف عن *القراءة*: الكفّ عن تفريغ الأنبوب يجمّد الأداة
-            // بدل أن ينهيها. نعدّ ونهمل.
-            dropped.fetch_add(1, Relaxed);
-            continue;
+    let mut reader = BufReader::new(s);
+    let mut line: Vec<u8> = Vec::new();
+    // ذهب المستقبل: نواصل التفريغ ونعدّ الضائع، ولا نغلق الأنبوب.
+    let mut sink = false;
+
+    loop {
+        let (consumed, complete) = {
+            let chunk = match reader.fill_buf().await {
+                Ok(c) => c,
+                Err(_) => break,
+            };
+            if chunk.is_empty() {
+                break;
+            }
+            match chunk.iter().position(|b| *b == b'\n') {
+                Some(at) => {
+                    append_bounded(&mut line, &chunk[..at]);
+                    (at + 1, true)
+                }
+                None => {
+                    let all = chunk.len();
+                    append_bounded(&mut line, chunk);
+                    (all, false)
+                }
+            }
+        };
+        reader.consume(consumed);
+        if complete {
+            deliver(&tx, &emitted, &dropped, wrap, &mut line, &mut sink).await;
         }
-        emitted.fetch_add(1, Relaxed);
-        if tx.send(wrap(clip(line))).await.is_err() {
-            break;
-        }
+    }
+
+    // آخر سطر بلا فاصل أسطر يُبثّ ولا يُبتلع: رسالة خطأ الأداة قد تكون هو.
+    if !line.is_empty() {
+        deliver(&tx, &emitted, &dropped, wrap, &mut line, &mut sink).await;
+    }
+}
+
+/// يضمّ ما تسعه الميزانية من جزءٍ إلى السطر، ويُهمل ما فوقها بلا حجز.
+fn append_bounded(line: &mut Vec<u8>, part: &[u8]) {
+    let room = LINE_BUFFER_BYTES.saturating_sub(line.len());
+    if room == 0 {
+        return;
+    }
+    line.extend_from_slice(&part[..room.min(part.len())]);
+}
+
+/// يبثّ سطرًا مكتملًا ويُفرغ مخزنه، محاسبًا ما لم يُبثّ.
+async fn deliver(
+    tx: &mpsc::Sender<OutputLine>,
+    emitted: &AtomicUsize,
+    dropped: &AtomicUsize,
+    wrap: fn(String) -> OutputLine,
+    line: &mut Vec<u8>,
+    sink: &mut bool,
+) {
+    use std::sync::atomic::Ordering::Relaxed;
+    // `fetch_add` ثم مقارنة القيمة السابقة، لا `load` ثم `fetch_add`: العدّاد
+    // يتقاسمه مجريان، وفحصان منفصلان يمرّان معًا عند ٤٩٩٩ فيتجاوز الخرجُ
+    // السقفَ المعلَن. سقفٌ يُخرق بسطر هو سقف لا يُصدَّق.
+    let previous = emitted.fetch_add(1, Relaxed);
+    if *sink || previous >= MAX_OUTPUT_LINES {
+        dropped.fetch_add(1, Relaxed);
+        line.clear();
+        return;
+    }
+    let text = clip(String::from_utf8_lossy(line).into_owned());
+    line.clear();
+    if tx.send(wrap(text)).await.is_err() {
+        *sink = true;
     }
 }
 
@@ -264,18 +346,37 @@ fn clip(mut line: String) -> String {
     line
 }
 
-/// ينهي مجموعة العمليات: طلب لطيف، ثم قتل بعد مهلة.
+/// ينهي مجموعة العمليات: طلب لطيف، ثم قتل قاطع.
 ///
 /// الإشارة تُرسل إلى `-pid` أي إلى المجموعة كلها، لأن `setsid` جعلت الطفل
 /// قائدها. إرسالها إلى الطفل وحده يترك أحفاده يعملون.
-async fn terminate_group(pid: i32) {
+///
+/// المهلة تُسابَق بخروج القائد ولا تُنتظر كاملة: `sleep` غير مشروط كان يكلّف
+/// كل إلغاء ١٫٥ ثانية حتى حين تموت الأداة فورًا على `SIGTERM` — وطوال تلك
+/// المدّة يبقى الأرشيف الجزئي على القرص، ولم يُبثّ `run://finished` بعد،
+/// فتعرض الواجهة تشغيلًا «جاريًا» ألغاه المستخدم.
+///
+/// و`SIGKILL` تُرسل إلى المجموعة في الحالين — بعد خروج القائد أيضًا — لأن
+/// حفيدًا يتجاهل `SIGTERM` كان سينجو لو ربطنا التصعيد بانقضاء المهلة وحدها.
+/// أي أن السباق يوفّر الانتظار ولا يُضعف الضمان.
+async fn terminate_group(
+    pid: i32,
+    child: &mut tokio::process::Child,
+) -> std::io::Result<ExitStatus> {
     unsafe {
         libc::killpg(pid, libc::SIGTERM);
     }
-    tokio::time::sleep(GRACE).await;
+    let status = tokio::select! {
+        status = child.wait() => status,
+        _ = tokio::time::sleep(GRACE) => {
+            unsafe { libc::killpg(pid, libc::SIGKILL); }
+            child.wait().await
+        }
+    };
     unsafe {
         libc::killpg(pid, libc::SIGKILL);
     }
+    status
 }
 
 #[cfg(test)]
@@ -493,6 +594,175 @@ mod tests {
         let (_, lines) = collect(cmd).await;
         assert_eq!(lines.len(), 10);
         assert!(!lines.iter().any(|l| matches!(l, OutputLine::Truncated { .. })));
+    }
+
+    /// أداة اختبار لا مسار إنتاج: نحتاج برنامجًا يكتب بايتات لا نملك أداة
+    /// إنتاجية تكتبها عمدًا. لا يوجد في المنتج أي استدعاء لصدفة، وتثبّت ذلك
+    /// اختبارات `security.rs` و`golden.rs`.
+    fn sh(script: String) -> PlannedCommand {
+        PlannedCommand {
+            program: PathBuf::from("/bin/sh"),
+            args: vec![OsString::from("-c"), OsString::from(script)],
+            cwd: None,
+            explain: vec![],
+            warnings: vec![],
+            artifact: None,
+            estimate: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn one_invalid_utf8_byte_neither_ends_the_stream_nor_costs_the_archive() {
+        // اسم ملف ليس UTF-8 صالحًا مشروع على macOS، و`ditto` تردّده كما هو.
+        // القارئ النصّي كان يعامل بايتًا كهذا معاملة نهاية المجرى، فيُغلق
+        // الأنبوب وتموت الأداة بـ SIGPIPE ويُحذف أرشيفٌ قد اكتمل.
+        let dir = tempfile::tempdir().unwrap();
+        let final_path = dir.path().join("أرشيف.zip");
+        let temp = crate::atomic::temp_path_for(&final_path).unwrap();
+
+        let mut cmd = sh(format!(
+            "printf 'PK' > '{}'; printf 'قبل\\n' >&2; printf '\\377\\n' >&2; \
+             printf 'بعد-١\\nبعد-٢\\n' >&2; exit 0",
+            temp.display()
+        ));
+        cmd.artifact = Some(Artifact { temp: temp.clone(), final_path: final_path.clone() });
+
+        let (outcome, lines) = collect(cmd).await;
+        assert!(
+            outcome.is_success(),
+            "a tool that exited zero must not be reported failed: {outcome:?}"
+        );
+        assert!(final_path.exists(), "one bad byte must not cost the user the finished archive");
+
+        let texts: Vec<String> = lines
+            .iter()
+            .filter_map(|l| match l {
+                OutputLine::Stderr(s) => Some(s.clone()),
+                _ => None,
+            })
+            .collect();
+        assert!(texts.iter().any(|s| s == "قبل"), "got {texts:?}");
+        assert!(
+            texts.iter().any(|s| s == "بعد-٢"),
+            "output after the bad byte must keep flowing: {texts:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_stream_with_no_newline_at_all_does_not_grow_the_core() {
+        // ٢٠٠ ميغابايت بلا فاصل أسطر. القارئ السابق كان يراكمها كلها في سطر
+        // واحد قبل أن يصل إلى القصّ — أي أن الحدّ المعلَن يحكم ما يُرسل ولا
+        // يحكم ما يُحجز.
+        let before = peak_rss();
+        let cmd = PlannedCommand {
+            program: PathBuf::from("/bin/dd"),
+            args: vec![
+                OsString::from("if=/dev/zero"),
+                OsString::from("bs=1048576"),
+                OsString::from("count=200"),
+            ],
+            cwd: None,
+            explain: vec![],
+            warnings: vec![],
+            artifact: None,
+            estimate: None,
+        };
+        let (outcome, lines) = collect(cmd).await;
+        assert!(outcome.is_success(), "got {outcome:?}");
+
+        let grew = peak_rss().saturating_sub(before);
+        assert!(
+            grew < 64 * 1024 * 1024,
+            "reading 200 MB without a newline grew peak RSS by {grew} bytes"
+        );
+        for l in &lines {
+            if let OutputLine::Stdout(s) = l {
+                assert!(s.len() <= MAX_LINE_BYTES + TRUNCATION_MARK.len(), "line not capped");
+            }
+        }
+    }
+
+    /// ذروة الذاكرة المقيمة للعملية بالبايتات. `ru_maxrss` تراكمية، فالفرق
+    /// بين قياسين يحدّ ما أضافه ما بينهما ولا ينقص عنه.
+    fn peak_rss() -> u64 {
+        // SAFETY: بنية مصفّرة تُملأ بنداء قراءة فقط.
+        let mut usage: libc::rusage = unsafe { std::mem::zeroed() };
+        unsafe { libc::getrusage(libc::RUSAGE_SELF, &mut usage) };
+        usage.ru_maxrss as u64
+    }
+
+    #[test]
+    fn a_line_buffer_never_holds_more_than_the_declared_budget() {
+        let mut line = Vec::new();
+        for _ in 0..1000 {
+            append_bounded(&mut line, &vec![b'x'; 10_000]);
+        }
+        assert_eq!(line.len(), LINE_BUFFER_BYTES);
+    }
+
+    #[test]
+    fn the_shared_ceiling_holds_exactly_when_both_streams_race_on_it() {
+        // خيوط حقيقية لا مهامّ على منفّذ واحد: الفحص والزيادة كانا نداءين
+        // منفصلين، ولا يمرّان معًا إلا بتوازٍ فعلي. والحاجز يضع الجميع على
+        // العتبة نفسها: سطر واحد باقٍ تحت السقف وثمانية يطلبونه.
+        //
+        // التجربة تتكرّر لأن سباقًا يُثبَت بتكراره لا بمرّة واحدة — النسخة
+        // التي تفحص ثم تزيد تخرق السقف في نحو ثلث المحاولات، فتُظهرها
+        // خمسٌ وعشرون محاولة يقينًا. والنسخة الصحيحة دقيقة في كل مرّة.
+        use std::sync::atomic::Ordering::Relaxed;
+
+        let writers = 8;
+        for trial in 0..25 {
+            let (tx, mut rx) = mpsc::channel::<OutputLine>(writers + 4);
+            let emitted = Arc::new(AtomicUsize::new(MAX_OUTPUT_LINES - 1));
+            let dropped = Arc::new(AtomicUsize::new(0));
+            let ready = Arc::new(AtomicUsize::new(0));
+            let go = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+            let mut threads = Vec::new();
+            for _ in 0..writers {
+                let tx = tx.clone();
+                let emitted = emitted.clone();
+                let dropped = dropped.clone();
+                let ready = ready.clone();
+                let go = go.clone();
+                threads.push(std::thread::spawn(move || {
+                    let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
+                    rt.block_on(async move {
+                        let mut line = b"line".to_vec();
+                        let mut sink = false;
+                        // انتظار دوّار لا `Barrier`: الحاجز يوقظ الخيوط
+                        // متتابعةً بميكروثوانٍ بينها، وهي دهرٌ أمام نافذة
+                        // السباق. الدوران يجعلها تنطلق معًا فعلًا.
+                        ready.fetch_add(1, Relaxed);
+                        while !go.load(std::sync::atomic::Ordering::Acquire) {
+                            std::hint::spin_loop();
+                        }
+                        deliver(&tx, &emitted, &dropped, OutputLine::Stdout, &mut line, &mut sink)
+                            .await;
+                    });
+                }));
+            }
+            drop(tx);
+            while ready.load(Relaxed) < writers {
+                std::hint::spin_loop();
+            }
+            go.store(true, std::sync::atomic::Ordering::Release);
+            for t in threads {
+                t.join().unwrap();
+            }
+
+            let mut delivered = 0usize;
+            while rx.blocking_recv().is_some() {
+                delivered += 1;
+            }
+            assert_eq!(delivered, 1, "trial {trial}: the ceiling must hold exactly, not roughly");
+            assert_eq!(
+                dropped.load(Relaxed),
+                writers - 1,
+                "trial {trial}: every line that did not pass must be counted"
+            );
+        }
     }
 
     #[tokio::test]

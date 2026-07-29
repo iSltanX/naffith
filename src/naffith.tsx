@@ -593,10 +593,16 @@ function Summary({ plan, phase }: { plan: PlanResponse | null; phase: Phase }) {
             </dd>
 
             {/* عدد ما مُسح: هو ما يجعل «تقدير ناقص» رقمًا لا شعورًا — المستخدم
-                يرى كم عنصرًا دخل في الحساب قبل أن يقف المسح عند حدّه. */}
-            <dt className="t-body-sec">
-              {tFirst(['summary.estimate.entries', 'summary.estimate'])}
-            </dt>
+                يرى كم عنصرًا دخل في الحساب قبل أن يقف المسح عند حدّه.
+
+                المفتاح واحدٌ بلا سلسلة رجوع. كانت السلسلة
+                `[…entries, summary.estimate]`، ورجوعُها ليس صياغةً أعمّ للمعنى
+                نفسه — بل معنى آخر: الرقم ١٨٤٣ كان يُعرض تحت «حجم المصدر
+                تقديريًا». `tFirst` تخدم نصوص الحقول حيث الخاصّ والعامّ يقولان
+                الشيء ذاته؛ وهنا كان غيابُ الترجمة يصير كذبًا لا فجوة. ومفتاحٌ
+                غير مترجَم يعود كما هو من `t` — غيابٌ مرئي يُصلَح، وهو أهون من
+                رقمٍ يحمل اسم غيره. */}
+            <dt className="t-body-sec">{t('summary.estimate.entries')}</dt>
             <dd>
               <bdi className="num">{plan.estimate.scanned_entries}</bdi>
             </dd>

@@ -11,9 +11,18 @@
 //! التخطيط والترقية — وهو بالضبط السلوك المطلوب: لا نستبدل شيئًا لم نخطّط
 //! لاستبداله.
 //!
+//! ولماذا لا `hard_link` وحدها: FAT32 و exFAT لا تعرفان الروابط الصلبة، و‏
+//! `/Volumes` جذرٌ مسموح عمدًا كي تكون ذاكرة USB وبطاقة الكاميرا وجهةً صالحة —
+//! وهما تُهيّآن بإحدى الصيغتين. انظر `promote` أدناه.
+//!
 //! و`Drop` هو شبكة الأمان الأخيرة: أي مسار خروج لم يستدعِ `commit` — فشل، أو
 //! إلغاء، أو ذعر، أو إسقاط المستقبل — يحذف المؤقّت. لا يبقى أرشيف جزئي يوحي
 //! بالنجاح.
+//!
+//! وخروجٌ ناجح ليس وحده شرط الترقية: `plans::Preconditions::claim_temp` يحجز
+//! المؤقّت بإنشائه قبل الإطلاق، فهو **موجود دائمًا** لحظة `commit`. لذلك
+//! «أُنتج شيء» تُقاس بالحجم لا بالوجود، وإلّا رُقّي أرشيف بحجم صفر وقيل للمستخدم
+//! إنه نجاح. انظر `commit`.
 
 use crate::error::{CoreError, Result};
 use crate::plans::random_suffix;
@@ -101,29 +110,31 @@ impl ArtifactGuard {
 
     /// يرقّي المؤقّت إلى اسمه النهائي. يفشل إن لم يُنتج شيء، أو إن ظهر ملف
     /// بالاسم النهائي في هذه الأثناء.
+    ///
+    /// **«لم يُنتج شيء» = الحجم صفر، لا الغياب.** الشرط كان `exists()` وكان
+    /// صادقًا يوم كُتب؛ ثم صار `plans::Preconditions::claim_temp` يُنشئ المؤقّت
+    /// حصريًا (‏`O_CREAT|O_EXCL`‎) قبل الإطلاق كي يسدّ سباق زرع رابط رمزي مكانه،
+    /// فصار المؤقّت **موجودًا دائمًا** لحظة الوصول إلى هنا. أي أن الشرط لم
+    /// يعد قابلًا للتحقّق أبدًا: أداةٌ تخرج بصفر دون أن تكتب بايتًا واحدًا كانت
+    /// تُرقّي أرشيفًا فارغًا ويُقيَّد التشغيل **نجاحًا**، والمستخدم يفتح ملفًا
+    /// بحجم صفر. الفحص على الحجم يستعيد الثابتة التي يعلنها هذا الملف.
+    ///
+    /// والحذف صراحةً قبل الخروج: الملف الصفري المحجوز موجود فعلًا، وتركُه
+    /// بعد تسوية الحارس (`settled`) كان سيخلّف `.naffith-*.part` في مجلد
+    /// المستخدم بعد كل فشلٍ من هذا النوع — و`Drop` لا يمرّ عليه بعد التسوية.
     pub fn commit(mut self) -> Result<PathBuf> {
-        if !self.temp.exists() {
+        let produced = std::fs::metadata(&self.temp).map(|m| m.len() > 0).unwrap_or(false);
+        if !produced {
+            self.cleanup();
             self.settled = true;
             return Err(CoreError::PathMissing);
         }
-        match std::fs::hard_link(&self.temp, &self.final_path) {
-            Ok(()) => {
-                let _ = std::fs::remove_file(&self.temp);
-                self.settled = true;
-                Ok(self.final_path.clone())
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-                // شخص أو شيء سبقنا إلى الاسم. لا نستبدل — نتراجع ونبلّغ.
-                let _ = std::fs::remove_file(&self.temp);
-                self.settled = true;
-                Err(CoreError::DestinationExists)
-            }
-            Err(e) => {
-                let _ = std::fs::remove_file(&self.temp);
-                self.settled = true;
-                Err(CoreError::Io(e))
-            }
-        }
+        let promoted = promote(&self.temp, &self.final_path);
+        // في مسار الرابط الصلب يبقى المؤقّت بعد النجاح، وفي مسار النقل لا
+        // يبقى. حذفٌ غير مشروط يغطّي الحالتين، وفشله لا يعني شيئًا.
+        let _ = std::fs::remove_file(&self.temp);
+        self.settled = true;
+        promoted.map(|()| self.final_path.clone())
     }
 
     /// إسقاط صريح عند الفشل أو الإلغاء.
@@ -145,6 +156,53 @@ impl Drop for ArtifactGuard {
             self.cleanup();
         }
     }
+}
+
+/// يرقّي المؤقّت إلى اسمه النهائي، ولا يستبدل ملفًا موجودًا في أي حال.
+///
+/// `hard_link` هي المسار المفضّل: نداءٌ واحد يمنح رفض الاستبدال ذرّيًا
+/// (‏`EEXIST`) بلا نافذة زمنية أصلًا. لكنها ليست متاحة في كل مكان — و‏
+/// **فشلها كان يُتلف عملًا مكتملًا**: على exFAT ترجع `ENOTSUP` (٤٥) بعد أن
+/// تكون `ditto` قد كتبت الأرشيف كاملًا، فيُحذف المؤقّت ويرى المستخدم
+/// `err.commit` بعد انتظار طويل ولا يبقى له شيء. وهذه ليست حالة نادرة: كل
+/// ذاكرة USB وبطاقة كاميرا تصل بـ exFAT أو FAT32.
+fn promote(temp: &Path, final_path: &Path) -> Result<()> {
+    match std::fs::hard_link(temp, final_path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            Err(CoreError::DestinationExists)
+        }
+        // أي فشل آخر — لا نميّز رقم الخطأ لأن `ENOTSUP` يصل Rust بنوع
+        // `Uncategorized` غير قابل للمطابقة — يُجرَّب بالبديل، وهو نفسه يرفض
+        // الاستبدال، فتجريبه لا يخاطر بشيء.
+        Err(_) => promote_without_links(temp, final_path),
+    }
+}
+
+/// ترقية على نظام ملفات لا يعرف الروابط الصلبة.
+///
+/// نحجز الاسم النهائي أولًا بـ `O_CREAT|O_EXCL` — وهي ذرّية على FAT و exFAT
+/// و SMB كما هي على APFS — فإن كان الاسم مأخوذًا فشل الحجز ولم نمسّ شيئًا.
+/// ثم `rename` تنقل المؤقّت فوق **حجزنا نحن**، فما تستبدله ملفٌ فارغ أنشأناه
+/// قبل سطر واحد لا ملف مستخدم.
+///
+/// `renamex_np` بـ `RENAME_EXCL` جُرِّبت أولًا لأنها تلغي النافذة بين الحجز
+/// والنقل، وسقطت: على exFAT ترجع `ENOTSUP` هي الأخرى، فلم تكن تحلّ الحالة
+/// التي وُجدت من أجلها.
+fn promote_without_links(temp: &Path, final_path: &Path) -> Result<()> {
+    match std::fs::OpenOptions::new().write(true).create_new(true).open(final_path) {
+        Ok(_) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            return Err(CoreError::DestinationExists)
+        }
+        Err(e) => return Err(CoreError::Io(e)),
+    }
+    std::fs::rename(temp, final_path).map_err(|e| {
+        // فشل النقل بعد الحجز: لا يجوز أن يبقى ملف فارغ يحمل الاسم الذي
+        // اختاره المستخدم ويوحي بأن شيئًا أُنتج.
+        let _ = std::fs::remove_file(final_path);
+        CoreError::Io(e)
+    })
 }
 
 #[cfg(test)]
@@ -268,6 +326,70 @@ mod tests {
         let r = ArtifactGuard::new(&a).commit();
         assert!(matches!(r, Err(CoreError::PathMissing)));
         assert!(!a.final_path.exists());
+    }
+
+    #[test]
+    fn a_claimed_but_never_written_temp_is_still_nothing_produced() {
+        // الحالة الواقعية بعد أن صار `claim_temp` يُنشئ المؤقّت حصريًا قبل
+        // الإطلاق: الملف **موجود** دائمًا وحجمه صفر. فحصُ `exists()` كان قد
+        // صار لا يُحقَّق أبدًا، فأرشيفٌ فارغ يُرقّى ويُقيَّد نجاحًا.
+        let dir = tempfile::tempdir().unwrap();
+        let a = artifact(dir.path(), "out.zip");
+        std::fs::write(&a.temp, b"").unwrap();
+
+        let r = ArtifactGuard::new(&a).commit();
+
+        assert!(matches!(r, Err(CoreError::PathMissing)), "got {r:?}");
+        assert!(!a.final_path.exists(), "a zero-byte archive must never reach the final name");
+        assert!(
+            !a.temp.exists(),
+            "and the claimed placeholder must not be left in the destination"
+        );
+    }
+
+    #[test]
+    fn the_link_free_promotion_moves_the_output_to_its_final_name() {
+        // مسار الأقراص التي لا تعرف الروابط الصلبة، مُختبَرًا وحده: على APFS
+        // لا يمكن إفشال `hard_link` عمدًا، والاختبار الكامل على قرص exFAT
+        // حقيقي في tests/compress_integration.rs.
+        let dir = tempfile::tempdir().unwrap();
+        let a = artifact(dir.path(), "ناتج.zip");
+        std::fs::write(&a.temp, b"payload").unwrap();
+
+        promote_without_links(&a.temp, &a.final_path).unwrap();
+
+        assert_eq!(std::fs::read(&a.final_path).unwrap(), b"payload");
+        assert!(!a.temp.exists(), "rename must have consumed the temporary file");
+    }
+
+    #[test]
+    fn the_link_free_promotion_also_refuses_to_replace_an_existing_file() {
+        // القيمة كلها في هذا: بديلٌ يستبدل بصمت أسوأ من الخطأ الذي يعالجه.
+        let dir = tempfile::tempdir().unwrap();
+        let a = artifact(dir.path(), "ناتج.zip");
+        std::fs::write(&a.final_path, b"PRECIOUS EXISTING DATA").unwrap();
+        std::fs::write(&a.temp, b"new output").unwrap();
+
+        let r = promote_without_links(&a.temp, &a.final_path);
+
+        assert!(matches!(r, Err(CoreError::DestinationExists)));
+        assert_eq!(std::fs::read(&a.final_path).unwrap(), b"PRECIOUS EXISTING DATA");
+    }
+
+    #[test]
+    fn the_link_free_promotion_refuses_a_dangling_symlink_at_the_final_name() {
+        // رابط معلَّق ليس مكانًا شاغرًا: `O_EXCL` يفشل عليه كما يفشل
+        // `hard_link`، وإلّا كتبنا عبر الرابط إلى موضع لم نخطّط له.
+        let dir = tempfile::tempdir().unwrap();
+        let a = artifact(dir.path(), "ناتج.zip");
+        std::os::unix::fs::symlink(dir.path().join("nowhere"), &a.final_path).unwrap();
+        std::fs::write(&a.temp, b"new output").unwrap();
+
+        assert!(matches!(
+            promote_without_links(&a.temp, &a.final_path),
+            Err(CoreError::DestinationExists)
+        ));
+        assert!(!dir.path().join("nowhere").exists(), "nothing may be written through the link");
     }
 
     #[test]

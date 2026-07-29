@@ -16,8 +16,22 @@ use crate::error::{CoreError, NameRejection, Result};
 use std::ffi::OsStr;
 use std::path::{Component, Path, PathBuf};
 
-/// أطول اسم ملف تقبله APFS/HFS+ بالبايتات.
-const MAX_NAME_BYTES: usize = 255;
+/// أطول مكوّن مسار تقبله APFS، **بوحدات UTF-16**.
+///
+/// ليست بايتات ولا محارف. APFS تخزّن الأسماء يونيكود وتحدّ الطول بعدد وحدات
+/// UTF-16، وهذا مقيسٌ لا مستنتَج: على هذا الحجم أُنشئت أسماء من ٢٥٥ حرفًا
+/// عربيًا (‏٥١٠ بايتات) بلا شكوى، بينما فشل اسمٌ من ١٢٨ رمزًا تعبيريًا
+/// (‏٥١٢ بايتًا، ٢٥٦ وحدة) بـ `ENAMETOOLONG`.
+///
+/// القياس بالبايتات كان يقصّ الأسماء العربية عند نصف ما يسمح به النظام —
+/// وهو أسوأ ما يمكن أن يفعله منتج عربيّ الوجهة — ويكذب على المستخدم في نص
+/// الرفض حين ينسب الحدّ إلى نظام الملفات.
+const MAX_NAME_UNITS: usize = 255;
+
+/// طول الاسم كما يعدّه نظام الملفات.
+fn name_units(name: &str) -> usize {
+    name.encode_utf16().count()
+}
 
 fn home() -> Option<PathBuf> {
     std::env::var_os("HOME").map(PathBuf::from).filter(|p| p.is_absolute())
@@ -55,9 +69,33 @@ const PROTECTED_SUFFIXES: &[&str] = &[
 fn is_protected(canonical: &Path) -> bool {
     let Some(h) = home() else { return false };
     let h = h.canonicalize().unwrap_or(h);
+    protected_under(&h, canonical)
+}
+
+/// القرار نفسه بمنزلٍ مُعطى.
+///
+/// مفصولٌ عن `home()` كي يُختبر على شجرة اصطناعية: `HOME` متغيّر بيئة عامّ
+/// على العملية كلها، والاختبارات تتوازى، فالعبث به يفسد اختبارات غيره.
+///
+/// **الحارس يُحلّ كما يُحلّ المفحوص.** المقارنة الحرفية وحدها تفشل مفتوحةً:
+/// من يضع `~/.ssh` رابطًا إلى مستودع dotfiles (‏stow و chezmoi و yadm كلها
+/// تفعل ذلك) يصل إلى `check_policy` بمسارٍ حلّه `canonicalize` إلى
+/// `~/dotfiles/ssh`، وهو ليس تحت البادئة الحرفية `~/.ssh` فلا يطابقها أبدًا —
+/// فتُضغط المفاتيح الخاصة في أرشيف. ولذلك نطابق الشكلين معًا: الحرفيّ يمسك
+/// الحالة العادية وحالة الحارس المعلَّق الذي لا يُحلّ، والمحلولُ يمسك الرابط
+/// وهدفه معًا.
+fn protected_under(home: &Path, canonical: &Path) -> bool {
     PROTECTED_SUFFIXES.iter().any(|suffix| {
-        let guarded = h.join(suffix);
-        canonical == guarded || canonical.starts_with(&guarded)
+        let literal = home.join(suffix);
+        if canonical == literal || canonical.starts_with(&literal) {
+            return true;
+        }
+        match literal.canonicalize() {
+            Ok(resolved) => canonical == resolved || canonical.starts_with(&resolved),
+            // حارسٌ لا وجود له لا شيء تحته يُحمى؛ المقارنة الحرفية أعلاه هي
+            // كل ما يمكن قوله عنه.
+            Err(_) => false,
+        }
     })
 }
 
@@ -172,7 +210,29 @@ pub fn new_file_in(dir: &Path, name: &OsStr) -> Result<PathBuf> {
     if Path::new(name).components().count() != 1 {
         return Err(CoreError::PathTraversal);
     }
+    reject_overlong_component(name)?;
     Ok(canonical_dir.join(name))
+}
+
+/// يرفض اسمًا نهائيًا لا يقبله نظام الملفات.
+///
+/// هذا هو الفحص **الحاسم** لا الفحص في `sanitize_name`: ذاك يرى ما كتبه
+/// المستخدم، وهذا يرى الاسم بعد أن أُضيف امتداده — والفرق بينهما هو بالضبط
+/// ما كان يمرّ. اسمٌ من ٢٥٥ وحدة يقبله `sanitize_name`، ثم `ensure_extension`
+/// تجعله ٢٥٩، فيقبله التخطيط، ويعمل `ditto` على مجلد بحجم غيغابايتات دقائق
+/// طويلة، ثم تفشل الترقية بـ `ENAMETOOLONG` ويُحذف الأرشيف ويرى المستخدم
+/// «تعذّرت الترقية» — عن شرطٍ كان معلومًا لحظة الكتابة في الحقل.
+fn reject_overlong_component(name: &OsStr) -> Result<()> {
+    // اسمٌ ليس UTF-8 صالحًا لا يمكن عدّ وحداته، فيُقاس بالبايتات: البايتات
+    // لا تقلّ أبدًا عن وحدات UTF-16، فالقياس متحفّظ لا متساهل.
+    let units = match name.to_str() {
+        Some(s) => name_units(s),
+        None => name.as_encoded_bytes().len(),
+    };
+    if units > MAX_NAME_UNITS {
+        return Err(CoreError::InvalidName { reason: NameRejection::TooLong });
+    }
+    Ok(())
 }
 
 fn reject_dotdot(p: &Path) -> Result<()> {
@@ -193,7 +253,7 @@ pub fn sanitize_name(raw: &str) -> Result<String> {
     if name.is_empty() {
         return Err(CoreError::InvalidName { reason: NameRejection::Empty });
     }
-    if name.len() > MAX_NAME_BYTES {
+    if name_units(name) > MAX_NAME_UNITS {
         return Err(CoreError::InvalidName { reason: NameRejection::TooLong });
     }
     if name.contains('/') {
@@ -273,11 +333,136 @@ mod tests {
 
     #[test]
     fn rejects_name_longer_than_filesystem_allows() {
-        let long = "ا".repeat(200); // 400 bytes in UTF-8
+        let long = "ا".repeat(300); // ٦٠٠ بايت، و٣٠٠ وحدة — فوق الحدّ بالقياسين
         assert!(matches!(
             sanitize_name(&long),
             Err(CoreError::InvalidName { reason: NameRejection::TooLong })
         ));
+    }
+
+    /// الحدّ بوحدات UTF-16 لا بالبايتات ولا بالمحارف.
+    ///
+    /// القياس بالبايتات كان يوقف الاسم العربي عند ١٢٧ حرفًا بينما يمنح
+    /// الإنجليزي ٢٥٥؛ والقياس بالمحارف كان يقبل ١٢٨ رمزًا تعبيريًا يرفضها
+    /// نظام الملفات. الاختبار التالي يُنشئ الأسماء فعلًا على القرص كي لا يبقى
+    /// الحدّ ادّعاءً.
+    #[test]
+    fn the_length_limit_is_measured_the_way_the_filesystem_measures_it() {
+        let dir = tempfile::tempdir().unwrap();
+        // (المحرف، أطول عدد تكرارات مقبول)
+        for (ch, accepted) in [("a", 255), ("ا", 255), ("🎯", 127)] {
+            let ok = ch.repeat(accepted);
+            let over = ch.repeat(accepted + 1);
+
+            assert!(sanitize_name(&ok).is_ok(), "{ch}×{accepted} must be accepted");
+            assert!(
+                matches!(
+                    sanitize_name(&over),
+                    Err(CoreError::InvalidName { reason: NameRejection::TooLong })
+                ),
+                "{ch}×{} must be refused",
+                accepted + 1
+            );
+
+            // وما نقبله يجب أن يُنشأ فعلًا، وما نرفضه يجب أن يرفضه النظام.
+            std::fs::write(dir.path().join(&ok), b"x")
+                .unwrap_or_else(|e| panic!("{ch}×{accepted} must be creatable on APFS: {e}"));
+            assert!(
+                std::fs::write(dir.path().join(&over), b"x").is_err(),
+                "{ch}×{} must be refused by the filesystem too",
+                accepted + 1
+            );
+        }
+    }
+
+    #[test]
+    fn a_name_that_only_overflows_once_its_extension_is_added_is_refused_at_plan_time() {
+        let Some(h) = home() else { return };
+        let base = h.join(format!(".naffith-test-longname-{}", crate::plans::random_suffix()));
+        std::fs::create_dir_all(&base).unwrap();
+
+        // ٢٥٥ وحدة يقبلها `sanitize_name`، ثم `.zip` تجعلها ٢٥٩. قبل هذا
+        // الفحص كانت الخطة تنجح، وتضغط `ditto` كاملًا، ثم تفشل الترقية.
+        let clean = sanitize_name(&"ا".repeat(255)).unwrap();
+        let final_name = ensure_extension(&clean, "zip");
+
+        let r = new_file_in(&base, OsStr::new(&final_name));
+        // ونثبت أن الرفض ليس تشدّدًا: النظام نفسه يرفض إنشاءه.
+        let on_disk = std::fs::write(base.join(&final_name), b"x");
+        // كل ما قد يفشل يقع قبل التنظيف، فلا يبقى مجلد اختبار في منزل المستخدم.
+        std::fs::remove_dir_all(&base).ok();
+
+        assert_eq!(name_units(&final_name), 259);
+        assert!(on_disk.is_err(), "the premise: APFS must refuse this name");
+        assert!(
+            matches!(r, Err(CoreError::InvalidName { reason: NameRejection::TooLong })),
+            "got {r:?}"
+        );
+    }
+
+    /// الحدّ عند التخطيط يجب أن يكون الحدّ الذي يسري فعلًا حتى نهاية السلسلة.
+    ///
+    /// آخر حلقة هي الاسم المؤقّت: `atomic::temp_path_for` تضيف فوق الاسم
+    /// النهائي بادئةً وعشوائيًا ولاحقة. هذا الاختبار يربط الملفّين كي لا
+    /// ينزلق أحدهما عن الآخر بصمت.
+    #[test]
+    fn the_longest_accepted_final_name_still_yields_a_creatable_temp_name() {
+        let dir = tempfile::tempdir().unwrap();
+        for ch in ["a", "ا", "🎯"] {
+            let mut final_name = String::new();
+            while name_units(&format!("{final_name}{ch}.zip")) <= MAX_NAME_UNITS {
+                final_name.push_str(ch);
+            }
+            final_name.push_str(".zip");
+            assert!(name_units(&final_name) <= MAX_NAME_UNITS);
+
+            let temp = crate::atomic::temp_path_for(&dir.path().join(&final_name)).unwrap();
+            std::fs::write(&temp, b"x")
+                .unwrap_or_else(|e| panic!("temp name for {ch}-name must be creatable: {e}"));
+        }
+    }
+
+    /// الحالة التي كان الحارس يفشل فيها مفتوحًا: الموضع المحميّ رابطٌ رمزي.
+    ///
+    /// `canonicalize` تُخرج المفحوص من تحت البادئة الحرفية، فلا تطابقها أبدًا.
+    #[test]
+    fn a_symlinked_protected_location_is_still_protected() {
+        let dir = tempfile::tempdir().unwrap();
+        let fake_home = dir.path().canonicalize().unwrap();
+        let target = fake_home.join("dotfiles/ssh");
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::write(target.join("id_ed25519"), b"PRIVATE KEY").unwrap();
+        std::os::unix::fs::symlink(&target, fake_home.join(".ssh")).unwrap();
+
+        // ما يصل إلى السياسة هو الشكل المحلول، لا الاسم الذي كتبه المستخدم.
+        let resolved = fake_home.join(".ssh").canonicalize().unwrap();
+        assert_eq!(resolved, target, "the premise: canonicalize walks out of the guard");
+
+        assert!(
+            protected_under(&fake_home, &resolved),
+            "a symlinked ~/.ssh must not lose its protection"
+        );
+        assert!(
+            protected_under(&fake_home, &target.join("id_ed25519")),
+            "and neither may anything under it"
+        );
+        // والاسم الحرفي محميّ كما كان.
+        assert!(protected_under(&fake_home, &fake_home.join(".ssh")));
+    }
+
+    #[test]
+    fn a_real_protected_directory_is_still_protected_and_a_neighbour_is_not() {
+        let dir = tempfile::tempdir().unwrap();
+        let fake_home = dir.path().canonicalize().unwrap();
+        std::fs::create_dir_all(fake_home.join(".ssh")).unwrap();
+        std::fs::create_dir_all(fake_home.join("Library/Keychains")).unwrap();
+        std::fs::create_dir_all(fake_home.join(".sshfoo")).unwrap();
+
+        assert!(protected_under(&fake_home, &fake_home.join(".ssh")));
+        assert!(protected_under(&fake_home, &fake_home.join("Library/Keychains")));
+        // بادئة نصّية ليست بادئة مسار: `starts_with` تعمل بالمكوّنات.
+        assert!(!protected_under(&fake_home, &fake_home.join(".sshfoo")));
+        assert!(!protected_under(&fake_home, &fake_home.join("Documents")));
     }
 
     #[test]
@@ -320,6 +505,12 @@ mod tests {
         assert!(matches!(r, Err(CoreError::PathOutsideAllowedRoots)), "got {r:?}");
     }
 
+    // مساحات الاختبار داخل المنزل تحمل لاحقة عشوائية لا اسمًا ثابتًا: الفحص
+    // الذي تختبره هذه الاختبارات يكتب داخل المجلد ويقرؤه، فمشغّلان متزامنان
+    // للطقم (أو `cargo test` مرتين في آن) كانا يريان أحدهما بقايا الآخر
+    // ويسقط الاختبار على شيء ليس عيبًا في الشيفرة. `compress_ditto` يفعل هذا
+    // أصلًا في `Scratch`، وهذا الملف كان الاستثناء.
+
     /// يُعيد أسماء بقايا فحص الكتابة داخل مجلد.
     fn probe_leftovers(dir: &Path) -> Vec<String> {
         std::fs::read_dir(dir)
@@ -335,7 +526,7 @@ mod tests {
     #[test]
     fn the_write_probe_never_survives_a_successful_check() {
         let Some(h) = home() else { return };
-        let base = h.join(".naffith-test-probe-success");
+        let base = h.join(format!(".naffith-test-probe-success-{}", crate::plans::random_suffix()));
         std::fs::create_dir_all(&base).unwrap();
 
         for _ in 0..20 {
@@ -350,7 +541,8 @@ mod tests {
     fn the_write_probe_leaves_nothing_when_the_directory_is_read_only() {
         use std::os::unix::fs::PermissionsExt;
         let Some(h) = home() else { return };
-        let base = h.join(".naffith-test-probe-readonly");
+        let base =
+            h.join(format!(".naffith-test-probe-readonly-{}", crate::plans::random_suffix()));
         std::fs::create_dir_all(&base).unwrap();
         std::fs::set_permissions(&base, std::fs::Permissions::from_mode(0o500)).unwrap();
 
@@ -376,7 +568,7 @@ mod tests {
     fn a_read_only_directory_is_refused_as_a_destination() {
         use std::os::unix::fs::PermissionsExt;
         let Some(h) = home() else { return };
-        let base = h.join(".naffith-test-readonly-dest");
+        let base = h.join(format!(".naffith-test-readonly-dest-{}", crate::plans::random_suffix()));
         std::fs::create_dir_all(&base).unwrap();
         std::fs::set_permissions(&base, std::fs::Permissions::from_mode(0o500)).unwrap();
 
@@ -390,7 +582,7 @@ mod tests {
     #[test]
     fn new_file_in_home_resolves_without_the_file_existing() {
         let Some(h) = home() else { return };
-        let base = h.join(".naffith-test-scratch");
+        let base = h.join(format!(".naffith-test-scratch-{}", crate::plans::random_suffix()));
         std::fs::create_dir_all(&base).unwrap();
         let p = new_file_in(&base, OsStr::new("ملف جديد.zip")).unwrap();
         assert_eq!(p.file_name().unwrap(), OsStr::new("ملف جديد.zip"));

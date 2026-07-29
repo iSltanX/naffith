@@ -146,6 +146,61 @@ async fn cancelling_reaches_a_whole_chain_of_descendants() {
 }
 
 #[tokio::test]
+async fn cancelling_costs_no_more_than_the_child_takes_to_die() {
+    // المهلة قبل القتل القسري ١٫٥ ثانية، وكانت تُنتظر كاملة حتى حين تموت
+    // الأداة فورًا على `SIGTERM`. طوال ذلك يبقى الأرشيف الجزئي على القرص،
+    // ولم يُبثّ `run://finished` بعد، فتعرض الواجهة تشغيلًا ألغاه المستخدم
+    // على أنه جارٍ. الانتظار هنا يجب أن يسابقه خروج الطفل لا أن يسبقه.
+    let (task, cancel, _rx) = run_collecting(command("/bin/sleep", &["30"], None)).await;
+    tokio::time::sleep(Duration::from_millis(120)).await;
+
+    let at = Instant::now();
+    cancel.send(()).unwrap();
+    assert_eq!(task.await.unwrap(), Outcome::Cancelled);
+    let took = at.elapsed();
+
+    assert!(
+        took < Duration::from_millis(700),
+        "cancelling a process that dies on SIGTERM took {took:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_descendant_that_ignores_sigterm_is_still_killed() {
+    // هذا ما يحرس السباق أعلاه: لو رُبط التصعيد بانقضاء المهلة وحدها لنجا منه
+    // كل حفيد يتجاهل `SIGTERM` بمجرّد أن يخرج القائد بسرعة. `SIGKILL` تُرسل
+    // إلى المجموعة في الحالين، فالسباق يوفّر الانتظار ولا يبيع الضمان.
+    //
+    // `/bin/sleep` بمسار مطلق: الطفل يعمل ببيئة بلا `PATH` عمدًا، فاسمٌ مجرّد
+    // لا يُحلّ ويصير الحلقة دورانًا محمومًا بدل انتظار.
+    let (task, cancel, mut rx) = run_collecting(command(
+        "/bin/sh",
+        &["-c", "(trap '' TERM; while :; do /bin/sleep 1; done) & echo $!; wait"],
+        None,
+    ))
+    .await;
+
+    let stubborn = next_number(&mut rx).await;
+    // مهلة قصيرة كي يكون `trap` قد نُصب فعلًا: `$!` يُطبع بعد `fork` مباشرة،
+    // وقبل أن ينفّذ الفرعُ أوّل أمر فيه.
+    tokio::time::sleep(Duration::from_millis(250)).await;
+    assert!(alive(stubborn), "the descendant must be running before we cancel");
+
+    cancel.send(()).unwrap();
+    // بمهلة: حفيدٌ ناجٍ يُبقي طرف الأنبوب مفتوحًا، فتعلق `run` بدل أن تعود.
+    let outcome = tokio::time::timeout(Duration::from_secs(15), task)
+        .await
+        .expect("a surviving descendant holds the pipe open and hangs the run")
+        .unwrap();
+    assert_eq!(outcome, Outcome::Cancelled);
+
+    assert!(
+        wait_until_gone(stubborn, Duration::from_secs(5)),
+        "a descendant that ignores SIGTERM ({stubborn}) survived cancellation"
+    );
+}
+
+#[tokio::test]
 async fn cancelling_removes_the_temporary_output_and_produces_no_final_file() {
     let dir = tempfile::tempdir().unwrap();
     let final_path = dir.path().join("أرشيف.zip");
