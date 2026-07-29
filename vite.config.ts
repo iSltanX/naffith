@@ -1,6 +1,7 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath, URL } from 'node:url';
+import { CRITICAL_FONT_FILES } from './src/critical-fonts';
 
 // نظام التصميم **منسوخ داخل المشروع** في `src/design-system`.
 //
@@ -10,8 +11,60 @@ import { fileURLToPath, URL } from 'node:url';
 // قرار. مشروع الهوية يبقى مرجعًا يُنسخ منه عن قصد، لا تبعيةَ بناء حيّة.
 const DESIGN_SYSTEM = fileURLToPath(new URL('./src/design-system', import.meta.url));
 
+/**
+ * حقنُ `<link rel="preload">` للوجوه الحرجة في رأس المستند.
+ *
+ * لماذا إضافة بناء لا سطورٌ مكتوبة في `index.html`: البناء يبصم كل ملفّ خطٍّ
+ * بمحتواه (`cairo-000-BW4_w4rE.woff2`)، فأي عنوانٍ يُكتب باليد يبطل عند أول
+ * تحديثٍ للخطوط ويصير تحميلًا مسبقًا لملفٍّ غير موجود — أسوأ من غيابه، لأنه
+ * يفشل صامتًا. الإضافة تقرأ الأسماء المُخرَجة من الحزمة نفسها، فلا تكذب أبدًا.
+ *
+ * ولماذا استبدالُ علامةٍ في `index.html` لا `injectTo: 'head-prepend'`: الحقن
+ * في مقدّمة `<head>` يدفع `<meta charset>` إلى ما بعد ستّة وسوم، والمواصفة
+ * تشترط بلوغه في أول 1024 بايت. العلامة تضع الوسوم حيث يجب: بعد `charset`
+ * مباشرةً وقبل `<link>` الأنماط — فيبدأ طلب الخطّ قبل تحليل CSS لا بعده.
+ *
+ * وغياب الملف أو غياب العلامة يُسقط البناء عمدًا: مشروع الهوية يُنسخ منه
+ * يدويًا، وتغيّرُ أسماء المقاطع فيه يجب أن يُكتشف هنا لا في أول تشغيلٍ عند
+ * المستخدم — تحميلٌ مسبق لعنوانٍ خاطئ يفشل صامتًا ولا أثر له إلا القفز عائدًا.
+ */
+const PRELOAD_SLOT = '<!--@preload-critical-fonts-->';
+
+function preloadCriticalFonts(): Plugin {
+  return {
+    name: 'naffith:preload-critical-fonts',
+    transformIndexHtml: {
+      order: 'post',
+      handler(html, ctx) {
+        if (!html.includes(PRELOAD_SLOT)) {
+          throw new Error(`preload-critical-fonts: ‏${PRELOAD_SLOT} ليست في index.html`);
+        }
+        const links = CRITICAL_FONT_FILES.map((file) => {
+          // في التطوير لا حزمة ولا بصمة: المسار المصدري هو ما يخدمه الخادم،
+          // وهو نفسه ما تشير إليه `fonts.css`، فيتشاركان المخبأ.
+          let href = `/src/design-system/fonts/${file}`;
+          if (ctx.bundle) {
+            const stem = file.replace(/\.woff2$/, '');
+            const emitted = Object.keys(ctx.bundle).find((name) =>
+              new RegExp(`(?:^|/)${stem}-[^/]*\\.woff2$`).test(name),
+            );
+            if (emitted === undefined) {
+              throw new Error(`preload-critical-fonts: ‏${file} ليس في ناتج البناء`);
+            }
+            href = `/${emitted}`;
+          }
+          // ‏`crossorigin` مطلوبة حتى لخطٍّ من الأصل نفسه: الخطوط تُطلب دائمًا في
+          // وضع CORS مجهّلًا، وبدونها يصير الطلب طلبين لا طلبًا.
+          return `<link rel="preload" as="font" type="font/woff2" href="${href}" crossorigin>`;
+        });
+        return html.replace(PRELOAD_SLOT, links.join('\n  '));
+      },
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), preloadCriticalFonts()],
   clearScreen: false,
   resolve: { alias: { '@ds': DESIGN_SYSTEM } },
   server: {

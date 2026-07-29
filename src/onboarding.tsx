@@ -1,6 +1,33 @@
 /**
  * الترحيب — الشاشة التي تُعرض مرّةً واحدة.
  *
+ * ## لماذا لوحتان لا بطاقة واحدة
+ *
+ * الشاشة مكتوبة بلغة mockups-v3: سطحان متجاوران، أحدهما أعمق من الآخر. اليمنى
+ * (`__visual`) تُعرِّف: العلامة والاسم والجملة والمقتطف — أي *ما هذا*. واليسرى
+ * (`__copy`) تُشغِّل: الخطوات الثلاث والفعل — أي *ماذا أفعل الآن*. البطاقة
+ * الواحدة التي كانت هنا رصّت الستّة في عمودٍ واحد، فصار الفعل في أسفل عمودٍ
+ * طويل، وصارت النافذة العريضة فراغًا على الجانبين. اللوحتان تحوّلان العرض
+ * الفائض إلى محتوى بدل أن تتركاه هامشًا.
+ *
+ * وتبقيان عمودين عند كل مقاسٍ تبلغه النافذة. كانتا ترجعان عمودًا واحدًا حين
+ * يضيق العرض، وذلك هو ما دفع «ابدأ الآن» خارج النافذة: عمودان متجاوران
+ * ارتفاعُهما أكبرهما، ومرصوصان ارتفاعُهما مجموعهما — والفرق المقيس عند ‎680px
+ * عرضًا ‎230.7px، أي أكثر من العجز كلّه. انظر `onboarding.css`: القرار هناك
+ * بأرقامه، لا هنا، ولا سمة في هذا الملف تعرف مقاس النافذة.
+ *
+ * والمقتطف وحده هو ما يُخفى حين يضيق العرض — لأنه `white-space: pre` فلا
+ * يضيق — ونصّ الخطوة الثالثة يبقى يقول دعواه كاملةً عند كل مقاس.
+ *
+ * ## لماذا انتقل المقتطف من الخطوة الثالثة إلى لوحة التعريف
+ *
+ * كان تحت نصّ الخطوة الثالثة. في تخطيطٍ ذي عمودين هذا يضع صندوقًا لاتينيًّا
+ * (`direction: ltr`) في وسط قائمةٍ عربية قصيرة الأسطر، فينكسر إيقاع الخطوات
+ * الثلاث ويضيق الصندوق إلى نصف ما يحتاج. وموضعه الجديد هو موضعه في النموذج
+ * المرجعي: تحت الجملة مباشرةً، لأنه *برهانها* — الجملة تدّعي أن الأمر يبقى
+ * معروضًا، والمقتطف هو ذلك الأمر. ونصّ الخطوة الثالثة يظل يقول ما يقوله
+ * كاملًا، فلم يُفقَد شيء بنقله.
+ *
  * ## لماذا فعلٌ واحد لا ثلاثة
  *
  * النموذج المرجعي يعرض ثلاثة أزرار: «ابدأ الآن» و«جولة سريعة» و«تخطّي». اثنان
@@ -45,19 +72,37 @@ import './onboarding.css';
 const STEPS = ['step1', 'step2', 'step3'] as const;
 
 /**
- * شكل الأمر الحقيقي، لا مثالٌ مخترع.
+ * شكل الأمر الحقيقي، لا مثالٌ مخترع — مكسورًا على أسطر كما يُكتب في الصدفة.
  *
  * الأداة والرايات منقولة حرفيًا عمّا تبنيه النواة (انظر `shell-quote.test.ts`)؛
  * المسارَان وحدهما نائبان لأن لا مصدر ولا وجهة بعد.
+ *
+ * ## لماذا أربعة أسطر لا سطرٌ واحد
+ *
+ * كان سطرًا واحدًا يبلغ ثلاثة أضعاف عرض الصندوق، فيمرَّر أفقيًا. وشريط التمرير
+ * الأفقي — حين يظهره النظام شريطًا كلاسيكيًا لا عائمًا — يأكل من *ارتفاع*
+ * الصندوق. فكان عرض المقتطف يتغيّر مع وصول خطّ `mono` المتأخّر، فيظهر الشريط
+ * أو يختفي، فيقفز ما تحته. كسرُه على أسطر أطولها ٣٢ محرفًا يجعله لا يفيض عند
+ * أضيق مقاسٍ يُعرض فيه أصلًا — ‎856px عرضًا، وهو الحدّ الذي تحته يُخفى؛ المقيس
+ * عنده أن عرضه الطبيعي ‎283.6px وما يسعه ‎315px — فلا شريط ولا قفزة. وهذا شرطٌ
+ * على المحتوى لا حيلةُ عرض، ولذلك هو هنا لا في CSS.
+ *
+ * وعدد الأسطر هنا مرتبطٌ بـ`--peek-lines` في `onboarding.css`: هي التي تحجز
+ * الارتفاع النهائي من أول إطار. تغيير أحدهما دون الآخر يعيد القفزة، ويسقط في
+ * `onboarding.test.tsx` و`onboarding.source.test.ts`.
  */
-const PEEK_ARGV: ReadonlyArray<readonly [token: string, role: string]> = [
-  ['/usr/bin/ditto', 'tok-name'],
-  ['-c', 'tok-flag'],
-  ['-k', 'tok-flag'],
-  ['--sequesterRsrc', 'tok-flag'],
-  ['--keepParent', 'tok-flag'],
-  ['~/Documents/Reports', 'tok-path'],
-  ['~/Desktop/Reports.zip', 'tok-path'],
+const PEEK_LINES: ReadonlyArray<ReadonlyArray<readonly [token: string, role: string]>> = [
+  [
+    ['/usr/bin/ditto', 'tok-name'],
+    ['-c', 'tok-flag'],
+    ['-k', 'tok-flag'],
+  ],
+  [
+    ['--sequesterRsrc', 'tok-flag'],
+    ['--keepParent', 'tok-flag'],
+  ],
+  [['~/Documents/Reports', 'tok-path']],
+  [['~/Desktop/Reports.zip', 'tok-path']],
 ];
 
 /**
@@ -93,50 +138,55 @@ export default function Onboarding({ onStart }: { onStart: () => void }): JSX.El
       ref={frame}
       aria-labelledby={titleId}
     >
-      <div className="onboarding__card">
-        <svg className="onboarding__mark" viewBox="0 0 64 64" aria-hidden="true">
-          <use href="#mark" />
-        </svg>
+      <div className="onboarding__panes">
+        <div className="onboarding__visual">
+          <svg className="onboarding__mark" viewBox="0 0 64 64" aria-hidden="true">
+            <use href="#mark" />
+          </svg>
 
-        <h1 id={titleId} className="t-page-title onboarding__title">
-          {t('onboarding.title')} {t('app.naffith')}{' '}
-          <span className="onboarding__sep" aria-hidden="true">
-            —
-          </span>{' '}
-          {t('app.satr')}
-        </h1>
+          <h1 id={titleId} className="t-page-title onboarding__title">
+            {t('onboarding.title')} {t('app.naffith')}{' '}
+            <span className="onboarding__sep" aria-hidden="true">
+              —
+            </span>{' '}
+            {t('app.satr')}
+          </h1>
 
-        <p className="t-body onboarding__lede">{t('onboarding.lede')}</p>
+          <p className="t-body onboarding__lede">{t('onboarding.lede')}</p>
 
-        {/* `ol` لأن الترتيب معنى لا زينة: لا تُراجَع خطةٌ قبل اختيار عملية. */}
-        <ol className="onboarding__steps">
-          {STEPS.map((step, i) => (
-            <li className="onboarding__step" key={step}>
-              {/* الرقم مرسوم، والقائمة المرقّمة تعطيه للقارئ الصوتي أصلًا. */}
-              <span className="onboarding__n num lat" aria-hidden="true">
-                {i + 1}
-              </span>
-              <div className="onboarding__step-text">
-                <h2 className="t-card-title onboarding__step-title">
-                  {t(`onboarding.${step}.title`)}
-                </h2>
-                <p className="t-body-sec onboarding__step-body">{t(`onboarding.${step}.body`)}</p>
-                {step === 'step3' && <Peek />}
-              </div>
-            </li>
-          ))}
-        </ol>
-
-        <div className="onboarding__actions">
-          <button type="button" className="btn btn--primary btn--lg" onClick={onStart}>
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <use href="#i-execute" />
-            </svg>
-            {t('onboarding.start')}
-          </button>
+          <Peek />
         </div>
 
-        <p className="t-caption onboarding__once">{t('onboarding.once')}</p>
+        <div className="onboarding__copy">
+          {/* `ol` لأن الترتيب معنى لا زينة: لا تُراجَع خطةٌ قبل اختيار عملية. */}
+          <ol className="onboarding__steps">
+            {STEPS.map((step, i) => (
+              <li className="onboarding__step" key={step}>
+                {/* الرقم مرسوم، والقائمة المرقّمة تعطيه للقارئ الصوتي أصلًا. */}
+                <span className="onboarding__n num lat" aria-hidden="true">
+                  {i + 1}
+                </span>
+                <div className="onboarding__step-text">
+                  <h2 className="t-card-title onboarding__step-title">
+                    {t(`onboarding.${step}.title`)}
+                  </h2>
+                  <p className="t-body-sec onboarding__step-body">{t(`onboarding.${step}.body`)}</p>
+                </div>
+              </li>
+            ))}
+          </ol>
+
+          <div className="onboarding__actions">
+            <button type="button" className="btn btn--primary btn--lg" onClick={onStart}>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <use href="#i-execute" />
+              </svg>
+              {t('onboarding.start')}
+            </button>
+          </div>
+
+          <p className="t-caption onboarding__once">{t('onboarding.once')}</p>
+        </div>
       </div>
     </main>
   );
@@ -150,21 +200,29 @@ function Peek() {
         <div className="command__bar">
           <span className="command__label">{t('app.satr')}</span>
         </div>
-        {/* `white-space: pre` في `.command__body`: لا مسافة مصدرٍ بين الوسوم.
+        {/* `white-space: pre` في `.command__body`: لا مسافة مصدرٍ بين الوسوم،
+            وفواصل الأسطر تُكتب `\n` صريحةً لا انكسارَ مصدرٍ يُقلَّم عند البناء.
 
-            و`tabindex="-1"` ليس زينة: الصندوق يمرّر أفقيًا (`overflow-x: auto`)
-            لأن الأمر أطول من البطاقة، والمتصفّحات الحديثة تجعل كل صندوق تمريرٍ
-            بلا ابنٍ قابلٍ للتبويب محطّةَ تبويبٍ من تلقائها كي يبقى تمريرُه
-            بالمفتاح ممكنًا. فكانت أوّل ضغطة Tab في الشاشة تقع على هذا الرسم لا
-            على «ابدأ الآن» — وهو `aria-hidden`، فيقع التركيز على ما لا ينطقه
-            القارئ الصوتي: صمتٌ يظنّه المستخدم عطلًا. لا شيء هنا يُقرأ ولا
-            يُمرَّر طلبًا لمعنى: نصّ الخطوة الثالثة يقول ما يقوله كاملًا. */}
+            و`tabindex="-1"` ليس زينة: الصندوق يمرّر أفقيًا (`overflow-x: auto`
+            في `base.css`)، والمتصفّحات الحديثة تجعل كل صندوق تمريرٍ بلا ابنٍ
+            قابلٍ للتبويب محطّةَ تبويبٍ من تلقائها كي يبقى تمريرُه بالمفتاح
+            ممكنًا. فكانت أوّل ضغطة Tab في الشاشة تقع على هذا الرسم لا على
+            «ابدأ الآن» — وهو `aria-hidden`، فيقع التركيز على ما لا ينطقه
+            القارئ الصوتي: صمتٌ يظنّه المستخدم عطلًا. وكسرُ الأمر على أسطر رفع
+            الفيضان اليوم لكنه لم يرفع القاعدة: أي نصٍّ أطول يعيدها. لا شيء هنا
+            يُقرأ ولا يُمرَّر طلبًا لمعنى: نصّ الخطوة الثالثة يقول ما يقوله
+            كاملًا. */}
         <div className="command__body" tabIndex={-1}>
-          <span className="tok-prompt">$ </span>
-          {PEEK_ARGV.map(([token, role], i) => (
-            <span key={token}>
-              <span className={role}>{token}</span>
-              {i < PEEK_ARGV.length - 1 ? ' ' : ''}
+          {PEEK_LINES.map((line, li) => (
+            <span key={li}>
+              {li === 0 ? <span className="tok-prompt">$ </span> : '  '}
+              {line.map(([token, role], ti) => (
+                <span key={token}>
+                  <span className={role}>{token}</span>
+                  {ti < line.length - 1 ? ' ' : ''}
+                </span>
+              ))}
+              {li < PEEK_LINES.length - 1 ? ' \\\n' : ''}
             </span>
           ))}
         </div>
