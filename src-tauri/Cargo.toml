@@ -27,6 +27,11 @@ libc = "0.2"
 
 [dev-dependencies]
 tempfile = "3"
+# `test` هي ميزة Tauri الرسمية التي تُتيح `MockRuntime` و`get_ipc_response`.
+# بدونها لا سبيل لقيادة حدّ IPC الحقيقي — فكّ ترميز ما ترسله الواجهة وتوليف
+# ما يعود إليها — إلا بتشغيل تطبيق بنافذة. اعتماد تطويريّ بحت: لا يدخل
+# `cargo build --release` ولا الحزمة الموزَّعة. انظر tests/ipc_bridge.rs.
+tauri = { version = "2", features = ["test"] }
 
 [features]
 # The internal test operation is compiled in always so the core is testable,

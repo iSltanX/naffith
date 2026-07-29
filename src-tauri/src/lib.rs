@@ -212,9 +212,14 @@ fn plan(
 ///
 /// لا يقبل `argv` ولا مسارًا ولا خيارًا إضافيًا: كل ما يُنفَّذ محفوظ في النواة
 /// منذ لحظة التخطيط، والرمز مفتاحه.
+///
+/// عامٌّ على وقت التشغيل (`R`) لا مثبَّتٌ على `Wry`: هذا ما يجعل `ipc_handler`
+/// عامًّا، فيقود اختبارُ الجسر وقتَ التشغيل الوهمي على **نفس** المعالج الذي
+/// يركّبه `run()`. التثبيت على `Wry` كان يعني أن الأمر الوحيد الذي يطلق عمليات
+/// حقيقية هو الأمر الوحيد الذي لا يمكن أن يمرّ عليه اختبار.
 #[tauri::command]
 async fn execute(
-    app: tauri::AppHandle,
+    app: tauri::AppHandle<impl tauri::Runtime>,
     state: State<'_, AppState>,
     token: String,
 ) -> Result<String> {
@@ -308,6 +313,21 @@ fn reveal(state: State<'_, AppState>, run_id: String) -> Result<()> {
     reveal::reveal(&target)
 }
 
+/// المعالج الذي يستقبل كل استدعاء من الواجهة. **تركيبٌ واحد لا نسختان.**
+///
+/// كان `generate_handler!` مكتوبًا داخل `run()`، فلم يكن هناك سبيل لأن يقود
+/// اختبارٌ حدَّ IPC الحقيقي: الأوامر خاصة، و`run()` يشغّل تطبيقًا كاملًا بنافذة.
+/// فبقيت طبقة `serde` — فكّ ما ترسله الواجهة، وتوليف ما يعود إليها وما يعود
+/// إليها من أخطاء — الطبقةَ الوحيدة في المنتج التي لا يمسّها اختبار، مع أن
+/// الواجهة لا تكلّم النواة إلا عبرها.
+///
+/// إخراجه هنا يجعل `tests/ipc_bridge.rs` يقود **هذا** المعالج لا نسخةً منه،
+/// فلا يمكن أن يفترق ما يُختبر عمّا يُسجَّل. والقائمة تبقى في هذا الملف وحده،
+/// فحرّاس `tests/security.rs` تقرأ الموضع نفسه الذي كانت تقرؤه.
+pub fn ipc_handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync {
+    tauri::generate_handler![list_operations, plan, execute, cancel, recent_runs, reveal]
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -317,14 +337,7 @@ pub fn run() {
             Ok(())
         })
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![
-            list_operations,
-            plan,
-            execute,
-            cancel,
-            recent_runs,
-            reveal
-        ])
+        .invoke_handler(ipc_handler())
         .run(tauri::generate_context!())
         .expect("error while running naffith");
 }

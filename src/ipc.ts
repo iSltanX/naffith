@@ -109,17 +109,33 @@ export type Outcome =
   | { status: 'cancelled' }
   | { status: 'error'; key: string };
 
-export interface RunOutputEvent {
-  run_id: string;
-  stream: 'stdout' | 'stderr';
-  line: string;
-}
+/**
+ * سطر خرج واحد كما يبثّه `run://output`.
+ *
+ * ثلاث صيغ لا صيغتان. `truncated` تُبَثّ مرّة واحدة حين تبلغ النواة سقف
+ * الأسطر المعلَن، ومعناها «ما تراه ليس كل الخرج» — وهي الحالة الوحيدة التي
+ * لا تحمل فيها `line` نصًّا يُعرض بل عدد ما سقط. اتحادٌ موسوم لا واجهة
+ * واحدة، لأن `stream` هو ما يقرّر نوع `line`: بواجهة واحدة كان `line: string`
+ * كذبًا يمرّ من `tsc`، فتُطبع حمولة القصّ في الشاشة كأنها سطر من الأداة.
+ */
+export type RunOutputEvent =
+  | { run_id: string; stream: 'stdout'; line: string }
+  | { run_id: string; stream: 'stderr'; line: string }
+  | { run_id: string; stream: 'truncated'; line: { dropped: number } };
 
 export interface RunFinishedEvent extends Record<string, unknown> {
   run_id: string;
   status: Outcome['status'];
   produced?: string | null;
   code?: number | null;
+  /**
+   * رقم الإشارة التي أنهت الأداة، مع `status: 'signalled'` وحدها.
+   *
+   * الحدث هو ما يصل المستمع فعلًا، لا `Outcome` المجرّد، فحقلٌ يعلنه ذاك
+   * ويغفله هذا لا سبيل لقراءته: شاشةٌ تريد التفريق بين خروجٍ بغير صفر
+   * وإشارةٍ قاتلة كانت تقرأ `unknown` من الشكل المفتوح بلا نوع يحرسها.
+   */
+  signal?: number | null;
   key?: string;
 }
 
@@ -129,10 +145,19 @@ export interface JournalEntry {
   id: string;
   op_id: string;
   at: number;
-  duration_ms: number | null;
+  /**
+   * زمن التنفيذ، في القيد النهائي وحده.
+   *
+   * ‏`skip_serializing_if` في النواة يعني أن المفتاح **يغيب** عن السلك حين لا
+   * قيمة له، لا أنه يصل `null`. فالاختيارية هنا ليست تجميلًا: بدونها يَعِد
+   * ‏`tsc` بمفتاحٍ حاضرٍ دومًا، وتصير `=== null` مقارنةً لا تصدق أبدًا، ويمرّ
+   * قيد `planned` — الذي لا يحمل الحقل أصلًا — على أنه يحمله.
+   */
+  duration_ms?: number | null;
   program: string;
   args: string[];
-  cwd: string | null;
+  /** مجلد العمل. يغيب عن السلك عند الغياب كما يغيب `duration_ms`. */
+  cwd?: string | null;
   state: JournalState;
   produced?: string | null;
   reason?: string;
