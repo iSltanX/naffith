@@ -1,0 +1,1590 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light dark">
+  <meta name="description" content="فهرس حزمة Mockups v3 التفاعلية لتطبيق نَفِّذ — سَطْر على macOS.">
+  <title>نَفِّذ — سَطْر · حزمة Mockups v3</title>
+  <link rel="icon" type="image/svg+xml" href="./favicon.svg">
+  <link rel="stylesheet" href="../../../src/design-system/fonts.css">
+  <link rel="stylesheet" href="../../../src/design-system/tokens.css">
+  <link rel="stylesheet" href="../../../src/design-system/base.css">
+  <script src="./sprite.js" defer></script>
+  <style>
+    html {
+      color-scheme: light;
+      min-width: 280px;
+    }
+
+    html[data-theme="dark"] {
+      color-scheme: dark;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      html:not([data-theme="light"]) {
+        color-scheme: dark;
+      }
+    }
+
+    body {
+      min-height: 100vh;
+      padding: clamp(var(--space-16), 4vw, var(--space-40));
+      background:
+        radial-gradient(circle at 12% 0%, color-mix(in srgb, var(--action-primary) 7%, transparent), transparent 28rem),
+        var(--bg-canvas);
+    }
+
+    button,
+    a {
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .skip-link {
+      position: fixed;
+      inset-block-start: var(--space-8);
+      inset-inline-start: var(--space-8);
+      z-index: var(--z-tooltip);
+      transform: translateY(-150%);
+      padding: var(--space-8) var(--space-12);
+      border-radius: var(--radius-control);
+      background: var(--action-neutral);
+      color: var(--action-neutral-text);
+      font-family: var(--font-display);
+      font-size: var(--fs-button);
+      font-weight: var(--fw-bold);
+      text-decoration: none;
+      transition: transform var(--duration-fast) var(--ease-out);
+    }
+
+    .skip-link:focus {
+      transform: none;
+    }
+
+    .page {
+      width: min(100%, var(--width-wide));
+      margin-inline: auto;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      gap: var(--space-16);
+      min-height: 42px;
+      margin-block-end: var(--space-20);
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-10, 10px);
+      min-width: 0;
+      color: var(--text-primary);
+      text-decoration: none;
+    }
+
+    .brand svg {
+      width: 30px;
+      height: 30px;
+      flex: none;
+      color: var(--brand-ink);
+    }
+
+    .brand__name {
+      font-family: var(--font-display);
+      font-size: var(--fs-body);
+      font-weight: var(--fw-extrabold);
+      white-space: nowrap;
+    }
+
+    .brand__edition {
+      color: var(--text-muted);
+      font-family: var(--font-body);
+      font-size: var(--fs-caption);
+      white-space: nowrap;
+    }
+
+    .topbar__tools {
+      display: flex;
+      align-items: center;
+      gap: var(--space-8);
+      margin-inline-start: auto;
+    }
+
+    .theme-switch {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-2);
+      padding: var(--space-2);
+      border: var(--border-hairline) solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      background: var(--bg-sunken);
+    }
+
+    .theme-button {
+      height: 28px;
+      padding-inline: var(--space-10, 10px);
+      border: 0;
+      border-radius: var(--radius-sm);
+      background: transparent;
+      color: var(--text-muted);
+      font-family: var(--font-body);
+      font-size: var(--fs-caption);
+      font-weight: var(--fw-bold);
+      cursor: pointer;
+      transition:
+        background-color var(--duration-fast) var(--ease-standard),
+        color var(--duration-fast) var(--ease-standard),
+        box-shadow var(--duration-fast) var(--ease-standard);
+    }
+
+    .theme-button:hover {
+      color: var(--text-primary);
+    }
+
+    .theme-button[aria-pressed="true"] {
+      background: var(--bg-surface);
+      color: var(--text-primary);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .resource-shortcut {
+      display: inline-flex;
+      align-items: center;
+      height: var(--control-h-md);
+      padding-inline: var(--space-12);
+      border: var(--border-hairline) solid var(--border-default);
+      border-radius: var(--radius-control);
+      color: var(--text-secondary);
+      font-family: var(--font-body);
+      font-size: var(--fs-caption);
+      font-weight: var(--fw-bold);
+      text-decoration: none;
+      transition:
+        background-color var(--duration-fast) var(--ease-standard),
+        color var(--duration-fast) var(--ease-standard);
+    }
+
+    .resource-shortcut:hover {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+    }
+
+    .hero {
+      position: relative;
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(300px, 0.85fr);
+      gap: clamp(var(--space-24), 4vw, var(--space-48));
+      align-items: center;
+      padding: clamp(var(--space-24), 5vw, var(--space-48));
+      overflow: hidden;
+      border: var(--border-hairline) solid var(--border-subtle);
+      border-radius: var(--radius-2xl);
+      background: var(--bg-elevated);
+      box-shadow: var(--shadow-lg);
+    }
+
+    .hero::before {
+      content: "";
+      position: absolute;
+      inset-block: 0;
+      inset-inline-start: 0;
+      width: var(--border-accent);
+      background: var(--action-primary);
+    }
+
+    .hero__copy {
+      position: relative;
+      z-index: 1;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-8);
+      margin-block-end: var(--space-16);
+      color: var(--text-accent);
+      font-family: var(--font-body);
+      font-size: var(--fs-caption);
+      font-weight: var(--fw-bold);
+    }
+
+    .eyebrow::before {
+      content: "";
+      width: 18px;
+      height: 2px;
+      border-radius: var(--radius-full);
+      background: currentColor;
+    }
+
+    .hero h1 {
+      max-width: 14ch;
+      font-size: clamp(30px, 5vw, var(--fs-display));
+      line-height: var(--lh-display);
+      font-weight: var(--fw-extrabold);
+    }
+
+    .hero__lede {
+      max-width: 62ch;
+      margin-block-start: var(--space-16);
+      color: var(--text-secondary);
+      font-size: var(--fs-body);
+      line-height: 1.95;
+    }
+
+    .hero__actions {
+      display: flex;
+      align-items: center;
+      gap: var(--space-8);
+      flex-wrap: wrap;
+      margin-block-start: var(--space-24);
+    }
+
+    .hero__note {
+      flex-basis: 100%;
+      margin-block-start: var(--space-4);
+      color: var(--text-muted);
+      font-size: var(--fs-caption);
+    }
+
+    .manifest {
+      position: relative;
+      z-index: 1;
+      overflow: hidden;
+      border: var(--border-hairline) solid var(--command-border);
+      border-radius: var(--radius-xl);
+      background: var(--command-bg);
+      color: var(--command-text);
+      box-shadow: var(--shadow-md);
+    }
+
+    .manifest__bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-12);
+      padding: var(--space-12) var(--space-16);
+      border-block-end: var(--border-hairline) solid var(--command-border);
+      background: var(--command-bg-header);
+    }
+
+    .manifest__title {
+      color: var(--command-text);
+      font-family: var(--font-display);
+      font-size: var(--fs-card-title);
+      font-weight: var(--fw-bold);
+    }
+
+    .manifest__local {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-4);
+      color: var(--command-prompt);
+      font-size: var(--fs-caption);
+    }
+
+    .manifest__local::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: var(--radius-full);
+      background: var(--command-flag);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--command-flag) 14%, transparent);
+    }
+
+    .manifest__body {
+      padding: var(--space-20);
+    }
+
+    .manifest__mark {
+      display: flex;
+      align-items: center;
+      gap: var(--space-12);
+      margin-block-end: var(--space-20);
+    }
+
+    .manifest__mark svg {
+      width: 38px;
+      height: 38px;
+      flex: none;
+      color: var(--command-text);
+    }
+
+    .manifest__mark strong {
+      display: block;
+      color: var(--command-text);
+      font-family: var(--font-display);
+      font-size: var(--fs-body);
+    }
+
+    .manifest__mark span {
+      display: block;
+      margin-block-start: var(--space-2);
+      color: var(--command-prompt);
+      font-size: var(--fs-caption);
+    }
+
+    .manifest__stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      border: var(--border-hairline) solid var(--command-border);
+      border-radius: var(--radius-md);
+      overflow: hidden;
+    }
+
+    .manifest__stat {
+      padding: var(--space-12) var(--space-8);
+      text-align: center;
+    }
+
+    .manifest__stat + .manifest__stat {
+      border-inline-start: var(--border-hairline) solid var(--command-border);
+    }
+
+    .manifest__stat b {
+      display: block;
+      color: var(--command-name);
+      font-family: var(--font-mono);
+      font-size: var(--fs-section-title);
+      line-height: 1.2;
+    }
+
+    .manifest__stat span {
+      display: block;
+      margin-block-start: var(--space-4);
+      color: var(--command-prompt);
+      font-size: var(--fs-caption);
+    }
+
+    .availability {
+      display: flex;
+      align-items: flex-start;
+      gap: var(--space-12);
+      margin-block: var(--space-20) var(--space-40);
+      padding: var(--space-16) var(--space-20);
+      border: var(--border-hairline) solid var(--border-subtle);
+      border-inline-start: var(--border-accent) solid var(--action-primary);
+      border-radius: var(--radius-card);
+      background: var(--bg-surface);
+    }
+
+    .availability__icon {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      flex: none;
+      border-radius: var(--radius-md);
+      background: var(--bg-selected);
+      color: var(--text-accent);
+    }
+
+    .availability__icon svg {
+      width: var(--icon-md);
+      height: var(--icon-md);
+    }
+
+    .availability strong {
+      display: block;
+      color: var(--text-primary);
+      font-family: var(--font-display);
+      font-size: var(--fs-card-title);
+    }
+
+    .availability p {
+      margin-block-start: var(--space-2);
+      color: var(--text-secondary);
+      font-size: var(--fs-body-secondary);
+      line-height: 1.75;
+    }
+
+    .section {
+      margin-block-start: var(--space-48);
+      scroll-margin-block-start: var(--space-24);
+    }
+
+    .section__head {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: var(--space-24);
+      margin-block-end: var(--space-20);
+    }
+
+    .section__head h2 {
+      font-size: var(--fs-section-title);
+      line-height: var(--lh-section-title);
+    }
+
+    .section__head p {
+      max-width: 62ch;
+      margin-block-start: var(--space-4);
+      color: var(--text-muted);
+      font-size: var(--fs-helper);
+      line-height: var(--lh-helper);
+    }
+
+    .section__count {
+      flex: none;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      font-size: var(--fs-caption);
+      direction: ltr;
+      unicode-bidi: isolate;
+    }
+
+    .screen-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: var(--space-16);
+    }
+
+    .screen-card {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 250px;
+      padding: var(--space-20);
+      border: var(--border-hairline) solid var(--border-subtle);
+      border-radius: var(--radius-card);
+      background: var(--bg-surface);
+      transition:
+        border-color var(--duration-fast) var(--ease-standard),
+        box-shadow var(--duration-fast) var(--ease-standard),
+        transform var(--duration-fast) var(--ease-standard);
+    }
+
+    .screen-card:hover {
+      border-color: var(--border-default);
+      box-shadow: var(--shadow-md);
+      transform: translateY(-1px);
+    }
+
+    .screen-card[data-availability="real"] {
+      border-inline-start: var(--border-accent) solid var(--action-primary);
+      background:
+        linear-gradient(145deg, color-mix(in srgb, var(--bg-selected) 46%, transparent), transparent 42%),
+        var(--bg-surface);
+    }
+
+    .screen-card__top {
+      display: flex;
+      align-items: flex-start;
+      gap: var(--space-12);
+    }
+
+    .screen-card__icon {
+      display: grid;
+      place-items: center;
+      width: 40px;
+      height: 40px;
+      flex: none;
+      border-radius: var(--radius-md);
+      background: var(--bg-sunken);
+      color: var(--text-secondary);
+    }
+
+    .screen-card[data-availability="real"] .screen-card__icon {
+      background: var(--bg-selected);
+      color: var(--text-accent);
+    }
+
+    .screen-card__icon svg {
+      width: var(--icon-md);
+      height: var(--icon-md);
+    }
+
+    .screen-card__heading {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .screen-card h3 {
+      color: var(--text-primary);
+      font-size: var(--fs-card-title);
+      line-height: var(--lh-card-title);
+    }
+
+    .screen-card__scope {
+      margin-block-start: var(--space-2);
+      color: var(--text-muted);
+      font-size: var(--fs-caption);
+    }
+
+    .status-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-4);
+      flex: none;
+      min-height: var(--control-h-xs);
+      padding-inline: var(--space-8);
+      border: var(--border-hairline) solid var(--border-subtle);
+      border-radius: var(--radius-chip);
+      background: var(--bg-sunken);
+      color: var(--text-secondary);
+      font-size: var(--fs-caption);
+      font-weight: var(--fw-bold);
+      white-space: nowrap;
+    }
+
+    .status-tag::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: var(--radius-full);
+      background: currentColor;
+      opacity: 0.7;
+    }
+
+    .status-tag--real {
+      border-color: var(--status-success-border);
+      background: var(--status-success-tint);
+      color: var(--status-success-text);
+    }
+
+    .status-tag--core {
+      border-color: var(--border-accent-color);
+      background: var(--bg-selected);
+      color: var(--text-accent);
+    }
+
+    .screen-card__description {
+      margin-block: var(--space-16);
+      color: var(--text-secondary);
+      font-size: var(--fs-body-secondary);
+      line-height: 1.85;
+    }
+
+    .screen-card__footer {
+      display: flex;
+      align-items: center;
+      gap: var(--space-8);
+      flex-wrap: wrap;
+      margin-block-start: auto;
+      padding-block-start: var(--space-16);
+      border-block-start: var(--border-hairline) solid var(--border-subtle);
+    }
+
+    .screen-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: var(--control-h-sm);
+      padding-inline: var(--space-12);
+      border-radius: var(--radius-control);
+      background: var(--action-neutral);
+      color: var(--action-neutral-text);
+      font-family: var(--font-display);
+      font-size: var(--fs-caption);
+      font-weight: var(--fw-bold);
+      text-decoration: none;
+      white-space: nowrap;
+      transition: background-color var(--duration-fast) var(--ease-standard);
+    }
+
+    .screen-link:hover {
+      background: var(--action-neutral-hover);
+      color: var(--action-neutral-text);
+    }
+
+    .size-links {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-2);
+      margin-inline-start: auto;
+      padding: var(--space-2);
+      border-radius: var(--radius-md);
+      background: var(--bg-sunken);
+    }
+
+    .size-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 24px;
+      padding-inline: var(--space-8);
+      border-radius: var(--radius-xs);
+      color: var(--text-muted);
+      font-size: 10px;
+      font-weight: var(--fw-bold);
+      text-decoration: none;
+      white-space: nowrap;
+      transition:
+        background-color var(--duration-fast) var(--ease-standard),
+        color var(--duration-fast) var(--ease-standard);
+    }
+
+    .size-link:hover {
+      background: var(--bg-surface);
+      color: var(--text-primary);
+    }
+
+    .scenario-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+      gap: var(--space-16);
+      align-items: start;
+    }
+
+    .scenario-panel {
+      overflow: hidden;
+      border: var(--border-hairline) solid var(--border-subtle);
+      border-radius: var(--radius-card);
+      background: var(--bg-surface);
+    }
+
+    .scenario-panel__head {
+      display: flex;
+      align-items: center;
+      gap: var(--space-12);
+      padding: var(--space-16) var(--space-20);
+      border-block-end: var(--border-hairline) solid var(--border-subtle);
+      background: var(--bg-sunken);
+    }
+
+    .scenario-panel__head svg {
+      width: var(--icon-md);
+      height: var(--icon-md);
+      color: var(--text-accent);
+    }
+
+    .scenario-panel__head h3 {
+      font-size: var(--fs-card-title);
+    }
+
+    .scenario-panel__head span {
+      margin-inline-start: auto;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      font-size: var(--fs-caption);
+      direction: ltr;
+      unicode-bidi: isolate;
+    }
+
+    .scenario-list {
+      list-style: none;
+    }
+
+    .scenario-list li + li {
+      border-block-start: var(--border-hairline) solid var(--border-subtle);
+    }
+
+    .scenario {
+      display: grid;
+      grid-template-columns: 30px minmax(0, 1fr) auto;
+      gap: var(--space-12);
+      align-items: center;
+      min-height: 66px;
+      padding: var(--space-10, 10px) var(--space-16);
+      color: var(--text-primary);
+      text-decoration: none;
+      transition: background-color var(--duration-fast) var(--ease-standard);
+    }
+
+    .scenario:hover {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+    }
+
+    .scenario__number {
+      display: grid;
+      place-items: center;
+      width: 28px;
+      height: 28px;
+      border-radius: var(--radius-full);
+      background: var(--bg-sunken);
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      direction: ltr;
+      unicode-bidi: isolate;
+    }
+
+    .scenario__copy {
+      min-width: 0;
+    }
+
+    .scenario__copy strong {
+      display: block;
+      color: var(--text-primary);
+      font-family: var(--font-display);
+      font-size: var(--fs-body-secondary);
+      line-height: 1.55;
+    }
+
+    .scenario__copy span {
+      display: block;
+      margin-block-start: var(--space-2);
+      overflow: hidden;
+      color: var(--text-muted);
+      font-size: var(--fs-caption);
+      line-height: 1.55;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .scenario__open {
+      color: var(--text-accent);
+      font-size: var(--fs-caption);
+      font-weight: var(--fw-bold);
+      white-space: nowrap;
+    }
+
+    .system-stack {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-16);
+    }
+
+    .dialog-callout {
+      display: flex;
+      align-items: center;
+      gap: var(--space-12);
+      min-height: 92px;
+      padding: var(--space-16);
+      border: var(--border-hairline) solid var(--status-warning-border);
+      border-radius: var(--radius-card);
+      background: var(--status-warning-tint);
+      color: var(--text-primary);
+      text-decoration: none;
+      transition:
+        border-color var(--duration-fast) var(--ease-standard),
+        box-shadow var(--duration-fast) var(--ease-standard);
+    }
+
+    .dialog-callout:hover {
+      color: var(--text-primary);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .dialog-callout svg {
+      width: var(--icon-lg);
+      height: var(--icon-lg);
+      flex: none;
+      color: var(--status-warning-text);
+    }
+
+    .dialog-callout strong {
+      display: block;
+      font-family: var(--font-display);
+      font-size: var(--fs-card-title);
+    }
+
+    .dialog-callout span {
+      display: block;
+      margin-block-start: var(--space-2);
+      color: var(--text-secondary);
+      font-size: var(--fs-caption);
+    }
+
+    .dialog-callout b {
+      margin-inline-start: auto;
+      color: var(--status-warning-text);
+      font-size: var(--fs-caption);
+      white-space: nowrap;
+    }
+
+    .resources {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: var(--space-12);
+    }
+
+    .resource {
+      display: flex;
+      align-items: center;
+      gap: var(--space-12);
+      min-height: 72px;
+      padding: var(--space-16);
+      border: var(--border-hairline) solid var(--border-subtle);
+      border-radius: var(--radius-card);
+      background: var(--bg-surface);
+      color: var(--text-primary);
+      text-decoration: none;
+      transition:
+        background-color var(--duration-fast) var(--ease-standard),
+        border-color var(--duration-fast) var(--ease-standard);
+    }
+
+    .resource:hover {
+      border-color: var(--border-default);
+      background: var(--bg-hover);
+      color: var(--text-primary);
+    }
+
+    .resource__icon {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      flex: none;
+      border-radius: var(--radius-md);
+      background: var(--bg-sunken);
+      color: var(--text-secondary);
+    }
+
+    .resource__icon svg {
+      width: var(--icon-sm);
+      height: var(--icon-sm);
+    }
+
+    .resource strong {
+      display: block;
+      font-family: var(--font-display);
+      font-size: var(--fs-body-secondary);
+    }
+
+    .resource span {
+      display: block;
+      margin-block-start: var(--space-2);
+      color: var(--text-muted);
+      font-size: var(--fs-caption);
+    }
+
+    .page-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-24);
+      margin-block-start: var(--space-48);
+      padding-block: var(--space-24) var(--space-8);
+      border-block-start: var(--border-hairline) solid var(--border-subtle);
+      color: var(--text-muted);
+      font-size: var(--fs-caption);
+    }
+
+    .page-footer strong {
+      color: var(--text-secondary);
+      font-family: var(--font-display);
+    }
+
+    .page-footer .lat {
+      font-family: var(--font-mono);
+      font-size: 10px;
+    }
+
+    @media (max-width: 860px) {
+      .hero {
+        grid-template-columns: 1fr;
+      }
+
+      .hero h1 {
+        max-width: none;
+      }
+
+      .manifest {
+        width: 100%;
+      }
+
+      .scenario-layout {
+        grid-template-columns: 1fr;
+      }
+
+      .system-stack {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      }
+
+      .resources {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 700px) {
+      .topbar {
+        align-items: flex-start;
+        flex-wrap: wrap;
+      }
+
+      .topbar__tools {
+        width: 100%;
+        margin-inline-start: 0;
+      }
+
+      .resource-shortcut {
+        margin-inline-start: auto;
+      }
+
+      .screen-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .section__head {
+        align-items: flex-start;
+      }
+
+      .system-stack {
+        display: flex;
+      }
+    }
+
+    @media (max-width: 520px) {
+      body {
+        padding: var(--space-12);
+      }
+
+      .brand__edition,
+      .resource-shortcut {
+        display: none;
+      }
+
+      .topbar__tools {
+        justify-content: flex-end;
+      }
+
+      .theme-switch {
+        width: 100%;
+      }
+
+      .theme-button {
+        flex: 1;
+      }
+
+      .hero {
+        gap: var(--space-24);
+        padding: var(--space-20);
+        border-radius: var(--radius-xl);
+      }
+
+      .hero__actions .btn {
+        width: 100%;
+      }
+
+      .manifest__body {
+        padding: var(--space-16);
+      }
+
+      .manifest__stats {
+        grid-template-columns: 1fr;
+      }
+
+      .manifest__stat + .manifest__stat {
+        border-inline-start: 0;
+        border-block-start: var(--border-hairline) solid var(--command-border);
+      }
+
+      .availability {
+        margin-block-end: var(--space-32);
+        padding: var(--space-16);
+      }
+
+      .section {
+        margin-block-start: var(--space-40);
+      }
+
+      .section__head {
+        display: block;
+      }
+
+      .section__count {
+        display: block;
+        margin-block-start: var(--space-8);
+      }
+
+      .screen-card {
+        min-height: 0;
+        padding: var(--space-16);
+      }
+
+      .screen-card__top {
+        flex-wrap: wrap;
+      }
+
+      .status-tag {
+        margin-inline-start: 52px;
+      }
+
+      .screen-card__footer {
+        align-items: stretch;
+      }
+
+      .screen-link {
+        width: 100%;
+      }
+
+      .size-links {
+        width: 100%;
+        margin-inline-start: 0;
+      }
+
+      .size-link {
+        flex: 1;
+      }
+
+      .scenario {
+        grid-template-columns: 28px minmax(0, 1fr);
+      }
+
+      .scenario__open {
+        display: none;
+      }
+
+      .dialog-callout {
+        align-items: flex-start;
+        flex-wrap: wrap;
+      }
+
+      .dialog-callout b {
+        width: 100%;
+        margin-inline-start: 36px;
+      }
+
+      .page-footer {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .screen-card:hover {
+        transform: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#content">انتقل إلى الشاشات</a>
+
+  <div class="page">
+    <header class="topbar" aria-label="رأس الحزمة">
+      <a class="brand" href="index.html" aria-label="نَفِّذ — سَطْر، فهرس Mockups v3">
+        <svg aria-hidden="true" viewBox="0 0 32 32"><use href="#mark-32"></use></svg>
+        <span class="brand__name">نَفِّذ — سَطْر</span>
+        <span class="brand__edition">نسخة الهوية التجريبية</span>
+      </a>
+
+      <div class="topbar__tools">
+        <div class="theme-switch" role="group" aria-label="مظهر الفهرس">
+          <button class="theme-button" type="button" data-theme-choice="system" aria-pressed="true">النظام</button>
+          <button class="theme-button" type="button" data-theme-choice="light" aria-pressed="false">فاتح</button>
+          <button class="theme-button" type="button" data-theme-choice="dark" aria-pressed="false">داكن</button>
+        </div>
+        <a class="resource-shortcut" href="design-system.html">نظام التصميم</a>
+      </div>
+    </header>
+
+    <main id="content">
+      <section class="hero" aria-labelledby="page-title">
+        <div class="hero__copy">
+          <span class="eyebrow">حزمة Mockups v3</span>
+          <h1 id="page-title">كل شاشات التجربة، في مسار واحد واضح.</h1>
+          <p class="hero__lede">
+            فهرس تفاعلي لتجربة «نَفِّذ — سَطْر» على macOS: من الترحيب واختيار الفئة،
+            إلى مراجعة خطة ضغط ZIP وتنفيذها، ثم السجل والإعدادات وحالات النظام.
+          </p>
+          <div class="hero__actions">
+            <a
+              class="btn btn--primary btn--lg"
+              data-prototype-link
+              href="prototype.html?screen=onboarding&amp;state=welcome&amp;theme=system&amp;size=large"
+            >ابدأ التجربة من الترحيب</a>
+            <a href="#screens" class="btn btn--quiet btn--lg">استعرض الشاشات</a>
+            <p class="hero__note">كل الملفات محلية، ولا تتطلب اتصالًا بالإنترنت أو خادمًا للتشغيل.</p>
+          </div>
+        </div>
+
+        <aside class="manifest" aria-label="ملخص محتويات الحزمة">
+          <div class="manifest__bar">
+            <span class="manifest__title">بيان الحزمة</span>
+            <span class="manifest__local">جاهزة للفتح محليًا</span>
+          </div>
+          <div class="manifest__body">
+            <div class="manifest__mark">
+              <svg aria-hidden="true" viewBox="0 0 64 64"><use href="#mark"></use></svg>
+              <div>
+                <strong>نَفِّذ — سَطْر</strong>
+                <span>واجهة عربية RTL لنظام macOS</span>
+              </div>
+            </div>
+            <div class="manifest__stats" aria-label="إحصاءات الحزمة">
+              <div class="manifest__stat"><b class="num">7</b><span>شاشات رئيسية</span></div>
+              <div class="manifest__stat"><b class="num">16</b><span>حالة وحوار</span></div>
+              <div class="manifest__stat"><b class="num">3</b><span>مقاسات نافذة</span></div>
+            </div>
+          </div>
+        </aside>
+      </section>
+
+      <aside class="availability" aria-label="نطاق الوظائف المتاحة">
+        <span class="availability__icon">
+          <svg aria-hidden="true" viewBox="0 0 24 24"><use href="#i-compress"></use></svg>
+        </span>
+        <div>
+          <strong>ضغط ملف أو مجلد إلى ZIP هو العملية المتاحة فعليًا في هذه النسخة.</strong>
+          <p>
+            بقية الفئات والعمليات والسجل والإعدادات معروضة كنماذج تصميمية لاختبار التجربة المستقبلية،
+            ولا تعني أن وظائفها منفذة الآن.
+          </p>
+        </div>
+      </aside>
+
+      <section class="section" id="screens" aria-labelledby="screens-title">
+        <div class="section__head">
+          <div>
+            <h2 id="screens-title">الشاشات الرئيسية</h2>
+            <p>افتح الشاشة بالحجم الأنسب، أو استخدم روابط المقاسات لمراجعة إعادة ترتيب التخطيط.</p>
+          </div>
+          <span class="section__count">07 screens</span>
+        </div>
+
+        <div class="screen-grid">
+          <article class="screen-card">
+            <div class="screen-card__top">
+              <span class="screen-card__icon">
+                <svg aria-hidden="true" viewBox="0 0 64 64"><use href="#mark"></use></svg>
+              </span>
+              <div class="screen-card__heading">
+                <h3>الترحيب</h3>
+                <p class="screen-card__scope">أول تشغيل فقط</p>
+              </div>
+              <span class="status-tag status-tag--core">تدفق أساسي</span>
+            </div>
+            <p class="screen-card__description">
+              مقدمة موجزة تشرح اختيار العملية، مراجعة ما سيحدث، ثم ظهور الأمر وتفسيره في «سَطْر».
+            </p>
+            <footer class="screen-card__footer">
+              <a
+                class="screen-link"
+                data-prototype-link
+                href="prototype.html?screen=onboarding&amp;state=welcome&amp;theme=system&amp;size=large"
+              >فتح الشاشة</a>
+              <nav class="size-links" aria-label="مقاسات شاشة الترحيب">
+                <a class="size-link" data-prototype-link href="prototype.html?screen=onboarding&amp;state=welcome&amp;theme=system&amp;size=small">صغيرة</a>
+                <a class="size-link" data-prototype-link href="prototype.html?screen=onboarding&amp;state=welcome&amp;theme=system&amp;size=medium">متوسطة</a>
+                <a class="size-link" data-prototype-link href="prototype.html?screen=onboarding&amp;state=welcome&amp;theme=system&amp;size=large">كبيرة</a>
+              </nav>
+            </footer>
+          </article>
+
+          <article class="screen-card">
+            <div class="screen-card__top">
+              <span class="screen-card__icon">
+                <svg aria-hidden="true" viewBox="0 0 24 24"><use href="#i-folder"></use></svg>
+              </span>
+              <div class="screen-card__heading">
+                <h3>الفئات</h3>
+                <p class="screen-card__scope">نقطة البدء في التشغيلات اللاحقة</p>
+              </div>
+              <span class="status-tag status-tag--core">تدفق أساسي</span>
+            </div>
+            <p class="screen-card__description">
+              بحث ومسح بصري سريع للفئات، مع إبراز الضغط وفك الضغط وتمييز المجالات القادمة بهدوء.
+            </p>
+            <footer class="screen-card__footer">
+              <a
+                class="screen-link"
+                data-prototype-link
+                href="prototype.html?screen=categories&amp;state=default&amp;theme=system&amp;size=large"
+              >فتح الشاشة</a>
+              <nav class="size-links" aria-label="مقاسات شاشة الفئات">
+                <a class="size-link" data-prototype-link href="prototype.html?screen=categories&amp;state=default&amp;theme=system&amp;size=small">صغيرة</a>
+                <a class="size-link" data-prototype-link href="prototype.html?screen=categories&amp;state=default&amp;theme=system&amp;size=medium">متوسطة</a>
+                <a class="size-link" data-prototype-link href="prototype.html?screen=categories&amp;state=default&amp;theme=system&amp;size=large">كبيرة</a>
+              </nav>
+            </footer>
+          </article>
+
+          <article class="screen-card">
+            <div class="screen-card__top">
+              <span class="screen-card__icon">
+                <svg data-directional aria-hidden="true" viewBox="0 0 24 24"><use href="#i-execute"></use></svg>
+              </span>
+              <div class="screen-card__heading">
+                <h3>عمليات الفئة</h3>
+                <p class="screen-card__scope">الضغط وفك الضغط</p>
+              </div>
+              <span class="status-tag">نموذج مرحلي</span>
+            </div>
+            <p class="screen-card__description">
+              قائمة العمليات مع وصف الأثر ومستوى الخطورة، وتفريق صريح بين ZIP المتاح وبقية العمليات القادمة.
+            </p>
+            <footer class="screen-card__footer">
+              <a
+                class="screen-link"
+                data-prototype-link
+                href="prototype.html?screen=operations&amp;state=default&amp;theme=system&amp;size=large"
+              >فتح الشاشة</a>
+              <nav class="size-links" aria-label="مقاسات شاشة عمليات الفئة">
+                <a class="size-link" data-prototype-link href="prototype.html?screen=operations&amp;state=default&amp;theme=system&amp;size=small">صغيرة</a>
+                <a class="size-link" data-prototype-link href="prototype.html?screen=operations&amp;state=default&amp;theme=system&amp;size=medium">متوسطة</a>
+                <a class="size-link" data-prototype-link href="prototype.html?screen=operations&amp;state=default&amp;theme=system&amp;size=large">كبيرة</a>
+              </nav>
+            </footer>
+          </article>
+
+          <article class="screen-card" data-availability="real">
+            <div class="screen-card__top">
+              <span class="screen-card__icon">
+                <svg aria-hidden="true" viewBox="0 0 24 24"><use href="#i-compress"></use></svg>
+              </span>
+              <div class="screen-card__heading">
+                <h3>ضغط ZIP · نَفِّذ — سَطْر</h3>
+                <p class="screen-card__scope">العملية الإنتاجية الأولى</p>
+              </div>
+              <span class="status-tag status-tag--real">متاح فعليًا</span>
+            </div>
+            <p class="screen-card__description">
+              إدخال المصدر والوجهة في «نَفِّذ»، ثم معاينة الخطة والأمر وحالة التنفيذ والنتيجة في «سَطْر».
+            </p>
+            <footer class="screen-card__footer">
+              <a
+                class="screen-link"
+                data-prototype-link
+                href="prototype.html?screen=zip&amp;state=empty&amp;theme=system&amp;size=large"
+              >فتح العملية</a>
+              <nav class="size-links" aria-label="مقاسات واجهة ضغط ZIP">
+                <a class="size-link" data-prototype-link href="prototype.html?screen=zip&amp;state=empty&amp;theme=system&amp;size=small">صغيرة</a>
+                <a class="size-link" data-prototype-link href="prototype.html?screen=zip&amp;state=empty&amp;theme=system&amp;size=medium">متوسطة</a>
+                <a class="size-link" data-prototype-link href="prototype.html?screen=zip&amp;state=empty&amp;theme=system&amp;size=large">كبيرة</a>
+              </nav>
+            </footer>
+          </article>
+
+          <article class="screen-card">
+            <div class="screen-card__top">
+              <span class="screen-card__icon">
+                <svg aria-hidden="true" viewBox="0 0 24 24"><use href="#i-history"></use></svg>
+              </span>
+              <div class="screen-card__heading">
+                <h3>سجل العمليات</h3>
+                <p class="screen-card__scope">نتائج وتفاصيل سابقة</p>
+              </div>
+              <span class="status-tag">نموذج مستقبلي</span>
+            </div>
+            <p class="screen-card__description">
+              نجاح وفشل وإلغاء، مع الوقت والمدة والناتج والفلاتر والبحث وإجراء كشف الملف النهائي.
+            </p>
+            <footer class="screen-card__footer">
+              <a
+                class="screen-link"
+                data-prototype-link
+                href="prototype.html?screen=history&amp;state=populated&amp;theme=system&amp;size=large"
+              >فتح الشاشة</a>
+              <nav class="size-links" aria-label="مقاسات شاشة السجل">
+                <a class="size-link" data-prototype-link href="prototype.html?screen=history&amp;state=populated&amp;theme=system&amp;size=small">صغيرة</a>
+                <a class="size-link" data-prototype-link href="prototype.html?screen=history&amp;state=populated&amp;theme=system&amp;size=medium">متوسطة</a>
+                <a class="size-link" data-prototype-link href="prototype.html?screen=history&amp;state=populated&amp;theme=system&amp;size=large">كبيرة</a>
+              </nav>
+            </footer>
+          </article>
+
+          <article class="screen-card">
+            <div class="screen-card__top">
+              <span class="screen-card__icon">
+                <svg aria-hidden="true" viewBox="0 0 24 24"><use href="#i-settings"></use></svg>
+              </span>
+              <div class="screen-card__heading">
+                <h3>الإعدادات</h3>
+                <p class="screen-card__scope">تفضيلات التطبيق المحلي</p>
+              </div>
+              <span class="status-tag">نموذج مستقبلي</span>
+            </div>
+            <p class="screen-card__description">
+              المظهر والحركة والترحيب والاحتفاظ بالسجل والمسارات المفضلة ومعلومات التطبيق.
+            </p>
+            <footer class="screen-card__footer">
+              <a
+                class="screen-link"
+                data-prototype-link
+                href="prototype.html?screen=settings&amp;state=appearance&amp;theme=system&amp;size=large"
+              >فتح الشاشة</a>
+              <nav class="size-links" aria-label="مقاسات شاشة الإعدادات">
+                <a class="size-link" data-prototype-link href="prototype.html?screen=settings&amp;state=appearance&amp;theme=system&amp;size=small">صغيرة</a>
+                <a class="size-link" data-prototype-link href="prototype.html?screen=settings&amp;state=appearance&amp;theme=system&amp;size=medium">متوسطة</a>
+                <a class="size-link" data-prototype-link href="prototype.html?screen=settings&amp;state=appearance&amp;theme=system&amp;size=large">كبيرة</a>
+              </nav>
+            </footer>
+          </article>
+
+          <article class="screen-card">
+            <div class="screen-card__top">
+              <span class="screen-card__icon">
+                <svg aria-hidden="true" viewBox="0 0 24 24"><use href="#i-system"></use></svg>
+              </span>
+              <div class="screen-card__heading">
+                <h3>حالات النظام</h3>
+                <p class="screen-card__scope">التحميل والأعطال والصلاحيات</p>
+              </div>
+              <span class="status-tag">حالات تصميمية</span>
+            </div>
+            <p class="screen-card__description">
+              لغة موحدة للحالات التي تقع خارج تدفق العملية، مع تفسير واضح وفعل تعافٍ مناسب.
+            </p>
+            <footer class="screen-card__footer">
+              <a
+                class="screen-link"
+                data-prototype-link
+                href="prototype.html?screen=system&amp;state=loading&amp;theme=system&amp;size=large"
+              >فتح الشاشة</a>
+              <nav class="size-links" aria-label="مقاسات شاشة حالات النظام">
+                <a class="size-link" data-prototype-link href="prototype.html?screen=system&amp;state=loading&amp;theme=system&amp;size=small">صغيرة</a>
+                <a class="size-link" data-prototype-link href="prototype.html?screen=system&amp;state=loading&amp;theme=system&amp;size=medium">متوسطة</a>
+                <a class="size-link" data-prototype-link href="prototype.html?screen=system&amp;state=loading&amp;theme=system&amp;size=large">كبيرة</a>
+              </nav>
+            </footer>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="states-title">
+        <div class="section__head">
+          <div>
+            <h2 id="states-title">الحالات المباشرة</h2>
+            <p>روابط دقيقة لكل حالة مطلوبة؛ تفتح على نافذة كبيرة كي تبقى الفروق قابلة للمراجعة.</p>
+          </div>
+          <span class="section__count">09 ZIP + 06 system + 01 dialog</span>
+        </div>
+
+        <div class="scenario-layout">
+          <section class="scenario-panel" aria-labelledby="zip-states-title">
+            <header class="scenario-panel__head">
+              <svg aria-hidden="true" viewBox="0 0 24 24"><use href="#i-compress"></use></svg>
+              <h3 id="zip-states-title">حالات ضغط ZIP</h3>
+              <span>09 states</span>
+            </header>
+            <ol class="scenario-list">
+              <li>
+                <a class="scenario" data-prototype-link href="prototype.html?screen=zip&amp;state=empty&amp;theme=system&amp;size=large">
+                  <span class="scenario__number">01</span>
+                  <span class="scenario__copy"><strong>فتح العملية</strong><span>قبل تعبئة أي حقل، مع كتابة «سَطْر» المائية.</span></span>
+                  <span class="scenario__open">فتح</span>
+                </a>
+              </li>
+              <li>
+                <a class="scenario" data-prototype-link href="prototype.html?screen=zip&amp;state=partial&amp;theme=system&amp;size=large">
+                  <span class="scenario__number">02</span>
+                  <span class="scenario__copy"><strong>تعبئة جزئية</strong><span>مصدر مختار ووجهة أو اسم ناتج ما زال ناقصًا.</span></span>
+                  <span class="scenario__open">فتح</span>
+                </a>
+              </li>
+              <li>
+                <a class="scenario" data-prototype-link href="prototype.html?screen=zip&amp;state=valid&amp;theme=system&amp;size=large">
+                  <span class="scenario__number">03</span>
+                  <span class="scenario__copy"><strong>خطة صالحة</strong><span>معاينة المصدر والوجهة والأداة وسياسة التعارض.</span></span>
+                  <span class="scenario__open">فتح</span>
+                </a>
+              </li>
+              <li>
+                <a class="scenario" data-prototype-link href="prototype.html?screen=zip&amp;state=running&amp;theme=system&amp;size=large">
+                  <span class="scenario__number">04</span>
+                  <span class="scenario__copy"><strong>تنفيذ جارٍ</strong><span>تقدّم حي مع الحجم والمدة وإجراء الإلغاء.</span></span>
+                  <span class="scenario__open">فتح</span>
+                </a>
+              </li>
+              <li>
+                <a class="scenario" data-prototype-link href="prototype.html?screen=zip&amp;state=cancelling&amp;theme=system&amp;size=large">
+                  <span class="scenario__number">05</span>
+                  <span class="scenario__copy"><strong>إلغاء جارٍ</strong><span>إيقاف آمن مع منع بدء إجراء متعارض.</span></span>
+                  <span class="scenario__open">فتح</span>
+                </a>
+              </li>
+              <li>
+                <a class="scenario" data-prototype-link href="prototype.html?screen=zip&amp;state=success&amp;theme=system&amp;size=large">
+                  <span class="scenario__number">06</span>
+                  <span class="scenario__copy"><strong>نجاح</strong><span>ملخص الناتج وحجمه وإجراء كشفه في Finder.</span></span>
+                  <span class="scenario__open">فتح</span>
+                </a>
+              </li>
+              <li>
+                <a class="scenario" data-prototype-link href="prototype.html?screen=zip&amp;state=failure&amp;theme=system&amp;size=large">
+                  <span class="scenario__number">07</span>
+                  <span class="scenario__copy"><strong>فشل</strong><span>شرح بشري، تفصيل تقني، ومسار واضح للتعافي.</span></span>
+                  <span class="scenario__open">فتح</span>
+                </a>
+              </li>
+              <li>
+                <a class="scenario" data-prototype-link href="prototype.html?screen=zip&amp;state=conflict&amp;theme=system&amp;size=large">
+                  <span class="scenario__number">08</span>
+                  <span class="scenario__copy"><strong>ملف نهائي موجود</strong><span>الاستبدال أو الاحتفاظ بالنسختين قبل التنفيذ.</span></span>
+                  <span class="scenario__open">فتح</span>
+                </a>
+              </li>
+              <li>
+                <a class="scenario" data-prototype-link href="prototype.html?screen=zip&amp;state=insufficient-space&amp;theme=system&amp;size=large">
+                  <span class="scenario__number">09</span>
+                  <span class="scenario__copy"><strong>مساحة غير كافية</strong><span>المطلوب والمتاح مع اقتراح تغيير الوجهة.</span></span>
+                  <span class="scenario__open">فتح</span>
+                </a>
+              </li>
+            </ol>
+          </section>
+
+          <div class="system-stack">
+            <section class="scenario-panel" aria-labelledby="system-states-title">
+              <header class="scenario-panel__head">
+                <svg aria-hidden="true" viewBox="0 0 24 24"><use href="#i-system"></use></svg>
+                <h3 id="system-states-title">حالات النظام</h3>
+                <span>06 states</span>
+              </header>
+              <ol class="scenario-list">
+                <li>
+                  <a class="scenario" data-prototype-link href="prototype.html?screen=system&amp;state=loading&amp;theme=system&amp;size=large">
+                    <span class="scenario__number">01</span>
+                    <span class="scenario__copy"><strong>تحميل</strong><span>تهيئة التطبيق والعمليات.</span></span>
+                    <span class="scenario__open">فتح</span>
+                  </a>
+                </li>
+                <li>
+                  <a class="scenario" data-prototype-link href="prototype.html?screen=system&amp;state=empty&amp;theme=system&amp;size=large">
+                    <span class="scenario__number">02</span>
+                    <span class="scenario__copy"><strong>قائمة فارغة</strong><span>لا توجد عمليات سابقة.</span></span>
+                    <span class="scenario__open">فتح</span>
+                  </a>
+                </li>
+                <li>
+                  <a class="scenario" data-prototype-link href="prototype.html?screen=system&amp;state=kernel-failure&amp;theme=system&amp;size=large">
+                    <span class="scenario__number">03</span>
+                    <span class="scenario__copy"><strong>فشل الاتصال بالنواة</strong><span>تعذّر بدء خدمة التنفيذ.</span></span>
+                    <span class="scenario__open">فتح</span>
+                  </a>
+                </li>
+                <li>
+                  <a class="scenario" data-prototype-link href="prototype.html?screen=system&amp;state=unavailable&amp;theme=system&amp;size=large">
+                    <span class="scenario__number">04</span>
+                    <span class="scenario__copy"><strong>عملية غير متاحة</strong><span>قيد التصميم أو غير مدعومة.</span></span>
+                    <span class="scenario__open">فتح</span>
+                  </a>
+                </li>
+                <li>
+                  <a class="scenario" data-prototype-link href="prototype.html?screen=system&amp;state=permission&amp;theme=system&amp;size=large">
+                    <span class="scenario__number">05</span>
+                    <span class="scenario__copy"><strong>صلاحية مفقودة</strong><span>إرشاد إلى إعدادات macOS.</span></span>
+                    <span class="scenario__open">فتح</span>
+                  </a>
+                </li>
+                <li>
+                  <a class="scenario" data-prototype-link href="prototype.html?screen=system&amp;state=repaired-settings&amp;theme=system&amp;size=large">
+                    <span class="scenario__number">06</span>
+                    <span class="scenario__copy"><strong>إعداد تالف تم إصلاحه</strong><span>إشعار مطمئن وغير معطّل.</span></span>
+                    <span class="scenario__open">فتح</span>
+                  </a>
+                </li>
+              </ol>
+            </section>
+
+            <a
+              class="dialog-callout"
+              data-prototype-link
+              href="prototype.html?screen=zip&amp;state=back-confirm&amp;theme=system&amp;size=medium"
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24"><use href="#i-warning"></use></svg>
+              <span>
+                <strong>تأكيد الرجوع أثناء التنفيذ</strong>
+                <span>نافذة قرار عند وجود تنفيذ نشط لم يكتمل بعد.</span>
+              </span>
+              <b>فتح الحوار</b>
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="resources-title">
+        <div class="section__head">
+          <div>
+            <h2 id="resources-title">مراجع الحزمة</h2>
+            <p>النظام المصغر وتقارير القراءة التي سبقت التصميم.</p>
+          </div>
+        </div>
+
+        <div class="resources">
+          <a class="resource" href="design-system.html">
+            <span class="resource__icon"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="#i-settings"></use></svg></span>
+            <span><strong>نظام التصميم المصغر</strong><span>ألوان، نصوص، مسافات ومكونات</span></span>
+          </a>
+          <a class="resource" href="../IDENTITY-AUDIT.md">
+            <span class="resource__icon"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="#i-eye"></use></svg></span>
+            <span><strong>تدقيق الهوية</strong><span>الأصول والقواعد البصرية الملزمة</span></span>
+          </a>
+          <a class="resource" href="LEGACY-MOCKUPS-AUDIT.md">
+            <span class="resource__icon"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="#i-history"></use></svg></span>
+            <span><strong>تدقيق النماذج السابقة</strong><span>ما يُحفظ وما يُعاد تصميمه</span></span>
+          </a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="page-footer">
+      <p><strong>نَفِّذ — سَطْر</strong> · حزمة تصميمية داخل نسخة الهوية التجريبية فقط.</p>
+      <p class="lat">HTML · CSS · JavaScript · file:// ready</p>
+    </footer>
+  </div>
+
+  <p class="visually-hidden" id="theme-announcement" aria-live="polite"></p>
+
+  <script>
+    (function () {
+      var allowedThemes = ["system", "light", "dark"];
+      var buttons = Array.prototype.slice.call(document.querySelectorAll("[data-theme-choice]"));
+      var prototypeLinks = Array.prototype.slice.call(document.querySelectorAll("[data-prototype-link]"));
+      var announcement = document.getElementById("theme-announcement");
+      var labels = {
+        system: "يتبع مظهر النظام",
+        light: "المظهر الفاتح",
+        dark: "المظهر الداكن"
+      };
+
+      function updatePrototypeLink(link, theme) {
+        var href = link.getAttribute("href");
+        var hash = "";
+        var hashIndex = href.indexOf("#");
+        if (hashIndex !== -1) {
+          hash = href.slice(hashIndex);
+          href = href.slice(0, hashIndex);
+        }
+
+        var parts = href.split("?");
+        var path = parts[0];
+        var params = new URLSearchParams(parts[1] || "");
+        params.set("theme", theme);
+        link.setAttribute("href", path + "?" + params.toString() + hash);
+      }
+
+      function applyTheme(theme, announce) {
+        if (allowedThemes.indexOf(theme) === -1) {
+          theme = "system";
+        }
+
+        if (theme === "system") {
+          document.documentElement.removeAttribute("data-theme");
+        } else {
+          document.documentElement.setAttribute("data-theme", theme);
+        }
+
+        buttons.forEach(function (button) {
+          button.setAttribute("aria-pressed", String(button.dataset.themeChoice === theme));
+        });
+
+        prototypeLinks.forEach(function (link) {
+          updatePrototypeLink(link, theme);
+        });
+
+        if (announce) {
+          announcement.textContent = "تم اختيار " + labels[theme] + ".";
+        }
+
+        try {
+          var url = new URL(window.location.href);
+          if (theme === "system") {
+            url.searchParams.delete("theme");
+          } else {
+            url.searchParams.set("theme", theme);
+          }
+          window.history.replaceState(null, "", url.href);
+        } catch (error) {
+          /* The visual state and outgoing links still work under strict file:// policies. */
+        }
+      }
+
+      buttons.forEach(function (button) {
+        button.addEventListener("click", function () {
+          applyTheme(button.dataset.themeChoice, true);
+        });
+      });
+
+      var initialTheme = new URLSearchParams(window.location.search).get("theme") || "system";
+      applyTheme(initialTheme, false);
+    }());
+  </script>
+</body>
+</html>

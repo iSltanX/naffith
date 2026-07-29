@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light dark">
+  <title>نَفِّذ — سَطْر · النموذج التفاعلي</title>
+  <link rel="icon" type="image/svg+xml" href="./favicon.svg">
+  <link rel="stylesheet" href="../../../src/design-system/fonts.css">
+  <link rel="stylesheet" href="../../../src/design-system/tokens.css">
+  <link rel="stylesheet" href="../../../src/design-system/base.css">
+  <link rel="stylesheet" href="../../../src/design-system/mockups-v3.css">
+  <script>
+    (function () {
+      try {
+        var params = new URLSearchParams(location.search);
+        var requested = params.get('theme');
+        var stored = localStorage.getItem('ns-v3-theme');
+        var theme = requested || stored || 'system';
+        if (theme === 'light' || theme === 'dark') {
+          document.documentElement.setAttribute('data-theme', theme);
+        }
+      } catch (error) {
+        /* يتبع تفضيل النظام حين يكون التخزين غير متاح تحت file:// */
+      }
+    })();
+  </script>
+  <script src="./sprite.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body class="prototype-page">
+  <a class="skip-link visually-hidden-focusable" href="#app-main">تخطَّ إلى محتوى الشاشة</a>
+
+  <header class="preview-lab" aria-label="أدوات استعراض الحزمة">
+    <a class="preview-lab__brand" href="index.html">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><use href="#mark-32"></use></svg>
+      <span>
+        <strong>Mockups v3</strong>
+        <small>مختبر الحالات المحلي</small>
+      </span>
+    </a>
+
+    <div class="preview-lab__control">
+      <label for="screen-picker">الشاشة</label>
+      <select id="screen-picker" aria-label="انتقل إلى شاشة">
+        <option value="onboarding">الترحيب</option>
+        <option value="categories">الفئات</option>
+        <option value="operations">عمليات الفئة</option>
+        <option value="zip">ضغط ZIP</option>
+        <option value="history">السجل</option>
+        <option value="settings">الإعدادات</option>
+        <option value="system">حالات النظام</option>
+      </select>
+    </div>
+
+    <div class="preview-lab__control" id="state-picker-wrap">
+      <label for="state-picker">الحالة</label>
+      <select id="state-picker" aria-label="اختر حالة الشاشة"></select>
+    </div>
+
+    <div class="preview-segment" data-kind="size" role="group" aria-label="حجم النافذة">
+      <button type="button" data-preview-size="large" aria-pressed="true">كبيرة</button>
+      <button type="button" data-preview-size="medium" aria-pressed="false">متوسطة</button>
+      <button type="button" data-preview-size="small" aria-pressed="false">صغيرة</button>
+    </div>
+
+    <div class="preview-segment" role="group" aria-label="المظهر">
+      <button type="button" data-theme-set="system" aria-pressed="true">النظام</button>
+      <button type="button" data-theme-set="light" aria-pressed="false">فاتح</button>
+      <button type="button" data-theme-set="dark" aria-pressed="false">داكن</button>
+    </div>
+  </header>
+
+  <main class="prototype-stage" id="prototype-stage" data-size="large">
+    <section class="app-window win" id="app-window" aria-label="نموذج تطبيق نَفِّذ — سَطْر">
+      <div class="window-titlebar win__bar">
+        <div class="win__controls" dir="ltr" aria-hidden="true">
+          <i class="c-close"></i><i class="c-min"></i><i class="c-max"></i>
+        </div>
+        <span class="win__title" id="window-title">نَفِّذ — سَطْر</span>
+        <span class="window-titlebar__status">
+          <span class="availability-dot" aria-hidden="true"></span>
+          نموذج محلي
+        </span>
+      </div>
+
+      <div class="app-shell" id="app-shell">
+        <aside class="app-sidebar" id="app-sidebar" aria-label="التنقل الرئيسي">
+          <a class="app-brand" href="#" data-nav="categories">
+            <svg viewBox="0 0 32 32" aria-hidden="true"><use href="#mark-32"></use></svg>
+            <span class="app-brand__name">نَفِّذ — سَطْر</span>
+          </a>
+
+          <nav class="app-nav">
+            <button type="button" class="app-nav__item" data-nav="categories">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-categories"></use></svg>
+              <span class="app-nav__label">الفئات</span>
+            </button>
+            <button type="button" class="app-nav__item" data-nav="history">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-history"></use></svg>
+              <span class="app-nav__label">السجل</span>
+            </button>
+            <button type="button" class="app-nav__item" data-nav="settings">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-settings"></use></svg>
+              <span class="app-nav__label">الإعدادات</span>
+            </button>
+            <button type="button" class="app-nav__item" data-nav="system">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-info"></use></svg>
+              <span class="app-nav__label">حالات النظام</span>
+            </button>
+          </nav>
+
+          <div class="app-sidebar__foot">
+            <span class="chip chip--success">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-success"></use></svg>
+              <span class="app-nav__label">ZIP متاح الآن</span>
+            </span>
+            <p class="app-sidebar__note">تُعرض بقية الوظائف بوصفها نماذج تصميمية فقط.</p>
+          </div>
+        </aside>
+
+        <main class="app-main" id="app-main" tabindex="-1" aria-live="polite"></main>
+
+        <nav class="compact-nav" aria-label="التنقل في النافذة الصغيرة">
+          <button type="button" data-nav="categories">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-categories"></use></svg>
+            <span>الفئات</span>
+          </button>
+          <button type="button" data-nav="history">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-history"></use></svg>
+            <span>السجل</span>
+          </button>
+          <button type="button" data-nav="settings">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-settings"></use></svg>
+            <span>الإعدادات</span>
+          </button>
+        </nav>
+      </div>
+
+      <div class="modal-root" id="modal-root"></div>
+      <div class="toast-root" id="toast-root" aria-live="polite" aria-atomic="true"></div>
+    </section>
+  </main>
+</body>
+</html>

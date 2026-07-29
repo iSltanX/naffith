@@ -1,0 +1,1737 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>نظام التصميم المصغّر — نَفِّذ — سَطْر</title>
+  <link rel="icon" type="image/svg+xml" href="./favicon.svg">
+  <link rel="stylesheet" href="../../../src/design-system/fonts.css">
+  <link rel="stylesheet" href="../../../src/design-system/tokens.css">
+  <link rel="stylesheet" href="../../../src/design-system/base.css">
+  <script src="./sprite.js" defer></script>
+  <script>
+    (function () {
+      var key = 'naffith-satr.mockups-v3.theme';
+      var choice = 'system';
+      try {
+        var stored = localStorage.getItem(key);
+        if (stored === 'light' || stored === 'dark' || stored === 'system') choice = stored;
+      } catch (error) {
+        choice = 'system';
+      }
+      document.documentElement.dataset.themeChoice = choice;
+      if (choice === 'light' || choice === 'dark') {
+        document.documentElement.dataset.theme = choice;
+      }
+    }());
+  </script>
+  <style>
+    :root {
+      color-scheme: light;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) { color-scheme: dark; }
+    }
+
+    :root[data-theme="dark"] { color-scheme: dark; }
+
+    body {
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 88% 0%, color-mix(in srgb, var(--brand-mark) 6%, transparent), transparent 30rem),
+        var(--bg-canvas);
+    }
+
+    button, input, select { font: inherit; }
+
+    .skip-link {
+      position: fixed;
+      inset-block-start: var(--space-8);
+      inset-inline-start: var(--space-8);
+      z-index: var(--z-tooltip);
+      transform: translateY(calc(-100% - var(--space-16)));
+      padding: var(--space-8) var(--space-12);
+      border-radius: var(--radius-control);
+      background: var(--action-primary);
+      color: var(--action-primary-text);
+      font-family: var(--font-display);
+      font-size: var(--fs-button);
+      font-weight: var(--fw-bold);
+      text-decoration: none;
+      transition: transform var(--duration-fast) var(--ease-out);
+    }
+
+    .skip-link:focus { transform: none; }
+
+    .ds-header {
+      position: sticky;
+      inset-block-start: 0;
+      z-index: var(--z-nav);
+      border-block-end: var(--border-hairline) solid var(--border-subtle);
+      background: color-mix(in srgb, var(--bg-canvas) 90%, transparent);
+      -webkit-backdrop-filter: blur(20px);
+      backdrop-filter: blur(20px);
+    }
+
+    .ds-header__inner {
+      width: min(calc(100% - var(--space-32)), var(--width-wide));
+      min-height: 64px;
+      margin-inline: auto;
+      display: flex;
+      align-items: center;
+      gap: var(--space-16);
+      padding-block: var(--space-8);
+    }
+
+    .ds-brand {
+      display: flex;
+      align-items: center;
+      gap: var(--space-12);
+      min-width: 0;
+    }
+
+    .ds-brand__mark {
+      width: var(--icon-xl);
+      height: var(--icon-xl);
+      color: var(--brand-ink);
+      flex: none;
+    }
+
+    .ds-brand__copy { min-width: 0; }
+
+    .ds-brand__title {
+      font-family: var(--font-display);
+      font-size: var(--fs-card-title);
+      font-weight: var(--fw-extrabold);
+      line-height: var(--lh-card-title);
+      color: var(--text-primary);
+    }
+
+    .ds-brand__meta {
+      font-size: var(--fs-caption);
+      line-height: var(--lh-caption);
+      color: var(--text-muted);
+    }
+
+    .ds-header__actions {
+      display: flex;
+      align-items: center;
+      gap: var(--space-8);
+      margin-inline-start: auto;
+    }
+
+    .theme-switch {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-2);
+      padding: var(--space-2);
+      border: var(--border-hairline) solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      background: var(--bg-sunken);
+    }
+
+    .theme-switch__button {
+      min-height: var(--control-h-sm);
+      padding-inline: var(--space-12);
+      border: 0;
+      border-radius: var(--radius-control);
+      background: transparent;
+      color: var(--text-muted);
+      font-family: var(--font-body);
+      font-size: var(--fs-caption);
+      font-weight: var(--fw-bold);
+      cursor: pointer;
+      transition:
+        color var(--duration-fast) var(--ease-standard),
+        background-color var(--duration-fast) var(--ease-standard),
+        box-shadow var(--duration-fast) var(--ease-standard);
+    }
+
+    .theme-switch__button:hover {
+      background: var(--bg-hover);
+      color: var(--text-primary);
+    }
+
+    .theme-switch__button[aria-pressed="true"] {
+      background: var(--bg-surface);
+      color: var(--text-primary);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .ds-main {
+      width: min(calc(100% - var(--space-32)), var(--width-wide));
+      margin-inline: auto;
+      padding-block: var(--space-48) var(--space-80);
+    }
+
+    .hero {
+      position: relative;
+      overflow: hidden;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: end;
+      gap: var(--space-32);
+      padding: var(--space-40);
+      border: var(--border-hairline) solid var(--border-subtle);
+      border-radius: var(--radius-modal);
+      background: var(--bg-surface);
+      box-shadow: var(--shadow-md);
+    }
+
+    .hero::after {
+      content: "سَطْر";
+      position: absolute;
+      inset-inline-end: var(--space-24);
+      inset-block-end: calc(var(--space-24) * -1);
+      color: color-mix(in srgb, var(--text-accent) 7%, transparent);
+      font-family: var(--font-display);
+      font-size: clamp(64px, 14vw, 152px);
+      font-weight: var(--fw-extrabold);
+      line-height: 1;
+      pointer-events: none;
+    }
+
+    .hero > * { position: relative; z-index: 1; }
+
+    .eyebrow {
+      display: flex;
+      align-items: center;
+      gap: var(--space-8);
+      margin-block-end: var(--space-12);
+      color: var(--text-accent);
+      font-family: var(--font-body);
+      font-size: var(--fs-label);
+      font-weight: var(--fw-bold);
+    }
+
+    .eyebrow::before {
+      content: "";
+      width: 24px;
+      height: var(--border-accent);
+      border-radius: var(--radius-full);
+      background: var(--action-primary);
+    }
+
+    .hero h1 {
+      max-width: 18ch;
+      font-size: clamp(30px, 5vw, var(--fs-display));
+      line-height: var(--lh-display);
+      font-weight: var(--fw-extrabold);
+    }
+
+    .hero__desc {
+      max-width: 62ch;
+      margin-block-start: var(--space-16);
+      color: var(--text-secondary);
+      font-size: var(--fs-body);
+      line-height: var(--lh-body);
+    }
+
+    .hero__status {
+      display: grid;
+      gap: var(--space-8);
+      min-width: 196px;
+      padding: var(--space-16);
+      border: var(--border-hairline) solid var(--border-subtle);
+      border-radius: var(--radius-card);
+      background: var(--bg-sunken);
+    }
+
+    .hero__status b {
+      font-family: var(--font-display);
+      font-size: var(--fs-label);
+      color: var(--text-primary);
+    }
+
+    .hero__status p {
+      color: var(--text-muted);
+      font-size: var(--fs-caption);
+      line-height: var(--lh-caption);
+    }
+
+    .source-note {
+      display: flex;
+      align-items: flex-start;
+      gap: var(--space-12);
+      margin-block-start: var(--space-16);
+      padding: var(--space-12) var(--space-16);
+      border-inline-start: var(--border-accent) solid var(--action-primary);
+      border-radius: var(--radius-control);
+      background: var(--bg-selected);
+      color: var(--text-secondary);
+      font-size: var(--fs-body-secondary);
+      line-height: var(--lh-body-secondary);
+    }
+
+    .source-note svg {
+      width: var(--icon-sm);
+      height: var(--icon-sm);
+      margin-block-start: var(--space-4);
+      color: var(--text-accent);
+      flex: none;
+    }
+
+    .ds-section {
+      padding-block-start: var(--space-64);
+      scroll-margin-block-start: 84px;
+    }
+
+    .section-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: end;
+      gap: var(--space-24);
+      margin-block-end: var(--space-24);
+    }
+
+    .section-head__index {
+      display: block;
+      margin-block-end: var(--space-4);
+      color: var(--text-accent);
+      font-family: var(--font-mono);
+      font-size: var(--fs-caption);
+      font-weight: var(--fw-bold);
+      direction: ltr;
+      unicode-bidi: isolate;
+    }
+
+    .section-head h2 {
+      font-size: var(--fs-page-title);
+      line-height: var(--lh-page-title);
+      font-weight: var(--fw-extrabold);
+    }
+
+    .section-head p {
+      max-width: 60ch;
+      margin-block-start: var(--space-8);
+      color: var(--text-secondary);
+      font-size: var(--fs-body-secondary);
+      line-height: var(--lh-body-secondary);
+    }
+
+    .section-head__token {
+      align-self: center;
+      white-space: nowrap;
+    }
+
+    .demo-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: var(--space-20);
+    }
+
+    .demo-grid--3 {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .spec-panel {
+      min-width: 0;
+      padding: var(--space-20);
+      border: var(--border-hairline) solid var(--border-subtle);
+      border-radius: var(--radius-card);
+      background: var(--bg-surface);
+    }
+
+    .spec-panel__head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-12);
+      margin-block-end: var(--space-16);
+    }
+
+    .spec-panel__head h3 {
+      font-size: var(--fs-card-title);
+      line-height: var(--lh-card-title);
+    }
+
+    .spec-panel__hint {
+      color: var(--text-muted);
+      font-size: var(--fs-caption);
+      line-height: var(--lh-caption);
+    }
+
+    .color-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: var(--space-12);
+    }
+
+    .color-swatch {
+      overflow: hidden;
+      border: var(--border-hairline) solid var(--border-subtle);
+      border-radius: var(--radius-control);
+      background: var(--bg-surface);
+    }
+
+    .color-swatch__sample {
+      height: 54px;
+      background: var(--swatch);
+      border-block-end: var(--border-hairline) solid var(--border-subtle);
+    }
+
+    .color-swatch__copy {
+      display: grid;
+      gap: var(--space-2);
+      padding: var(--space-8) var(--space-12);
+    }
+
+    .color-swatch__copy strong {
+      font-size: var(--fs-caption);
+      line-height: var(--lh-caption);
+    }
+
+    .color-swatch__copy code {
+      justify-self: start;
+      color: var(--text-muted);
+      font-size: var(--fs-caption);
+    }
+
+    .theme-layer-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: var(--space-16);
+    }
+
+    .scheme-sample {
+      --sample-canvas: var(--ink-050);
+      --sample-sunken: var(--ink-100);
+      --sample-surface: var(--ink-000);
+      --sample-elevated: var(--ink-000);
+      --sample-overlay: var(--ink-000);
+      --sample-text: var(--ink-700);
+      --sample-secondary: var(--ink-600);
+      --sample-border: var(--ink-200);
+      padding: var(--space-16);
+      border: var(--border-hairline) solid var(--sample-border);
+      border-radius: var(--radius-card);
+      background: var(--sample-canvas);
+      color: var(--sample-text);
+    }
+
+    .scheme-sample--dark {
+      --sample-canvas: var(--ink-900);
+      --sample-sunken: var(--ink-950);
+      --sample-surface: var(--ink-800);
+      --sample-elevated: var(--ink-850);
+      --sample-overlay: var(--ink-870);
+      --sample-text: var(--ink-000);
+      --sample-secondary: var(--ink-300);
+      --sample-border: var(--ink-700);
+      color-scheme: dark;
+    }
+
+    .scheme-sample__title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-8);
+      margin-block-end: var(--space-12);
+      font-family: var(--font-display);
+      font-size: var(--fs-label);
+      font-weight: var(--fw-bold);
+      color: var(--sample-text);
+    }
+
+    .scheme-sample__title small {
+      color: var(--sample-secondary);
+      font-family: var(--font-mono);
+      font-size: var(--fs-caption);
+      font-weight: var(--fw-regular);
+      direction: ltr;
+      unicode-bidi: isolate;
+    }
+
+    .scheme-sample .t-caption { color: var(--sample-secondary); }
+
+    .layer-stack {
+      display: grid;
+      gap: var(--space-8);
+      padding: var(--space-12);
+      border-radius: var(--radius-control);
+      background: var(--sample-sunken);
+    }
+
+    .layer-stack__surface,
+    .layer-stack__elevated,
+    .layer-stack__overlay {
+      padding: var(--space-12);
+      border: var(--border-hairline) solid var(--sample-border);
+      border-radius: var(--radius-control);
+      color: var(--sample-text);
+      font-size: var(--fs-caption);
+    }
+
+    .layer-stack__surface { background: var(--sample-surface); }
+    .layer-stack__elevated { background: var(--sample-elevated); }
+    .layer-stack__overlay {
+      margin-inline-start: var(--space-20);
+      background: var(--sample-overlay);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .type-list {
+      display: grid;
+      gap: 0;
+    }
+
+    .type-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: baseline;
+      gap: var(--space-24);
+      padding-block: var(--space-12);
+      border-block-end: var(--border-hairline) solid var(--border-subtle);
+    }
+
+    .type-row:last-child { border-block-end: 0; }
+
+    .type-row__meta {
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      font-size: var(--fs-caption);
+      direction: ltr;
+      unicode-bidi: isolate;
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    .space-list {
+      display: grid;
+      gap: var(--space-12);
+    }
+
+    .space-row {
+      display: grid;
+      grid-template-columns: 48px minmax(0, 1fr) 42px;
+      align-items: center;
+      gap: var(--space-12);
+      direction: ltr;
+    }
+
+    .space-row code {
+      color: var(--text-muted);
+      font-size: var(--fs-caption);
+      text-align: left;
+    }
+
+    .space-row__track {
+      height: 8px;
+      border-radius: var(--radius-full);
+      background: var(--bg-sunken);
+    }
+
+    .space-row__bar {
+      width: var(--measure);
+      height: 100%;
+      border-radius: inherit;
+      background: var(--action-primary);
+    }
+
+    .button-group,
+    .chip-group,
+    .icon-size-row {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: var(--space-12);
+    }
+
+    .button-stack {
+      display: grid;
+      gap: var(--space-20);
+    }
+
+    .state-cluster {
+      display: grid;
+      gap: var(--space-8);
+    }
+
+    .state-cluster__label {
+      color: var(--text-muted);
+      font-size: var(--fs-caption);
+      line-height: var(--lh-caption);
+    }
+
+    .btn.demo-primary-hover { background: var(--action-primary-hover); }
+    .btn.demo-primary-active { background: var(--action-primary-active); }
+
+    .btn.demo-focus {
+      outline: var(--focus-ring-width) solid var(--focus-ring-color);
+      outline-offset: var(--focus-ring-offset);
+    }
+
+    .control-list {
+      display: grid;
+      gap: var(--space-20);
+    }
+
+    .control-demo {
+      display: grid;
+      gap: var(--space-8);
+    }
+
+    .control-demo label,
+    .control-demo__label {
+      font-size: var(--fs-label);
+      line-height: var(--lh-label);
+      font-weight: var(--fw-bold);
+      color: var(--text-primary);
+    }
+
+    .field--invalid {
+      border-color: var(--status-danger-border);
+      box-shadow: 0 0 0 var(--focus-ring-width) color-mix(in srgb, var(--status-danger-text) 18%, transparent);
+    }
+
+    .field--invalid input { color: var(--status-danger-text); }
+
+    .field--disabled {
+      background: var(--bg-sunken);
+      border-color: var(--border-subtle);
+      color: var(--text-disabled);
+    }
+
+    .field--disabled input,
+    .field--disabled select {
+      color: var(--text-disabled);
+      cursor: not-allowed;
+    }
+
+    .field > svg {
+      width: var(--icon-sm);
+      height: var(--icon-sm);
+      color: var(--text-muted);
+      flex: none;
+    }
+
+    .field-message {
+      display: flex;
+      align-items: flex-start;
+      gap: var(--space-4);
+      color: var(--text-muted);
+      font-size: var(--fs-helper);
+      line-height: var(--lh-helper);
+    }
+
+    .field-message--danger { color: var(--status-danger-text); }
+
+    .field-message svg {
+      width: var(--icon-xs);
+      height: var(--icon-xs);
+      margin-block-start: var(--space-2);
+      flex: none;
+    }
+
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: var(--space-16);
+    }
+
+    .reference-card,
+    .mode-card {
+      display: grid;
+      align-content: start;
+      gap: var(--space-12);
+      min-height: 190px;
+      padding: var(--space-20);
+      color: var(--text-primary);
+      text-decoration: none;
+    }
+
+    .mode-card__top {
+      display: flex;
+      align-items: center;
+      gap: var(--space-8);
+    }
+
+    .mode-card__top svg {
+      width: var(--icon-lg);
+      height: var(--icon-lg);
+      color: var(--text-accent);
+      flex: none;
+    }
+
+    .card--naffith .mode-card__top svg { color: var(--text-secondary); }
+
+    .mode-card h3,
+    .reference-card h3 {
+      font-size: var(--fs-card-title);
+      line-height: var(--lh-card-title);
+    }
+
+    .mode-card p,
+    .reference-card p {
+      color: var(--text-secondary);
+      font-size: var(--fs-body-secondary);
+      line-height: var(--lh-body-secondary);
+    }
+
+    .mini-plan {
+      display: grid;
+      gap: var(--space-8);
+      padding: var(--space-12);
+      border-radius: var(--radius-control);
+      background: var(--bg-sunken);
+      font-size: var(--fs-caption);
+    }
+
+    .mini-plan__row {
+      display: flex;
+      justify-content: space-between;
+      gap: var(--space-12);
+      color: var(--text-secondary);
+    }
+
+    .mini-plan__row .path {
+      max-width: 17ch;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--text-primary);
+    }
+
+    .mini-command .command__body {
+      font-size: var(--fs-terminal);
+      padding: var(--space-12);
+    }
+
+    .chip-catalogue {
+      display: grid;
+      gap: var(--space-16);
+    }
+
+    .notice-list {
+      display: grid;
+      gap: var(--space-12);
+    }
+
+    .notice {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: var(--space-12);
+      padding: var(--space-12) var(--space-16);
+      border: var(--border-hairline) solid;
+      border-inline-start-width: var(--border-accent);
+      border-radius: var(--radius-control);
+    }
+
+    .notice > svg {
+      width: var(--icon-md);
+      height: var(--icon-md);
+      margin-block-start: var(--space-2);
+      flex: none;
+    }
+
+    .notice h4 {
+      margin-block-end: var(--space-2);
+      font-family: var(--font-display);
+      font-size: var(--fs-label);
+      line-height: var(--lh-label);
+    }
+
+    .notice p {
+      font-size: var(--fs-body-secondary);
+      line-height: var(--lh-body-secondary);
+      color: var(--text-secondary);
+    }
+
+    .notice--success {
+      background: var(--status-success-tint);
+      border-color: var(--status-success-border);
+      color: var(--status-success-text);
+    }
+
+    .notice--warning {
+      background: var(--status-warning-tint);
+      border-color: var(--status-warning-border);
+      color: var(--status-warning-text);
+    }
+
+    .notice--danger {
+      background: var(--status-danger-tint);
+      border-color: var(--status-danger-border);
+      color: var(--status-danger-text);
+    }
+
+    .notice--info {
+      background: var(--status-info-tint);
+      border-color: var(--status-info-border);
+      color: var(--status-info-text);
+    }
+
+    .notice--cancelled {
+      background: var(--bg-sunken);
+      border-color: var(--border-default);
+      color: var(--text-secondary);
+    }
+
+    .shape-grid,
+    .shadow-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: var(--space-16);
+    }
+
+    .shape-token,
+    .shadow-token {
+      display: grid;
+      place-items: center;
+      min-height: 110px;
+      padding: var(--space-12);
+      border: var(--border-hairline) solid var(--border-subtle);
+      border-radius: var(--shape-radius, var(--radius-card));
+      background: var(--bg-surface);
+      box-shadow: var(--shape-shadow, none);
+      text-align: center;
+    }
+
+    .shape-token strong,
+    .shadow-token strong {
+      display: block;
+      font-family: var(--font-display);
+      font-size: var(--fs-label);
+    }
+
+    .shape-token code,
+    .shadow-token code {
+      margin-block-start: var(--space-4);
+      color: var(--text-muted);
+      font-size: var(--fs-caption);
+    }
+
+    .icon-size-row {
+      align-items: end;
+      justify-content: space-around;
+      min-height: 88px;
+      padding: var(--space-16);
+      border-radius: var(--radius-control);
+      background: var(--bg-sunken);
+    }
+
+    .icon-size {
+      display: grid;
+      justify-items: center;
+      gap: var(--space-8);
+      color: var(--text-secondary);
+    }
+
+    .icon-size svg {
+      width: var(--icon-size);
+      height: var(--icon-size);
+      color: var(--text-primary);
+    }
+
+    .icon-size code { font-size: var(--fs-caption); }
+
+    .icon-catalogue {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(108px, 1fr));
+      gap: var(--space-8);
+      margin-block-start: var(--space-16);
+    }
+
+    .icon-cell {
+      display: grid;
+      justify-items: center;
+      gap: var(--space-8);
+      min-height: 82px;
+      padding: var(--space-12) var(--space-8);
+      border: var(--border-hairline) solid var(--border-subtle);
+      border-radius: var(--radius-control);
+      background: var(--bg-surface);
+      color: var(--text-secondary);
+    }
+
+    .icon-cell svg {
+      width: var(--icon-md);
+      height: var(--icon-md);
+      color: var(--text-primary);
+    }
+
+    .icon-cell span {
+      font-size: var(--fs-caption);
+      line-height: var(--lh-caption);
+      text-align: center;
+    }
+
+    .motion-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(240px, .65fr);
+      gap: var(--space-20);
+    }
+
+    .motion-stage {
+      display: grid;
+      place-items: center;
+      min-height: 250px;
+      padding: var(--space-24);
+      overflow: hidden;
+      border-radius: var(--radius-card);
+      background: var(--bg-sunken);
+    }
+
+    .motion-sample {
+      width: min(100%, 380px);
+      padding: var(--space-20);
+      border: var(--border-hairline) solid var(--border-subtle);
+      border-radius: var(--radius-card);
+      background: var(--bg-surface);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .motion-sample.is-playing {
+      animation: demo-reveal var(--duration-slow) var(--ease-out) both;
+    }
+
+    @keyframes demo-reveal {
+      from {
+        opacity: 0;
+        transform: translateY(6px) scaleY(.98);
+        transform-origin: top;
+      }
+      to {
+        opacity: 1;
+        transform: none;
+      }
+    }
+
+    .motion-sample__head {
+      display: flex;
+      align-items: center;
+      gap: var(--space-8);
+      margin-block-end: var(--space-12);
+    }
+
+    .motion-sample__head h3 {
+      font-size: var(--fs-card-title);
+      line-height: var(--lh-card-title);
+    }
+
+    .motion-sample p {
+      color: var(--text-secondary);
+      font-size: var(--fs-body-secondary);
+      line-height: var(--lh-body-secondary);
+    }
+
+    .motion-sample .progress { margin-block-start: var(--space-16); }
+
+    .motion-specs {
+      display: grid;
+      gap: var(--space-12);
+      align-content: start;
+    }
+
+    .duration-row {
+      display: grid;
+      grid-template-columns: 74px minmax(0, 1fr);
+      align-items: center;
+      gap: var(--space-12);
+      padding-block-end: var(--space-8);
+      border-block-end: var(--border-hairline) solid var(--border-subtle);
+    }
+
+    .duration-row code {
+      color: var(--text-accent);
+      text-align: left;
+    }
+
+    .duration-row span {
+      color: var(--text-secondary);
+      font-size: var(--fs-caption);
+    }
+
+    .motion-actions {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: var(--space-12);
+      margin-block-start: var(--space-16);
+    }
+
+    .ds-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-24);
+      margin-block-start: var(--space-64);
+      padding-block-start: var(--space-24);
+      border-block-start: var(--border-hairline) solid var(--border-subtle);
+      color: var(--text-muted);
+      font-size: var(--fs-caption);
+      line-height: var(--lh-caption);
+    }
+
+    .ds-footer .path { color: var(--text-secondary); }
+
+    @media (max-width: 900px) {
+      .hero,
+      .motion-layout { grid-template-columns: 1fr; }
+
+      .hero__status { min-width: 0; }
+      .demo-grid--3,
+      .cards-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
+    @media (max-width: 720px) {
+      .ds-header__inner {
+        width: min(calc(100% - var(--space-24)), var(--width-wide));
+        flex-wrap: wrap;
+        padding-block: var(--space-12);
+      }
+
+      .ds-header__actions {
+        width: 100%;
+        margin-inline-start: 0;
+      }
+
+      .theme-switch {
+        flex: 1;
+      }
+
+      .theme-switch__button { flex: 1; }
+
+      .ds-main {
+        width: min(calc(100% - var(--space-24)), var(--width-wide));
+        padding-block-start: var(--space-24);
+      }
+
+      .hero { padding: var(--space-24); }
+      .section-head { grid-template-columns: 1fr; }
+      .section-head__token { justify-self: start; }
+      .demo-grid,
+      .demo-grid--3,
+      .theme-layer-grid,
+      .cards-grid { grid-template-columns: 1fr; }
+      .ds-section { padding-block-start: var(--space-48); }
+    }
+
+    @media (max-width: 480px) {
+      .ds-brand__meta { display: none; }
+      .ds-header__actions { align-items: stretch; }
+      .ds-header__actions > .btn { padding-inline: var(--space-12); }
+      .theme-switch__button { padding-inline: var(--space-8); }
+      .hero h1 { font-size: var(--fs-page-title); }
+      .hero::after { display: none; }
+      .spec-panel { padding: var(--space-16); }
+      .type-row { grid-template-columns: 1fr; gap: var(--space-4); }
+      .type-row__meta { text-align: right; }
+      .shape-grid,
+      .shadow-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .ds-footer { align-items: flex-start; flex-direction: column; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .motion-sample.is-playing { animation: none; }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">انتقل إلى المحتوى</a>
+
+  <header class="ds-header">
+    <div class="ds-header__inner">
+      <div class="ds-brand">
+        <svg class="ds-brand__mark" viewBox="0 0 32 32" aria-hidden="true">
+          <use href="#mark-32"></use>
+        </svg>
+        <div class="ds-brand__copy">
+          <div class="ds-brand__title">نظام التصميم المصغّر</div>
+          <div class="ds-brand__meta">مرجع Mockups v3 · نَفِّذ — سَطْر</div>
+        </div>
+      </div>
+
+      <div class="ds-header__actions">
+        <div class="theme-switch" role="group" aria-label="اختيار المظهر">
+          <button class="theme-switch__button" type="button" data-theme-option="system" aria-pressed="true">النظام</button>
+          <button class="theme-switch__button" type="button" data-theme-option="light" aria-pressed="false">فاتح</button>
+          <button class="theme-switch__button" type="button" data-theme-option="dark" aria-pressed="false">داكن</button>
+        </div>
+        <a class="btn btn--quiet btn--sm" href="index.html">
+          <svg viewBox="0 0 24 24" data-directional aria-hidden="true"><use href="#i-chevron"></use></svg>
+          الفهرس
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <main class="ds-main" id="main-content">
+    <section class="hero" aria-labelledby="page-title">
+      <div>
+        <div class="eyebrow">مرجع بصري تنفيذي</div>
+        <h1 id="page-title">هوية هادئة للسطح، ودقيقة لما تحته</h1>
+        <p class="hero__desc">
+          يترجم هذا المرجع الرموز والمبادئ المعتمدة إلى مكوّنات قابلة للفحص.
+          «نَفِّذ» يجمع الاختيار والمعطيات بهدوء، و«سَطْر» يكشف الخطة والأمر والنتيجة بوضوح.
+        </p>
+      </div>
+      <aside class="hero__status" aria-label="حالة المظهر">
+        <b>المظهر الحالي</b>
+        <p id="theme-status" aria-live="polite">يتبع إعداد النظام.</p>
+        <span class="chip chip--accent">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"></use></svg>
+          رموز دلالية فقط
+        </span>
+      </aside>
+    </section>
+
+    <div class="source-note">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-info"></use></svg>
+      <p>
+        يستورد هذا الملف الخطوط والرموز وطبقة الأساس الأصلية فقط. العينات الخاصة بالصفحة موثقة عبر
+        <code>var(--token)</code>، وتعمل محليًا من دون شبكة أو <span class="lat">fetch</span>.
+      </p>
+    </div>
+
+    <section class="ds-section" id="colors" aria-labelledby="colors-title">
+      <div class="section-head">
+        <div>
+          <span class="section-head__index">01</span>
+          <h2 id="colors-title">الألوان وطبقات الخلفية</h2>
+          <p>ورق دافئ وحبر نيلي في الفاتح، وعمق نيلي متدرج في الداكن. اللهجة الدافئة فعل مقصود وليست لونًا زخرفيًا عامًا.</p>
+        </div>
+        <code class="section-head__token">tokens.css</code>
+      </div>
+
+      <div class="spec-panel">
+        <div class="spec-panel__head">
+          <h3>طبقات الفاتح والداكن</h3>
+          <span class="spec-panel__hint">نظامان أصيلان، لا قلب آلي</span>
+        </div>
+        <div class="theme-layer-grid">
+          <article class="scheme-sample" aria-label="طبقات الوضع الفاتح">
+            <div class="scheme-sample__title">
+              <span>فاتح · ورق دافئ</span>
+              <small>#FAF8F5</small>
+            </div>
+            <div class="layer-stack">
+              <span class="t-caption">غائر · #F5F1EC</span>
+              <div class="layer-stack__surface">سطح · #FFFFFF</div>
+              <div class="layer-stack__elevated">مرتفع · #FFFFFF</div>
+              <div class="layer-stack__overlay">طبقة علوية · #FFFFFF</div>
+            </div>
+          </article>
+
+          <article class="scheme-sample scheme-sample--dark" aria-label="طبقات الوضع الداكن">
+            <div class="scheme-sample__title">
+              <span>داكن · نيلي عميق</span>
+              <small>#0F0F1E</small>
+            </div>
+            <div class="layer-stack">
+              <span class="t-caption">غائر · #04040E</span>
+              <div class="layer-stack__surface">سطح · #1A1A2B</div>
+              <div class="layer-stack__elevated">مرتفع · #212133</div>
+              <div class="layer-stack__overlay">طبقة علوية · #27283B</div>
+            </div>
+          </article>
+        </div>
+      </div>
+
+      <div class="demo-grid" style="margin-block-start: var(--space-20)">
+        <div class="spec-panel">
+          <div class="spec-panel__head">
+            <h3>النص والتفاعل</h3>
+            <span class="spec-panel__hint">قيم السمة الحالية</span>
+          </div>
+          <div class="color-grid">
+            <div class="color-swatch" style="--swatch: var(--text-primary)">
+              <div class="color-swatch__sample"></div>
+              <div class="color-swatch__copy"><strong>نص أساسي</strong><code>--text-primary</code></div>
+            </div>
+            <div class="color-swatch" style="--swatch: var(--text-secondary)">
+              <div class="color-swatch__sample"></div>
+              <div class="color-swatch__copy"><strong>نص ثانوي</strong><code>--text-secondary</code></div>
+            </div>
+            <div class="color-swatch" style="--swatch: var(--text-muted)">
+              <div class="color-swatch__sample"></div>
+              <div class="color-swatch__copy"><strong>نص خافت</strong><code>--text-muted</code></div>
+            </div>
+            <div class="color-swatch" style="--swatch: var(--text-disabled)">
+              <div class="color-swatch__sample"></div>
+              <div class="color-swatch__copy"><strong>نص معطّل</strong><code>--text-disabled</code></div>
+            </div>
+            <div class="color-swatch" style="--swatch: var(--bg-hover)">
+              <div class="color-swatch__sample"></div>
+              <div class="color-swatch__copy"><strong>تحويم</strong><code>--bg-hover</code></div>
+            </div>
+            <div class="color-swatch" style="--swatch: var(--bg-selected)">
+              <div class="color-swatch__sample"></div>
+              <div class="color-swatch__copy"><strong>مختار</strong><code>--bg-selected</code></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="spec-panel">
+          <div class="spec-panel__head">
+            <h3>اللهجة والحالات</h3>
+            <span class="spec-panel__hint">المعنى لا يحمله اللون وحده</span>
+          </div>
+          <div class="color-grid">
+            <div class="color-swatch" style="--swatch: var(--brand-mark)">
+              <div class="color-swatch__sample"></div>
+              <div class="color-swatch__copy"><strong>العلامة</strong><code>#E85D2C</code></div>
+            </div>
+            <div class="color-swatch" style="--swatch: var(--action-primary)">
+              <div class="color-swatch__sample"></div>
+              <div class="color-swatch__copy"><strong>الإجراء</strong><code>#D0470D</code></div>
+            </div>
+            <div class="color-swatch" style="--swatch: var(--status-success-solid)">
+              <div class="color-swatch__sample"></div>
+              <div class="color-swatch__copy"><strong>نجاح</strong><code>--status-success-solid</code></div>
+            </div>
+            <div class="color-swatch" style="--swatch: var(--status-warning-solid)">
+              <div class="color-swatch__sample"></div>
+              <div class="color-swatch__copy"><strong>تحذير</strong><code>--status-warning-solid</code></div>
+            </div>
+            <div class="color-swatch" style="--swatch: var(--status-danger-solid)">
+              <div class="color-swatch__sample"></div>
+              <div class="color-swatch__copy"><strong>خطر</strong><code>--status-danger-solid</code></div>
+            </div>
+            <div class="color-swatch" style="--swatch: var(--status-info-solid)">
+              <div class="color-swatch__sample"></div>
+              <div class="color-swatch__copy"><strong>معلومة</strong><code>--status-info-solid</code></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="ds-section" id="typography" aria-labelledby="type-title">
+      <div class="section-head">
+        <div>
+          <span class="section-head__index">02</span>
+          <h2 id="type-title">مستويات النص</h2>
+          <p>Cairo يحمل البنية، وAlmarai يحمل القراءة، وJetBrains Mono لا يظهر إلا عندما يلتقي المستخدم بالمحتوى التقني الحقيقي.</p>
+        </div>
+        <code class="section-head__token">Cairo · Almarai · Mono</code>
+      </div>
+
+      <div class="demo-grid">
+        <div class="spec-panel">
+          <div class="type-list">
+            <div class="type-row"><div class="t-display">نفّذ بثقة</div><div class="type-row__meta">40 / 1.18 · 800</div></div>
+            <div class="type-row"><div class="t-page-title">الملفات والمجلدات</div><div class="type-row__meta">28 / 1.25 · 800</div></div>
+            <div class="type-row"><div class="t-section-title">اختيار العملية</div><div class="type-row__meta">20 / 1.35 · 700</div></div>
+            <div class="type-row"><div class="t-card-title">ضغط إلى ملف ZIP</div><div class="type-row__meta">15 / 1.45 · 700</div></div>
+          </div>
+        </div>
+
+        <div class="spec-panel">
+          <div class="type-list">
+            <div class="type-row"><div class="t-body">اختر ملفًا أو مجلدًا، ثم راجع الخطة قبل التنفيذ.</div><div class="type-row__meta">14 / 1.80</div></div>
+            <div class="type-row"><div class="t-body-sec">سيظهر الناتج بجانب المصدر ما لم تغيّر الوجهة.</div><div class="type-row__meta">13 / 1.75</div></div>
+            <div class="type-row"><div class="t-label">اسم الملف الناتج</div><div class="type-row__meta">12 / 1.40 · 700</div></div>
+            <div class="type-row"><div class="t-helper">يمكن استخدام العربية واللاتينية في الاسم.</div><div class="type-row__meta">12 / 1.65</div></div>
+            <div class="type-row"><div class="t-caption">آخر تحديث قبل دقيقتين</div><div class="type-row__meta">11 / 1.50</div></div>
+            <div class="type-row"><div class="t-command" dir="ltr">ditto -c -k --keepParent</div><div class="type-row__meta">13 / 1.65 · 500</div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="ds-section" id="spacing" aria-labelledby="spacing-title">
+      <div class="section-head">
+        <div>
+          <span class="section-head__index">03</span>
+          <h2 id="spacing-title">سلم المسافات</h2>
+          <p>شبكة 4px تمنح الواجهة إيقاعًا مكتبيًا كثيفًا، مع 2px للتعديلات البصرية الدقيقة.</p>
+        </div>
+        <code class="section-head__token">2 → 96px</code>
+      </div>
+
+      <div class="spec-panel">
+        <div class="space-list" aria-label="عينات المسافات">
+          <div class="space-row"><code>2px</code><div class="space-row__track"><div class="space-row__bar" style="--measure: var(--space-2)"></div></div><code>02</code></div>
+          <div class="space-row"><code>4px</code><div class="space-row__track"><div class="space-row__bar" style="--measure: var(--space-4)"></div></div><code>04</code></div>
+          <div class="space-row"><code>8px</code><div class="space-row__track"><div class="space-row__bar" style="--measure: var(--space-8)"></div></div><code>08</code></div>
+          <div class="space-row"><code>12px</code><div class="space-row__track"><div class="space-row__bar" style="--measure: var(--space-12)"></div></div><code>12</code></div>
+          <div class="space-row"><code>16px</code><div class="space-row__track"><div class="space-row__bar" style="--measure: var(--space-16)"></div></div><code>16</code></div>
+          <div class="space-row"><code>24px</code><div class="space-row__track"><div class="space-row__bar" style="--measure: var(--space-24)"></div></div><code>24</code></div>
+          <div class="space-row"><code>32px</code><div class="space-row__track"><div class="space-row__bar" style="--measure: var(--space-32)"></div></div><code>32</code></div>
+          <div class="space-row"><code>48px</code><div class="space-row__track"><div class="space-row__bar" style="--measure: var(--space-48)"></div></div><code>48</code></div>
+          <div class="space-row"><code>64px</code><div class="space-row__track"><div class="space-row__bar" style="--measure: var(--space-64)"></div></div><code>64</code></div>
+          <div class="space-row"><code>96px</code><div class="space-row__track"><div class="space-row__bar" style="--measure: var(--space-96)"></div></div><code>96</code></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="ds-section" id="buttons" aria-labelledby="buttons-title">
+      <div class="section-head">
+        <div>
+          <span class="section-head__index">04</span>
+          <h2 id="buttons-title">الأزرار وحالات التفاعل</h2>
+          <p>فعل واحد واضح في الواجهة، مع بدائل هادئة. يمكن تجربة التحويم والتركيز بلوحة المفاتيح على النماذج الفعلية.</p>
+        </div>
+        <code class="section-head__token">32px · radius 6</code>
+      </div>
+
+      <div class="demo-grid">
+        <div class="spec-panel">
+          <div class="spec-panel__head">
+            <h3>الأنواع</h3>
+            <span class="spec-panel__hint">أولوية بصرية محسوبة</span>
+          </div>
+          <div class="button-stack">
+            <div class="button-group">
+              <button class="btn btn--primary" type="button">
+                <svg viewBox="0 0 24 24" data-directional aria-hidden="true"><use href="#i-execute"></use></svg>
+                تنفيذ الخطة
+              </button>
+              <button class="btn btn--neutral" type="button">إجراء محايد</button>
+              <button class="btn btn--quiet" type="button">زر هادئ</button>
+              <button class="btn btn--ghost" type="button">زر شبحي</button>
+              <button class="btn btn--danger" type="button">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-delete"></use></svg>
+                حذف
+              </button>
+            </div>
+            <div class="button-group">
+              <button class="btn btn--quiet btn--sm" type="button">صغير</button>
+              <button class="btn btn--primary" type="button">افتراضي</button>
+              <button class="btn btn--neutral btn--lg" type="button">كبير</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="spec-panel">
+          <div class="spec-panel__head">
+            <h3>حالات الإجراء الأساسي</h3>
+            <span class="spec-panel__hint">عينات ثابتة للمقارنة</span>
+          </div>
+          <div class="button-stack">
+            <div class="state-cluster">
+              <span class="state-cluster__label">افتراضي · تحويم · ضغط</span>
+              <div class="button-group">
+                <button class="btn btn--primary" type="button">افتراضي</button>
+                <button class="btn btn--primary demo-primary-hover" type="button">تحويم</button>
+                <button class="btn btn--primary demo-primary-active" type="button">ضغط</button>
+              </div>
+            </div>
+            <div class="state-cluster">
+              <span class="state-cluster__label">تركيز لوحة المفاتيح · تعطيل</span>
+              <div class="button-group">
+                <button class="btn btn--quiet demo-focus" type="button">تركيز مرئي</button>
+                <button class="btn btn--primary" type="button" disabled>غير متاح</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="ds-section" id="fields" aria-labelledby="fields-title">
+      <div class="section-head">
+        <div>
+          <span class="section-head__index">05</span>
+          <h2 id="fields-title">الحقول</h2>
+          <p>حقول عربية هادئة، مع عزل المسارات والقيم التقنية LTR. الخطأ يشرح نفسه ولا يعتمد على الحد الأحمر وحده.</p>
+        </div>
+        <code class="section-head__token">height 32px</code>
+      </div>
+
+      <div class="demo-grid">
+        <div class="spec-panel">
+          <div class="control-list">
+            <div class="control-demo">
+              <label for="archive-name">اسم الملف الناتج</label>
+              <div class="field">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-file"></use></svg>
+                <input id="archive-name" value="مشروع العلامة — نسخة التسليم" autocomplete="off">
+              </div>
+              <p class="field-message">ستُضاف اللاحقة <code>.zip</code> تلقائيًا.</p>
+            </div>
+
+            <div class="control-demo">
+              <label for="destination">وجهة الحفظ · مسار معزول</label>
+              <div class="field field--path">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-folder-open"></use></svg>
+                <input id="destination" dir="ltr" value="/Users/lina/التسليمات/Brand Export/" spellcheck="false">
+              </div>
+              <p class="field-message">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-info"></use></svg>
+                تُقرأ الشرطات والنقاط بالترتيب نفسه داخل RTL.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div class="spec-panel">
+          <div class="control-list">
+            <div class="control-demo">
+              <label for="invalid-name">حالة خطأ</label>
+              <div class="field field--invalid" aria-invalid="true">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-error"></use></svg>
+                <input id="invalid-name" value="نسخة/نهائية" aria-invalid="true" aria-describedby="invalid-help">
+              </div>
+              <p class="field-message field-message--danger" id="invalid-help" role="alert">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-error"></use></svg>
+                لا يمكن أن يحتوي اسم الملف على شرطة مائلة.
+              </p>
+            </div>
+
+            <div class="control-demo">
+              <label for="disabled-field">حقل معطّل</label>
+              <div class="field field--disabled">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-security"></use></svg>
+                <input id="disabled-field" value="تتطلب الوجهة صلاحية كتابة" disabled>
+              </div>
+              <p class="field-message">يتاح الحقل بعد منح صلاحية المجلد.</p>
+            </div>
+
+            <div class="control-demo">
+              <label for="policy">سياسة التعارض</label>
+              <div class="field">
+                <select id="policy">
+                  <option>اسألني قبل الاستبدال</option>
+                  <option>أنشئ اسمًا جديدًا</option>
+                  <option>استبدل الملف الموجود</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="ds-section" id="cards" aria-labelledby="cards-title">
+      <div class="section-head">
+        <div>
+          <span class="section-head__index">06</span>
+          <h2 id="cards-title">البطاقات: نَفِّذ وسَطْر</h2>
+          <p>السطح الهادئ يجمع المدخلات، والطبقة الداكنة تكشف ما سينفذ. الحد البنيوي على بداية السطر يثبت الفرق في RTL وLTR.</p>
+        </div>
+        <code class="section-head__token">radius 10px</code>
+      </div>
+
+      <div class="cards-grid">
+        <a class="card card--interactive reference-card" href="#shapes">
+          <div class="mode-card__top">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-categories"></use></svg>
+            <h3>بطاقة تفاعلية</h3>
+          </div>
+          <p>حد خفيف بلا ظل افتراضي، ثم حد أوضح وظل صغير عند التحويم.</p>
+          <span class="chip chip--neutral">مرجع مكوّن</span>
+        </a>
+
+        <article class="card card--naffith mode-card">
+          <div class="mode-card__top">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#mode-naffith"></use></svg>
+            <h3>نَفِّذ</h3>
+          </div>
+          <p>اختيار المصدر والوجهة والاسم والسياسة قبل بناء الخطة.</p>
+          <div class="mini-plan">
+            <div class="mini-plan__row"><span>المصدر</span><span class="path">~/Projects/هوية</span></div>
+            <div class="mini-plan__row"><span>الناتج</span><span class="path">هوية.zip</span></div>
+          </div>
+        </article>
+
+        <article class="card card--satr mode-card">
+          <div class="mode-card__top">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#mode-satr"></use></svg>
+            <h3>سَطْر</h3>
+          </div>
+          <p>معاينة واضحة للأداة والأمر قبل التنفيذ.</p>
+          <div class="command mini-command">
+            <div class="command__bar"><span class="command__label">معاينة الأمر</span></div>
+            <pre class="command__body"><span class="tok-name">ditto</span> <span class="tok-flag">-c -k</span> <span class="tok-path">"هوية/"</span> <span class="tok-path">"هوية.zip"</span></pre>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="ds-section" id="status" aria-labelledby="status-title">
+      <div class="section-head">
+        <div>
+          <span class="section-head__index">07</span>
+          <h2 id="status-title">الشارات ورسائل الحالة</h2>
+          <p>الشكل والنص واللون تعمل معًا. لكل حالة أيقونة مستقلة يمكن تمييزها حتى من دون اللون.</p>
+        </div>
+        <code class="section-head__token">icon + label + color</code>
+      </div>
+
+      <div class="demo-grid">
+        <div class="spec-panel">
+          <div class="spec-panel__head">
+            <h3>الشارات</h3>
+            <span class="spec-panel__hint">ارتفاع 22px · نصف قطر كامل</span>
+          </div>
+          <div class="chip-catalogue">
+            <div class="chip-group">
+              <span class="chip chip--success"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-success"></use></svg>نجاح</span>
+              <span class="chip chip--warning"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-warning"></use></svg>تحذير</span>
+              <span class="chip chip--danger"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-error"></use></svg>فشل</span>
+              <span class="chip chip--info"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-info"></use></svg>معلومة</span>
+            </div>
+            <div class="chip-group">
+              <span class="chip chip--neutral"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-cancelled"></use></svg>ملغاة</span>
+              <span class="chip chip--accent"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"></use></svg>متاحة</span>
+              <span class="chip chip--neutral"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-pending"></use></svg>قيد الانتظار</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="spec-panel">
+          <div class="notice-list">
+            <div class="notice notice--success" role="status">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-success"></use></svg>
+              <div><h4>اكتمل الضغط</h4><p>حُفظ الملف <span class="path">/Users/lina/التسليمات/هوية.zip</span>.</p></div>
+            </div>
+            <div class="notice notice--warning" role="status">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-warning"></use></svg>
+              <div><h4>الملف موجود مسبقًا</h4><p>اختر اسمًا آخر أو راجع سياسة التعارض قبل التنفيذ.</p></div>
+            </div>
+            <div class="notice notice--danger" role="alert">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-error"></use></svg>
+              <div><h4>تعذر إنشاء الملف</h4><p>لا توجد مساحة كافية في وحدة التخزين المختارة.</p></div>
+            </div>
+            <div class="notice notice--info" role="status">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-info"></use></svg>
+              <div><h4>الخطة جاهزة</h4><p>ستُستخدم أداة النظام <code>ditto</code> مع الاحتفاظ ببنية المجلد.</p></div>
+            </div>
+            <div class="notice notice--cancelled" role="status">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-cancelled"></use></svg>
+              <div><h4>أُلغي التنفيذ</h4><p>لم يُنشأ ملف ناتج، وبقي المصدر دون تغيير.</p></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="ds-section" id="shapes" aria-labelledby="shapes-title">
+      <div class="section-head">
+        <div>
+          <span class="section-head__index">08</span>
+          <h2 id="shapes-title">الزوايا والظلال</h2>
+          <p>الزوايا منضبطة بحسب وظيفة المكوّن، والظل يصف الارتفاع ولا يزيّن كل سطح.</p>
+        </div>
+        <code class="section-head__token">4 · 6 · 8 · 10 · 14 · 20</code>
+      </div>
+
+      <div class="spec-panel">
+        <div class="spec-panel__head"><h3>أنصاف الأقطار</h3><span class="spec-panel__hint">استخدم الاسم الدلالي أولًا</span></div>
+        <div class="shape-grid">
+          <div class="shape-token" style="--shape-radius: var(--radius-xs)"><div><strong>XS</strong><code>4px</code></div></div>
+          <div class="shape-token" style="--shape-radius: var(--radius-control)"><div><strong>Control</strong><code>6px</code></div></div>
+          <div class="shape-token" style="--shape-radius: var(--radius-md)"><div><strong>MD</strong><code>8px</code></div></div>
+          <div class="shape-token" style="--shape-radius: var(--radius-card)"><div><strong>Card</strong><code>10px</code></div></div>
+          <div class="shape-token" style="--shape-radius: var(--radius-modal)"><div><strong>Modal</strong><code>14px</code></div></div>
+          <div class="shape-token" style="--shape-radius: var(--radius-2xl)"><div><strong>2XL</strong><code>20px</code></div></div>
+          <div class="shape-token" style="--shape-radius: var(--radius-chip)"><div><strong>Chip</strong><code>full</code></div></div>
+        </div>
+      </div>
+
+      <div class="spec-panel" style="margin-block-start: var(--space-20)">
+        <div class="spec-panel__head"><h3>مستويات الظل</h3><span class="spec-panel__hint">مصبوغة بالحبر في الفاتح</span></div>
+        <div class="shadow-grid">
+          <div class="shadow-token" style="--shape-shadow: var(--shadow-sm)"><div><strong>صغير</strong><code>--shadow-sm</code></div></div>
+          <div class="shadow-token" style="--shape-shadow: var(--shadow-md)"><div><strong>متوسط</strong><code>--shadow-md</code></div></div>
+          <div class="shadow-token" style="--shape-shadow: var(--shadow-lg)"><div><strong>كبير</strong><code>--shadow-lg</code></div></div>
+          <div class="shadow-token" style="--shape-shadow: var(--shadow-xl)"><div><strong>علوي</strong><code>--shadow-xl</code></div></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="ds-section" id="icons" aria-labelledby="icons-title">
+      <div class="section-head">
+        <div>
+          <span class="section-head__index">09</span>
+          <h2 id="icons-title">الأيقونات ومقاساتها</h2>
+          <p>شبكة 24×24 وسماكة 1.5 مع لون موروث. الأيقونات الاتجاهية وحدها تنعكس في RTL.</p>
+        </div>
+        <code class="section-head__token">14 · 16 · 20 · 24 · 32</code>
+      </div>
+
+      <div class="spec-panel">
+        <div class="icon-size-row" aria-label="سلم مقاسات الأيقونات">
+          <div class="icon-size" style="--icon-size: var(--icon-xs)"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-compress"></use></svg><code>14</code></div>
+          <div class="icon-size" style="--icon-size: var(--icon-sm)"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-compress"></use></svg><code>16</code></div>
+          <div class="icon-size" style="--icon-size: var(--icon-md)"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-compress"></use></svg><code>20</code></div>
+          <div class="icon-size" style="--icon-size: var(--icon-lg)"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-compress"></use></svg><code>24</code></div>
+          <div class="icon-size" style="--icon-size: var(--icon-xl)"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-compress"></use></svg><code>32</code></div>
+        </div>
+
+        <div class="icon-catalogue" aria-label="كتالوج الأيقونات">
+          <div class="icon-cell"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-home"></use></svg><span>الرئيسية</span></div>
+          <div class="icon-cell"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-search"></use></svg><span>البحث</span></div>
+          <div class="icon-cell"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-categories"></use></svg><span>الفئات</span></div>
+          <div class="icon-cell"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-favorites"></use></svg><span>المفضلة</span></div>
+          <div class="icon-cell"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-history"></use></svg><span>السجل</span></div>
+          <div class="icon-cell"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-settings"></use></svg><span>الإعدادات</span></div>
+          <div class="icon-cell"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-folder"></use></svg><span>مجلد</span></div>
+          <div class="icon-cell"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-folder-open"></use></svg><span>فتح مجلد</span></div>
+          <div class="icon-cell"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-file"></use></svg><span>ملف</span></div>
+          <div class="icon-cell"><svg viewBox="0 0 24 24" data-directional aria-hidden="true"><use href="#i-file-move"></use></svg><span>نقل ملف</span></div>
+          <div class="icon-cell"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-rename"></use></svg><span>إعادة تسمية</span></div>
+          <div class="icon-cell"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-delete"></use></svg><span>حذف</span></div>
+          <div class="icon-cell"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-export"></use></svg><span>تصدير</span></div>
+          <div class="icon-cell"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-download"></use></svg><span>تنزيل</span></div>
+          <div class="icon-cell"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-copy"></use></svg><span>نسخ</span></div>
+          <div class="icon-cell"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-compress"></use></svg><span>ضغط</span></div>
+          <div class="icon-cell"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-network"></use></svg><span>الشبكة</span></div>
+          <div class="icon-cell"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-security"></use></svg><span>الأمان</span></div>
+          <div class="icon-cell"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-admin"></use></svg><span>الصلاحيات</span></div>
+          <div class="icon-cell"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-system"></use></svg><span>النظام</span></div>
+          <div class="icon-cell"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-disk"></use></svg><span>التخزين</span></div>
+          <div class="icon-cell"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-git-branch"></use></svg><span>Git</span></div>
+          <div class="icon-cell"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-git-commit"></use></svg><span>إيداع Git</span></div>
+          <div class="icon-cell"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-success"></use></svg><span>نجاح</span></div>
+          <div class="icon-cell"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-error"></use></svg><span>فشل</span></div>
+          <div class="icon-cell"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-warning"></use></svg><span>تحذير</span></div>
+          <div class="icon-cell"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-info"></use></svg><span>معلومة</span></div>
+          <div class="icon-cell"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-cancelled"></use></svg><span>إلغاء</span></div>
+          <div class="icon-cell"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-pending"></use></svg><span>انتظار</span></div>
+          <div class="icon-cell"><svg viewBox="0 0 24 24" data-directional aria-hidden="true"><use href="#i-execute"></use></svg><span>تنفيذ</span></div>
+          <div class="icon-cell"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-plus"></use></svg><span>إضافة</span></div>
+          <div class="icon-cell"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-minus"></use></svg><span>إنقاص</span></div>
+          <div class="icon-cell"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-close"></use></svg><span>إغلاق</span></div>
+          <div class="icon-cell"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"></use></svg><span>تأكيد</span></div>
+          <div class="icon-cell"><svg viewBox="0 0 24 24" data-directional aria-hidden="true"><use href="#i-chevron"></use></svg><span>انتقال</span></div>
+          <div class="icon-cell"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-chevron-down"></use></svg><span>فتح قائمة</span></div>
+          <div class="icon-cell"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-more"></use></svg><span>المزيد</span></div>
+          <div class="icon-cell"><svg viewBox="0 0 24 24" data-directional aria-hidden="true"><use href="#i-external"></use></svg><span>خارجي</span></div>
+          <div class="icon-cell"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-eye"></use></svg><span>معاينة</span></div>
+          <div class="icon-cell"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-help"></use></svg><span>مساعدة</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="ds-section" id="motion" aria-labelledby="motion-title">
+      <div class="section-head">
+        <div>
+          <span class="section-head__index">10</span>
+          <h2 id="motion-title">الحركة وتقليلها</h2>
+          <p>كشف وفتح واستقرار من دون ارتداد. عند طلب تقليل الحركة تنهار المدد إلى 1ms وتبقى الحالة مفهومة.</p>
+        </div>
+        <code class="section-head__token">80 → 400ms</code>
+      </div>
+
+      <div class="motion-layout">
+        <div class="spec-panel">
+          <div class="motion-stage">
+            <article class="motion-sample is-playing" id="motion-sample">
+              <div class="motion-sample__head">
+                <span class="spinner" aria-hidden="true"></span>
+                <h3>يُنشأ الملف المضغوط</h3>
+              </div>
+              <p>تظهر الخطة بحركة قصيرة ثم تستقر. لا تدور إلا حلقة التقدم الواحدة.</p>
+              <div class="progress" role="progressbar" aria-label="تقدم العملية" aria-valuemin="0" aria-valuemax="100" aria-valuenow="64">
+                <div class="progress__fill" style="width: 64%"></div>
+              </div>
+            </article>
+          </div>
+          <div class="motion-actions">
+            <button class="btn btn--quiet" id="replay-motion" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-history"></use></svg>
+              إعادة الحركة
+            </button>
+            <span class="chip chip--neutral" id="motion-preference" aria-live="polite">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-info"></use></svg>
+              جارٍ قراءة إعداد النظام
+            </span>
+          </div>
+        </div>
+
+        <div class="spec-panel motion-specs">
+          <div class="duration-row"><code>80ms</code><span>لون أو حالة فورية</span></div>
+          <div class="duration-row"><code>140ms</code><span>زر أو حقل</span></div>
+          <div class="duration-row"><code>200ms</code><span>كشف أساسي</span></div>
+          <div class="duration-row"><code>280ms</code><span>فتح لوحة أو نتيجة</span></div>
+          <div class="duration-row"><code>400ms</code><span>انتقال شاشة</span></div>
+          <p class="spec-panel__hint">
+            منحنى الكشف <code>cubic-bezier(.16,1,.3,1)</code>، والحركة العامة
+            <code>cubic-bezier(.2,0,0,1)</code>.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <footer class="ds-footer">
+      <p>نظام مصغّر مستخرج من هوية «نَفِّذ — سَطْر» التجريبية.</p>
+      <span class="path">mockups-v3/design-system.html</span>
+    </footer>
+  </main>
+
+  <script>
+    (function () {
+      'use strict';
+
+      var root = document.documentElement;
+      var storageKey = 'naffith-satr.mockups-v3.theme';
+      var allowedThemes = ['system', 'light', 'dark'];
+      var themeButtons = Array.prototype.slice.call(document.querySelectorAll('[data-theme-option]'));
+      var themeStatus = document.getElementById('theme-status');
+      var systemDark = window.matchMedia('(prefers-color-scheme: dark)');
+      var choice = root.dataset.themeChoice;
+
+      if (allowedThemes.indexOf(choice) === -1) choice = 'system';
+
+      function resolvedLabel(selected) {
+        if (selected === 'light') return 'فاتح · اختيار محفوظ لهذا المرجع.';
+        if (selected === 'dark') return 'داكن · اختيار محفوظ لهذا المرجع.';
+        return 'يتبع النظام · النظام الآن ' + (systemDark.matches ? 'داكن.' : 'فاتح.');
+      }
+
+      function applyTheme(nextTheme, shouldSave) {
+        if (allowedThemes.indexOf(nextTheme) === -1) nextTheme = 'system';
+        choice = nextTheme;
+        root.dataset.themeChoice = choice;
+
+        if (choice === 'light' || choice === 'dark') {
+          root.dataset.theme = choice;
+        } else {
+          root.removeAttribute('data-theme');
+        }
+
+        themeButtons.forEach(function (button) {
+          button.setAttribute('aria-pressed', String(button.dataset.themeOption === choice));
+        });
+        themeStatus.textContent = resolvedLabel(choice);
+
+        if (shouldSave) {
+          try {
+            localStorage.setItem(storageKey, choice);
+          } catch (error) {
+            themeStatus.textContent = resolvedLabel(choice) + ' تعذر الحفظ محليًا، وسيبقى الاختيار لهذه الجلسة.';
+          }
+        }
+      }
+
+      themeButtons.forEach(function (button) {
+        button.addEventListener('click', function () {
+          applyTheme(button.dataset.themeOption, true);
+        });
+      });
+
+      systemDark.addEventListener('change', function () {
+        if (choice === 'system') applyTheme('system', false);
+      });
+
+      applyTheme(choice, false);
+
+      var motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+      var motionPreference = document.getElementById('motion-preference');
+      var motionSample = document.getElementById('motion-sample');
+      var replayButton = document.getElementById('replay-motion');
+
+      function updateMotionPreference() {
+        motionPreference.innerHTML = motionQuery.matches
+          ? '<svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-check"></use></svg>تقليل الحركة مفعّل · المدد 1ms'
+          : '<svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-info"></use></svg>الحركة الهادئة مفعّلة';
+      }
+
+      function replayMotion() {
+        motionSample.classList.remove('is-playing');
+        void motionSample.offsetWidth;
+        motionSample.classList.add('is-playing');
+      }
+
+      replayButton.addEventListener('click', replayMotion);
+      motionQuery.addEventListener('change', updateMotionPreference);
+      updateMotionPreference();
+    }());
+  </script>
+</body>
+</html>
