@@ -20,6 +20,19 @@ export default defineConfig({
     // لا قراءة من خارج جذر المشروع: كل ما يحتاجه البناء منسوخ داخله.
     fs: { strict: true },
   },
+  // البيئة الافتراضية `node`، ويطلب اختبارُ المكوّنات jsdom بسطرٍ في رأسه:
+  //
+  //     // @vitest-environment jsdom
+  //
+  // جعلُ jsdom افتراضًا عامًّا يكسر `i18n.test.ts`: هو يقرأ مصدر Rust عبر
+  // `import.meta.url`، وjsdom يعيد كتابة الأصل إلى عنوان http فيصير المسار
+  // ‏`/src-tauri/src` من جذر القرص. الاختباران يحتاجان بيئتين، فلتكن لكلٍّ بيئته.
+  test: {
+    environment: 'node',
+    globals: false,
+    include: ['src/**/*.test.{ts,tsx}'],
+    restoreMocks: true,
+  },
   build: {
     outDir: 'dist',
     emptyOutDir: true,
