@@ -1,0 +1,238 @@
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+<!-- ============================================================================
+     نَفِّذ — سَطْر · Icon System
+     24 x 24 grid · 20 x 20 live area (2px padding) · stroke 1.5
+     round caps · round joins · 2px corner radius on rectangular forms
+     Single stroke colour: every icon paints with currentColor. Status is
+     conveyed by the icon's SHAPE, never by its colour alone.
+
+     MIRRORING IS A CONSUMER DECISION, NOT A SYMBOL PROPERTY: <use> shadow
+     content cannot be targeted by CSS, so put data-directional on the consuming
+     <svg>, never here. Mirror chevron / execute / external / file-move; never
+     mirror clock, lock, search, trash, disk, check, or the brand mark.
+     ========================================================================= -->
+<!-- ── NAVIGATION ──────────────────────────────────────────────────────── -->
+<symbol id="i-home" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M3.5 10.4 12 3.8l8.5 6.6V19a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 19z"/>
+  <path d="M9.5 20.5v-5.6a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v5.6"/>
+</symbol>
+
+<symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="10.5" cy="10.5" r="6.75"/>
+  <path d="m15.4 15.4 4.85 4.85"/>
+</symbol>
+
+<symbol id="i-categories" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round">
+  <rect x="3.75" y="3.75" width="7.5" height="7.5" rx="2"/>
+  <rect x="12.75" y="3.75" width="7.5" height="7.5" rx="2"/>
+  <rect x="3.75" y="12.75" width="7.5" height="7.5" rx="2"/>
+  <rect x="12.75" y="12.75" width="7.5" height="7.5" rx="2"/>
+</symbol>
+
+<symbol id="i-favorites" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round">
+  <path d="M12.00 4.00 14.09 9.53 19.99 9.80 15.38 13.50 16.94 19.20 12.00 15.95 7.06 19.20 8.62 13.50 4.01 9.80 9.91 9.53Z"/>
+</symbol>
+
+<!-- history = a clock that has been wound BACK. The reversing arc is what
+     separates it from i-pending, which is the same clock going forward. -->
+<symbol id="i-history" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M3.9 9.4A8.25 8.25 0 1 1 3.75 12"/>
+  <path d="M3.75 4.9v4.6h4.6"/>
+  <path d="M12 7.75V12l3 1.85"/>
+</symbol>
+
+<!-- Sliders rather than a gear: calmer, and it echoes the line motif. -->
+<symbol id="i-settings" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+  <path d="M3.75 7h11M18.25 7h2M3.75 12h4M11.25 12h9M3.75 17h9M16.25 17h4"/>
+  <circle cx="16.25" cy="7" r="2"/>
+  <circle cx="9.25" cy="12" r="2"/>
+  <circle cx="14.25" cy="17" r="2"/>
+</symbol>
+
+<!-- ── FILES ───────────────────────────────────────────────────────────── -->
+<symbol id="i-folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round">
+  <path d="M3.75 6.5A1.75 1.75 0 0 1 5.5 4.75h3.9a1 1 0 0 1 .8.4l1.3 1.75h6.9a1.75 1.75 0 0 1 1.75 1.75v8.6a1.75 1.75 0 0 1-1.75 1.75H5.5a1.75 1.75 0 0 1-1.75-1.75z"/>
+</symbol>
+
+<symbol id="i-folder-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round">
+  <path d="M3.75 17.25V6.5A1.75 1.75 0 0 1 5.5 4.75h3.9a1 1 0 0 1 .8.4l1.3 1.75h6.9a1.75 1.75 0 0 1 1.75 1.75v1.6"/>
+  <path d="M3.75 17.25 6.1 11.3a1.4 1.4 0 0 1 1.3-.9h13.1a1 1 0 0 1 .93 1.37l-2.1 5.31a1.75 1.75 0 0 1-1.63 1.12H5.5a1.75 1.75 0 0 1-1.75-1.75z"/>
+</symbol>
+
+<!-- The file glyph keeps the conventional turned corner; it is a file, not the
+     brand mark, and must not be confused with it. -->
+<symbol id="i-file" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round">
+  <path d="M13.4 3.75H7.25A1.75 1.75 0 0 0 5.5 5.5v13A1.75 1.75 0 0 0 7.25 20.25h9.5a1.75 1.75 0 0 0 1.75-1.75V8.6z"/>
+  <path d="M13.4 3.75V7.6a1 1 0 0 0 1 1h3.85"/>
+</symbol>
+
+<symbol id="i-file-move" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M18.25 12.4V8.6l-4.85-4.85H7.25A1.75 1.75 0 0 0 5.5 5.5v13a1.75 1.75 0 0 0 1.75 1.75h4.1"/>
+  <path d="M13.4 3.75V7.6a1 1 0 0 0 1 1h3.85"/>
+  <path d="M14.5 17.5h6.75m-2.6-2.6 2.6 2.6-2.6 2.6"/>
+</symbol>
+
+<symbol id="i-rename" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M4.25 15.4 15.1 4.55a2.2 2.2 0 0 1 3.11 0l1.24 1.24a2.2 2.2 0 0 1 0 3.11L8.6 19.75H4.25z"/>
+  <path d="m14.1 5.55 4.35 4.35"/>
+</symbol>
+
+<symbol id="i-delete" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M4.75 6.75h14.5"/>
+  <path d="M9.25 6.75V5.5a1.25 1.25 0 0 1 1.25-1.25h3a1.25 1.25 0 0 1 1.25 1.25v1.25"/>
+  <path d="M6.75 6.75 7.6 18.9a1.5 1.5 0 0 0 1.5 1.35h5.8a1.5 1.5 0 0 0 1.5-1.35l.85-12.15"/>
+  <path d="M10.5 10.5v6M13.5 10.5v6"/>
+</symbol>
+
+<symbol id="i-export" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M12 14.5V3.75m-3.25 3.5L12 3.75l3.25 3.5"/>
+  <path d="M4.75 14v4.5a1.75 1.75 0 0 0 1.75 1.75h11a1.75 1.75 0 0 0 1.75-1.75V14"/>
+</symbol>
+
+<symbol id="i-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M12 3.75V14.5m-3.25-3.5L12 14.5l3.25-3.5"/>
+  <path d="M4.75 16.25v2.25a1.75 1.75 0 0 0 1.75 1.75h11a1.75 1.75 0 0 0 1.75-1.75v-2.25"/>
+</symbol>
+
+<symbol id="i-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round">
+  <rect x="9" y="9" width="11.25" height="11.25" rx="2"/>
+  <path d="M15 6.4V5.75A1.75 1.75 0 0 0 13.25 4H5.75A1.75 1.75 0 0 0 4 5.75v7.5A1.75 1.75 0 0 0 5.75 15h.65"/>
+</symbol>
+
+<!-- ── SYSTEM ──────────────────────────────────────────────────────────── -->
+<!-- compress: both arrows travel INWARD toward the seam. The mirror of this
+     icon (arrows outward) is extract — they must never be confused. -->
+<symbol id="i-compress" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M3.75 12h6.5M6.75 9l3.5 3-3.5 3"/>
+  <path d="M20.25 12h-6.5M17.25 9l-3.5 3 3.5 3"/>
+  <path d="M12 4.25v4M12 15.75v4"/>
+</symbol>
+
+<symbol id="i-network" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="12" cy="5.5" r="2.25"/>
+  <circle cx="5.75" cy="18" r="2.25"/>
+  <circle cx="18.25" cy="18" r="2.25"/>
+  <path d="M12 7.75v4.5M12 12.25 6.9 16.1M12 12.25l5.1 3.85"/>
+</symbol>
+
+<symbol id="i-security" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <rect x="4.75" y="10.25" width="14.5" height="10" rx="2"/>
+  <path d="M8.25 10.25V7.5a3.75 3.75 0 0 1 7.5 0v2.75"/>
+  <path d="M12 14v2.75"/>
+</symbol>
+
+<symbol id="i-admin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="12" cy="8" r="3.75"/>
+  <path d="M4.75 20.25v-1a4.5 4.5 0 0 1 4.5-4.5h5.5a4.5 4.5 0 0 1 4.5 4.5v1"/>
+</symbol>
+
+<symbol id="i-system" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <rect x="6.75" y="6.75" width="10.5" height="10.5" rx="2"/>
+  <path d="M10 3.75v3M14 3.75v3M10 17.25v3M14 17.25v3M3.75 10h3M3.75 14h3M17.25 10h3M17.25 14h3"/>
+</symbol>
+
+<symbol id="i-disk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <ellipse cx="12" cy="6.75" rx="7.25" ry="3"/>
+  <path d="M4.75 6.75v10.5c0 1.66 3.25 3 7.25 3s7.25-1.34 7.25-3V6.75"/>
+  <path d="M4.75 12c0 1.66 3.25 3 7.25 3s7.25-1.34 7.25-3"/>
+</symbol>
+
+<!-- ── GIT ─────────────────────────────────────────────────────────────── -->
+<symbol id="i-git-branch" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="7" cy="5.75" r="2.25"/>
+  <circle cx="7" cy="18.25" r="2.25"/>
+  <circle cx="17" cy="9.75" r="2.25"/>
+  <path d="M7 8v8"/>
+  <path d="M17 12v.5a4 4 0 0 1-4 4h-2.6"/>
+</symbol>
+
+<symbol id="i-git-commit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+  <circle cx="12" cy="12" r="3.25"/>
+  <path d="M3.75 12h5M15.25 12h5"/>
+</symbol>
+
+<!-- ── STATUS · shape-distinct, never colour-only ──────────────────────── -->
+<symbol id="i-success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="12" cy="12" r="8.25"/>
+  <path d="m8.25 12.25 2.6 2.6 5-5.4"/>
+</symbol>
+
+<symbol id="i-error" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="12" cy="12" r="8.25"/>
+  <path d="m9.25 9.25 5.5 5.5M14.75 9.25l-5.5 5.5"/>
+</symbol>
+
+<symbol id="i-warning" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M13.42 4.6a1.63 1.63 0 0 0-2.84 0L3.6 16.7A1.63 1.63 0 0 0 5.02 19.2h13.96a1.63 1.63 0 0 0 1.42-2.5z"/>
+  <path d="M12 9.5v4M12 16.4h.01"/>
+</symbol>
+
+<symbol id="i-info" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="12" cy="12" r="8.25"/>
+  <path d="M12 11.25v4.5M12 8.3h.01"/>
+</symbol>
+
+<symbol id="i-cancelled" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="12" cy="12" r="8.25"/>
+  <path d="M8.5 12h7"/>
+</symbol>
+
+<symbol id="i-pending" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="12" cy="12" r="8.25"/>
+  <path d="M12 7.75V12l2.75 1.6"/>
+</symbol>
+
+<!-- ── ACTIONS ─────────────────────────────────────────────────────────── -->
+<!-- "Execute": a command line that turns and becomes a result. Not a play
+     triangle — the turn is the product's own gesture. -->
+<symbol id="i-execute" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M4.75 7.5h9.5a4 4 0 0 1 4 4v5.25"/>
+  <path d="m14.75 13.5 3.5 3.75 3.5-3.75"/>
+  <path d="M4.75 12.5h5"/>
+</symbol>
+
+<symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+  <path d="M12 5.25v13.5M5.25 12h13.5"/>
+</symbol>
+
+<symbol id="i-minus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+  <path d="M5.25 12h13.5"/>
+</symbol>
+
+<symbol id="i-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+  <path d="m6.25 6.25 11.5 11.5M17.75 6.25 6.25 17.75"/>
+</symbol>
+
+<symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="m4.75 12.75 4.5 4.5 10-10.5"/>
+</symbol>
+
+<symbol id="i-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="m9.5 5.75 6.25 6.25-6.25 6.25"/>
+</symbol>
+
+<symbol id="i-chevron-down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="m5.75 9.5 6.25 6.25 6.25-6.25"/>
+</symbol>
+
+<symbol id="i-more" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+  <circle cx="5.5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18.5" cy="12" r="1.6"/>
+</symbol>
+
+<symbol id="i-external" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M13.25 4.75h6v6"/>
+  <path d="m19.25 4.75-8 8"/>
+  <path d="M18 14.5v3.75a1.75 1.75 0 0 1-1.75 1.75H5.75A1.75 1.75 0 0 1 4 18.25V7.75A1.75 1.75 0 0 1 5.75 6H9.5"/>
+</symbol>
+
+<symbol id="i-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M2.75 12S6.5 5.75 12 5.75 21.25 12 21.25 12 17.5 18.25 12 18.25 2.75 12 2.75 12"/>
+  <circle cx="12" cy="12" r="2.9"/>
+</symbol>
+
+<symbol id="i-help" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="12" cy="12" r="8.25"/>
+  <path d="M9.7 9.6a2.35 2.35 0 0 1 4.57.78c0 1.57-2.35 2.35-2.35 2.35"/>
+  <path d="M12 16.3h.01"/>
+</symbol>
+</svg>

@@ -1,0 +1,532 @@
+/* =============================================================================
+   نَفِّذ — سَطْر · Design Tokens
+   NAFFITH — SATR · Design Token Layer
+   -----------------------------------------------------------------------------
+   The single source of truth for the design system. Every surface in this
+   project (brand guide, marketing site, mockups, desktop app) imports this file
+   and consumes SEMANTIC tokens only. Raw palette values live in the "primitive"
+   block and must never be referenced by a component directly.
+
+   Every colour pair in this file has been solved in OKLCH against a WCAG
+   contrast target and verified programmatically — see design-system/contrast.md
+   for the full verification table.
+
+   Colour model
+     Light mode  = warm paper ground + cool indigo ink.
+     Dark mode   = deep indigo ground + soft indigo-white ink.
+     The technical (سَطْر) surface is dark in BOTH modes: it is the layer
+     revealed beneath the calm surface, so it keeps its own material.
+   ========================================================================== */
+
+:root {
+  /* ===========================================================================
+     1. PRIMITIVES — raw values. Do not reference these from components.
+     ======================================================================== */
+
+  /* Ink — the cool indigo neutral family. The brand navy desaturated. */
+  --ink-000: #FFFFFF;
+  --ink-050: #FAF8F5;   /* warm paper canvas */
+  --ink-100: #F5F1EC;   /* warm paper sunken */
+  --ink-200: #D0D0DE;
+  --ink-300: #ADAEBD;
+  --ink-400: #8C8D9E;
+  --ink-500: #6A6B7C;
+  --ink-600: #4F505E;
+  --ink-700: #272831;
+  --ink-800: #1A1A2B;
+  --ink-850: #212133;
+  --ink-870: #27283B;
+  --ink-900: #0F0F1E;
+  --ink-950: #04040E;
+
+  /* Ember — the single warm accent. Brand hue preserved at OKLCH H 38.6. */
+  --ember-200: #FFEFE8;
+  --ember-300: #F4A261;   /* formerly "Sand Gold" — now a member of this ramp */
+  --ember-400: #E85D2C;   /* THE brand mark colour. Graphics only, never behind text. */
+  --ember-450: #E95E2D;
+  --ember-500: #D0470D;   /* action fill — carries white text at 4.58:1 */
+  --ember-600: #C23900;
+  --ember-650: #C53F01;   /* accent TEXT on light grounds — 4.85:1 */
+  --ember-700: #B52B00;
+  --ember-750: #BB561C;
+  --ember-350: #D97B4C;   /* accent text on dark grounds — 6.22:1 */
+  --ember-900: #3E1C11;
+
+  /* Semantic hues, chosen to stay separable from ember (Δhue ≥ 22°) */
+  --green-tint-l: #ECF9EF;  --green-l: #188044;  --green-solid-l: #228649;
+  --green-tint-d: #152C1C;  --green-d: #5BA06F;  --green-border-l: #4D9F67;
+  --amber-tint-l: #FBF5E6;  --amber-l: #8F6A00;  --amber-solid-l: #967000;
+  --amber-tint-d: #2E2509;  --amber-d: #AC8F39;  --amber-border-l: #AD8B1B;
+  --red-tint-l:   #FFEEEF;  --red-l:   #C53A50;  --red-solid-l:   #CF4358;
+  --red-tint-d:   #3D191C;  --red-d:   #DE717A;  --red-border-l:  #E56673;
+  --blue-tint-l:  #EBF7FF;  --blue-l:  #1073BB;  --blue-solid-l:  #1B79C2;
+  --blue-tint-d:  #13283B;  --blue-d:  #5796D1;  --blue-border-l: #4893D7;
+
+  /* ===========================================================================
+     2. TYPOGRAPHY
+     ======================================================================== */
+
+  /* Font stacks. NOTE: never fall back from a geometric Arabic sans to a
+     naskh/serif face — the texture change is jarring mid-paragraph. The
+     fallbacks below are all geometric or humanist Arabic sans faces. */
+  --font-display: 'Cairo', 'IBM Plex Sans Arabic', 'Noto Sans Arabic',
+                  'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-body:    'Almarai', 'IBM Plex Sans Arabic', 'Noto Sans Arabic',
+                  'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-mono:    'JetBrains Mono', 'SF Mono', 'Cascadia Mono', 'Consolas',
+                  'Menlo', 'Liberation Mono', monospace;
+
+  --fw-light: 300;
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+  --fw-extrabold: 800;
+
+  /* Type scale — desktop application sizing (denser than web). */
+  --fs-display: 40px;          --lh-display: 1.18;
+  --fs-page-title: 28px;       --lh-page-title: 1.25;
+  --fs-section-title: 20px;    --lh-section-title: 1.35;
+  --fs-card-title: 15px;       --lh-card-title: 1.45;
+  --fs-body: 14px;             --lh-body: 1.80;
+  --fs-body-secondary: 13px;   --lh-body-secondary: 1.75;
+  --fs-label: 12px;            --lh-label: 1.40;
+  --fs-helper: 12px;           --lh-helper: 1.65;
+  --fs-caption: 11px;          --lh-caption: 1.50;
+  --fs-button: 13px;           --lh-button: 1.20;
+  --fs-command: 13px;          --lh-command: 1.65;
+  --fs-code: 12.5px;           --lh-code: 1.70;
+  --fs-terminal: 12px;         --lh-terminal: 1.60;
+
+  /* Letter-spacing. CRITICAL: Arabic is a connected script — positive
+     letter-spacing breaks the joins and is never applied to Arabic text.
+     --tracking-wide is for isolated Latin runs (.lat) only. */
+  --tracking-tight: -0.01em;
+  --tracking-normal: 0;
+  --tracking-wide: 0.08em;     /* Latin only */
+  --tracking-mono: 0;
+
+  /* ===========================================================================
+     3. SPACING — 4px base grid, value-encoded names
+     ======================================================================== */
+  --space-2: 2px;    --space-4: 4px;    --space-8: 8px;    --space-12: 12px;
+  --space-16: 16px;  --space-20: 20px;  --space-24: 24px;  --space-32: 32px;
+  --space-40: 40px;  --space-48: 48px;  --space-56: 56px;  --space-64: 64px;
+  --space-80: 80px;  --space-96: 96px;
+
+  /* ===========================================================================
+     4. RADIUS / BORDER
+     ======================================================================== */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+  --radius-2xl: 20px;
+  --radius-full: 9999px;
+  /* Component aliases so a component never picks a raw step */
+  --radius-control: var(--radius-sm);
+  --radius-card: var(--radius-lg);
+  --radius-modal: var(--radius-xl);
+  --radius-chip: var(--radius-full);
+
+  --border-hairline: 1px;
+  --border-thin: 1.5px;
+  --border-thick: 2px;
+  --border-accent: 3px;
+
+  /* ===========================================================================
+     5. ICONS / CONTROLS / WIDTHS
+     ======================================================================== */
+  --icon-xs: 14px;  --icon-sm: 16px;  --icon-md: 20px;
+  --icon-lg: 24px;  --icon-xl: 32px;
+  --icon-stroke: 1.5;          /* on the 24 grid */
+  --icon-stroke-small: 1.25;   /* on the 16 grid */
+
+  --control-h-xs: 22px;
+  --control-h-sm: 26px;
+  --control-h-md: 32px;
+  --control-h-lg: 38px;
+
+  --width-prose: 68ch;
+  --width-narrow: 480px;
+  --width-base: 720px;
+  --width-wide: 1100px;
+  --sidebar-w: 232px;
+  --sidebar-w-collapsed: 56px;
+  --titlebar-h: 38px;
+
+  /* ===========================================================================
+     6. MOTION — "the fold": reveal, expand, settle. Never bounce.
+     ======================================================================== */
+  --duration-instant: 80ms;
+  --duration-fast: 140ms;
+  --duration-base: 200ms;
+  --duration-slow: 280ms;
+  --duration-slower: 400ms;
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);        /* the reveal / unfold */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);       /* general UI movement */
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);     /* symmetric transitions */
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);           /* leaving the screen */
+
+  /* ===========================================================================
+     7. OPACITY / Z-INDEX
+     ======================================================================== */
+  --opacity-disabled: 0.45;
+  --opacity-muted: 0.65;
+  --opacity-scrim: 0.55;
+  --opacity-hover-veil: 0.06;
+  --opacity-press-veil: 0.10;
+
+  --z-base: 0;
+  --z-raised: 10;
+  --z-sticky: 100;
+  --z-nav: 200;
+  --z-dropdown: 300;
+  --z-overlay: 400;
+  --z-modal: 500;
+  --z-toast: 600;
+  --z-tooltip: 700;
+
+  /* Direction multiplier — flip directional transforms without duplicating CSS.
+     e.g. transform: translateX(calc(4px * var(--flip))); */
+  --flip: 1;
+
+  /* ===========================================================================
+     8. SEMANTIC TOKENS — LIGHT MODE (default)
+     These are the ONLY colour tokens a component may use.
+     ======================================================================== */
+
+  /* Surfaces */
+  --bg-canvas: var(--ink-050);
+  --bg-sunken: var(--ink-100);
+  --bg-surface: var(--ink-000);
+  --bg-elevated: var(--ink-000);
+  --bg-overlay: var(--ink-000);
+  --bg-scrim: rgba(25, 25, 40, 0.55);
+
+  /* Interactive surface states */
+  --bg-hover: #EFF0F7;
+  --bg-active: #E7E8F0;
+  --bg-selected: #FFECE5;
+  --bg-inset: var(--ink-100);
+
+  /* Text */
+  --text-primary: var(--ink-700);
+  --text-secondary: var(--ink-600);
+  --text-muted: var(--ink-500);
+  --text-disabled: var(--ink-400);
+  --text-inverse: var(--ink-000);
+  --text-accent: var(--ember-650);
+  --text-on-action: var(--ink-000);
+  --text-link: var(--ember-650);
+  --text-link-hover: var(--ember-700);
+
+  /* Borders */
+  --border-subtle: var(--ink-200);
+  --border-default: var(--ink-300);
+  --border-strong: var(--ink-400);
+  --border-accent-color: var(--ember-500);
+
+  /* Actions */
+  --action-primary: var(--ember-500);
+  --action-primary-hover: var(--ember-600);
+  --action-primary-active: var(--ember-700);
+  --action-primary-text: var(--ink-000);
+
+  --action-neutral: var(--ink-700);
+  --action-neutral-hover: var(--ink-800);
+  --action-neutral-active: var(--ink-900);
+  --action-neutral-text: var(--ink-000);
+
+  --action-quiet-bg: transparent;
+  --action-quiet-bg-hover: var(--bg-hover);
+  --action-quiet-text: var(--text-secondary);
+  --action-quiet-border: var(--border-default);
+
+  /* Focus — 3:1 against every surface it can land on */
+  --focus-ring-color: var(--ember-450);
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+  --focus-ring: 0 0 0 var(--focus-ring-width) var(--focus-ring-color);
+
+  /* Brand — graphics only */
+  --brand-mark: var(--ember-400);
+  --brand-mark-warm: var(--ember-300);
+  --brand-ink: var(--ink-900);
+
+  /* Status */
+  --status-success-text: var(--green-l);
+  --status-success-solid: var(--green-solid-l);
+  --status-success-tint: var(--green-tint-l);
+  --status-success-border: var(--green-border-l);
+  --status-warning-text: var(--amber-l);
+  --status-warning-solid: var(--amber-solid-l);
+  --status-warning-tint: var(--amber-tint-l);
+  --status-warning-border: var(--amber-border-l);
+  --status-danger-text: var(--red-l);
+  --status-danger-solid: var(--red-solid-l);
+  --status-danger-tint: var(--red-tint-l);
+  --status-danger-border: var(--red-border-l);
+  --status-info-text: var(--blue-l);
+  --status-info-solid: var(--blue-solid-l);
+  --status-info-tint: var(--blue-tint-l);
+  --status-info-border: var(--blue-border-l);
+  /* Solid status fills are THEME-INVARIANT. Their job is to carry a white
+     label, so they are solved against white (4.55-4.60), not against the
+     canvas; the same values still read 4.1+ against the dark ground. Solving
+     them for canvas visibility instead left every destructive button in dark
+     mode at 3.94 against its own label. */
+  --status-solid-text: var(--ink-000);
+
+  /* سَطْر — the technical surface. Dark in BOTH modes by design. */
+  --command-bg: var(--ink-900);
+  --command-bg-header: #171728;
+  --command-border: #2A2B35;
+  --command-text: #E4E5F1;
+  --command-prompt: #8F90A5;
+  --command-name: #FDAF8A;
+  --command-flag: #8BC49A;
+  --command-string: #D4BC79;
+  --command-path: #9ABBDD;
+  --command-comment: #7B7C8A;   /* passes on BOTH command grounds: 4.60 on
+                                   ink-900 (light theme) and 4.95 on ink-950 */
+  --command-selection: rgba(232, 93, 44, 0.28);
+
+  /* Inline code inside running body text stays light in light mode */
+  --code-inline-bg: var(--ink-100);
+  --code-inline-text: var(--ink-700);
+  --code-inline-border: var(--ink-200);
+
+  /* INVERSE SURFACES — always dark, in both themes.
+     Used by the brand-guide's dark chapters and the marketing hero. These are
+     deliberately NOT theme-reactive: they are the same material as the سَطْر
+     command surface, so a dark band means "the layer underneath" everywhere in
+     the identity rather than "the OS is in dark mode". */
+  --bg-inverse: var(--ink-900);
+  --bg-inverse-deep: var(--ink-950);
+  --bg-inverse-elevated: var(--ink-800);
+  --text-on-inverse: #E4E5F1;
+  --text-on-inverse-secondary: #A5A6B6;
+  --text-on-inverse-muted: #8F90A1;
+  --border-on-inverse: #2A2B35;
+  --accent-on-inverse: var(--ember-350);
+
+  /* Shadows — tinted with the ink hue rather than pure black */
+  --shadow-sm: 0 1px 2px rgba(39,40,49,0.05), 0 1px 1px rgba(39,40,49,0.04);
+  --shadow-md: 0 2px 4px rgba(39,40,49,0.05), 0 4px 12px rgba(39,40,49,0.06);
+  --shadow-lg: 0 4px 8px rgba(39,40,49,0.05), 0 12px 28px rgba(39,40,49,0.09);
+  --shadow-xl: 0 8px 16px rgba(39,40,49,0.06), 0 24px 56px rgba(39,40,49,0.13);
+}
+
+/* ============================================================================
+   DARK MODE
+   Designed independently — not an inversion of light mode. The ink family
+   keeps its indigo cast; the accent moves to a lighter, less saturated ember
+   so it does not vibrate against the deep ground.
+   ========================================================================= */
+
+/* Applies when the OS asks for dark AND the app has not pinned a theme. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg-canvas: var(--ink-900);
+    --bg-sunken: var(--ink-950);
+    --bg-surface: var(--ink-800);
+    --bg-elevated: var(--ink-850);
+    --bg-overlay: var(--ink-870);
+    --bg-scrim: rgba(0, 0, 0, 0.66);
+
+    --bg-hover: #222234;
+    --bg-active: #2B2C3F;
+    --bg-selected: #412217;
+    --bg-inset: var(--ink-950);
+
+    --text-primary: #E4E5F1;
+    --text-secondary: #A5A6B6;
+    --text-muted: #8F90A1;
+    --text-disabled: #6E6F7F;
+    --text-inverse: var(--ink-900);
+    --text-accent: var(--ember-350);
+    --text-link: var(--ember-350);
+    --text-link-hover: var(--ember-300);
+
+    --border-subtle: #2A2B35;
+    --border-default: #434450;
+    --border-strong: #5F606F;
+
+    --action-neutral: var(--ink-000);
+    --action-neutral-hover: #E4E5F1;
+    --action-neutral-active: #A5A6B6;
+    --action-neutral-text: var(--ink-900);
+    --action-quiet-text: #A5A6B6;
+    --action-quiet-border: #434450;
+
+    --focus-ring-color: var(--ember-750);
+
+    --brand-ink: #E4E5F1;
+
+    --status-success-text: var(--green-d);
+    --status-success-tint: var(--green-tint-d);
+    --status-success-border: #448056;
+    --status-success-solid: var(--green-solid-l);
+    --status-warning-text: var(--amber-d);
+    --status-warning-tint: var(--amber-tint-d);
+    --status-warning-border: #8A7125;
+    --status-warning-solid: var(--amber-solid-l);
+    --status-danger-text: var(--red-d);
+    --status-danger-tint: var(--red-tint-d);
+    --status-danger-border: #B4565F;
+    --status-danger-solid: var(--red-solid-l);
+    --status-info-text: var(--blue-d);
+    --status-info-tint: var(--blue-tint-d);
+    --status-info-border: #4178AA;
+    --status-info-solid: var(--blue-solid-l);
+
+    /* The technical surface sinks below the canvas in dark mode */
+    --command-bg: var(--ink-950);
+    --command-bg-header: #0C0C1A;
+    --command-border: #1E1F2B;
+
+    --code-inline-bg: var(--ink-950);
+    --code-inline-text: #E4E5F1;
+    --code-inline-border: #2A2B35;
+
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.40);
+    --shadow-md: 0 2px 4px rgba(0,0,0,0.40), 0 4px 12px rgba(0,0,0,0.35);
+    --shadow-lg: 0 4px 8px rgba(0,0,0,0.45), 0 12px 28px rgba(0,0,0,0.45);
+    --shadow-xl: 0 8px 16px rgba(0,0,0,0.50), 0 24px 56px rgba(0,0,0,0.55);
+  }
+}
+
+/* Explicit opt-in, for the in-app theme switch. Duplicated rather than
+   @media-nested so an app-pinned dark theme also works on a light OS. */
+:root[data-theme="dark"] {
+  --bg-canvas: var(--ink-900);
+  --bg-sunken: var(--ink-950);
+  --bg-surface: var(--ink-800);
+  --bg-elevated: var(--ink-850);
+  --bg-overlay: var(--ink-870);
+  --bg-scrim: rgba(0, 0, 0, 0.66);
+
+  --bg-hover: #222234;
+  --bg-active: #2B2C3F;
+  --bg-selected: #412217;
+  --bg-inset: var(--ink-950);
+
+  --text-primary: #E4E5F1;
+  --text-secondary: #A5A6B6;
+  --text-muted: #8F90A1;
+  --text-disabled: #6E6F7F;
+  --text-inverse: var(--ink-900);
+  --text-accent: var(--ember-350);
+  --text-link: var(--ember-350);
+  --text-link-hover: var(--ember-300);
+
+  --border-subtle: #2A2B35;
+  --border-default: #434450;
+  --border-strong: #5F606F;
+
+  --action-neutral: var(--ink-000);
+  --action-neutral-hover: #E4E5F1;
+  --action-neutral-active: #A5A6B6;
+  --action-neutral-text: var(--ink-900);
+  --action-quiet-text: #A5A6B6;
+  --action-quiet-border: #434450;
+
+  --focus-ring-color: var(--ember-750);
+  --brand-ink: #E4E5F1;
+
+  --status-success-text: var(--green-d);
+  --status-success-tint: var(--green-tint-d);
+  --status-success-border: #448056;
+  --status-success-solid: var(--green-solid-l);
+  --status-warning-text: var(--amber-d);
+  --status-warning-tint: var(--amber-tint-d);
+  --status-warning-border: #8A7125;
+  --status-warning-solid: var(--amber-solid-l);
+  --status-danger-text: var(--red-d);
+  --status-danger-tint: var(--red-tint-d);
+  --status-danger-border: #B4565F;
+  --status-danger-solid: var(--red-solid-l);
+  --status-info-text: var(--blue-d);
+  --status-info-tint: var(--blue-tint-d);
+  --status-info-border: #4178AA;
+  --status-info-solid: var(--blue-solid-l);
+
+  --command-bg: var(--ink-950);
+  --command-bg-header: #0C0C1A;
+  --command-border: #1E1F2B;
+
+  --code-inline-bg: var(--ink-950);
+  --code-inline-text: #E4E5F1;
+  --code-inline-border: #2A2B35;
+
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.40);
+  --shadow-md: 0 2px 4px rgba(0,0,0,0.40), 0 4px 12px rgba(0,0,0,0.35);
+  --shadow-lg: 0 4px 8px rgba(0,0,0,0.45), 0 12px 28px rgba(0,0,0,0.45);
+  --shadow-xl: 0 8px 16px rgba(0,0,0,0.50), 0 24px 56px rgba(0,0,0,0.55);
+}
+
+/* ============================================================================
+   DIRECTION
+   ========================================================================= */
+[dir="rtl"] { --flip: -1; }
+[dir="ltr"] { --flip: 1; }
+
+/* ============================================================================
+   HIGH CONTRAST
+   Borders and muted text are pushed up; the focus ring thickens.
+   ========================================================================= */
+@media (prefers-contrast: more) {
+  :root {
+    --text-muted: var(--ink-600);
+    --text-disabled: var(--ink-500);
+    --border-subtle: var(--ink-300);
+    --border-default: var(--ink-400);
+    --border-strong: var(--ink-600);
+    --focus-ring-width: 3px;
+    --command-comment: #9B9CAB;
+  }
+  :root[data-theme="dark"],
+  :root:not([data-theme="light"]) {
+    --text-muted: #C2C3D0;
+    --text-disabled: #9B9CAB;
+    --border-subtle: #4A4B58;
+    --border-default: #6E6F7F;
+    --border-strong: #9B9CAB;
+  }
+}
+
+/* ============================================================================
+   REDUCED MOTION
+   Durations collapse to near-zero rather than being removed, so transitionend
+   handlers still fire and no state machine stalls.
+   ========================================================================= */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-instant: 1ms;
+    --duration-fast: 1ms;
+    --duration-base: 1ms;
+    --duration-slow: 1ms;
+    --duration-slower: 1ms;
+  }
+  *, *::before, *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ============================================================================
+   PLATFORM
+   macOS renders text lighter than Windows; Windows needs slightly taller
+   controls for its default hit targets.
+   ========================================================================= */
+:root[data-platform="win"] {
+  --control-h-sm: 28px;
+  --control-h-md: 34px;
+  --control-h-lg: 40px;
+  --titlebar-h: 32px;
+}

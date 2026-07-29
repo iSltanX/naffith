@@ -2,11 +2,13 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath, URL } from 'node:url';
 
-// نظام التصميم يعيش في مشروع الهوية، ويُستورد **قراءةً فقط**.
-// Vite يقرأ منه ويُخرج إلى naffith/dist — لا شيء يُكتب داخل مجلد الهوية.
-const DESIGN_SYSTEM = fileURLToPath(
-  new URL('../naffith-satr-brand-v2/design-system', import.meta.url),
-);
+// نظام التصميم **منسوخ داخل المشروع** في `src/design-system`.
+//
+// كان يُقرأ من مشروع الهوية الشقيق عبر مسار نسبي خارج الجذر. صار البناء لا
+// يخرج من جذر المشروع أصلًا: لا `fs.allow: ['..']`، ولا اعتماد على وجود مجلد
+// الهوية بجوارنا، ولا احتمال أن يغيّر تحديثٌ في الهوية ناتجَ بناء المنتج بلا
+// قرار. مشروع الهوية يبقى مرجعًا يُنسخ منه عن قصد، لا تبعيةَ بناء حيّة.
+const DESIGN_SYSTEM = fileURLToPath(new URL('./src/design-system', import.meta.url));
 
 export default defineConfig({
   plugins: [react()],
@@ -15,8 +17,8 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
-    // السماح بالقراءة من خارج جذر المشروع مطلوب لأن نظام التصميم شقيقٌ له.
-    fs: { allow: ['..'] },
+    // لا قراءة من خارج جذر المشروع: كل ما يحتاجه البناء منسوخ داخله.
+    fs: { strict: true },
   },
   build: {
     outDir: 'dist',
