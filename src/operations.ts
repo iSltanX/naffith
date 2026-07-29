@@ -17,7 +17,7 @@
  * عملية، وتُنسى فتظهر عمليةٌ بلا أيقونة. الفئة مغلقة ومعلَنة في النواة، فالخريطة
  * منها ثابتة الحجم مهما بلغ عدد العمليات.
  */
-import type { InputSummary, OperationSummary } from './ipc';
+import type { InputSummary, OperationSummary, RawValue } from './ipc';
 
 /** أنواع المدخلات التي يعرف هذا البناء كيف يرسمها حقلًا. */
 const RENDERABLE_INPUT_KINDS = [
@@ -121,4 +121,90 @@ export function fieldKeys(opId: string, inputId: string) {
     help: [`field.${opId}.${inputId}.help`, `field.${inputId}.help`],
     placeholder: [`field.${opId}.${inputId}.placeholder`, `field.${inputId}.placeholder`],
   };
+}
+
+// ── النموذج ────────────────────────────────────────────────────────────
+
+/**
+ * قيم النموذج، مفتاحُها معرّف المدخل كما أعلنته النواة.
+ *
+ * سجلٌّ لا بنية بحقول مسمّاة: بنيةٌ تسمّي `source` و`destination` تكون قائمةَ
+ * حقولٍ ثانية بجانب `op.inputs`، وتحتاج تعديلًا يدويًا لكل عملية جديدة. هنا
+ * الحقول تُشتقّ من المواصفة، والرايات تُخزَّن نصًّا (`''` | `'1'`) كي يبقى
+ * السجلّ متجانسًا ويبقى التحويل في موضع واحد أدناه.
+ */
+export type FormValues = Record<string, string>;
+
+/** نموذج فارغ لعملية: كل مدخلاتها المعلَنة بقيمة فارغة. */
+export function emptyValues(op: OperationSummary): FormValues {
+  return Object.fromEntries(op.inputs.map((i) => [i.id, '']));
+}
+
+function kindOf(input: InputSummary): string {
+  return String((input as InputSummary & { kind?: unknown }).kind);
+}
+
+/** هل هذا المدخل مسار؟ يحدّد زرّ الاختيار واتجاه النصّ LTR. */
+export function isPathInput(input: InputSummary): boolean {
+  const kind = kindOf(input);
+  return kind === 'existing_dir' || kind === 'existing_file' || kind === 'target_dir';
+}
+
+/** هل يُختار بحوار مجلد؟ الملف القائم لا يُختار بحوار المجلدات. */
+export function isDirectoryInput(input: InputSummary): boolean {
+  const kind = kindOf(input);
+  return kind === 'existing_dir' || kind === 'target_dir';
+}
+
+export function isFlagInput(input: InputSummary): boolean {
+  return kindOf(input) === 'flag';
+}
+
+/** لاحقة تُعرض بجانب حقل الاسم (‏.zip)، أو `null`. تأتي من المواصفة لا من نصّ. */
+export function extensionHint(input: InputSummary): string | null {
+  if (kindOf(input) !== 'new_name') return null;
+  const ext = (input as InputSummary & { ext?: unknown }).ext;
+  return typeof ext === 'string' && ext !== '' ? `.${ext.replace(/^\./, '')}` : null;
+}
+
+/**
+ * هل اكتملت الحقول المطلوبة؟
+ *
+ * الراية لا تكون «ناقصة» أبدًا: غيابها قيمةٌ صالحة (مطفأة). أما النصّ والمسار
+ * فالفراغ فيهما نقص. هذا ما يقرّر ظهور المعاينة وتعطيل «نفِّذ».
+ */
+export function isComplete(op: OperationSummary, values: FormValues): boolean {
+  return op.inputs.every((input) => {
+    if (!input.required) return true;
+    if (isFlagInput(input)) return true;
+    return (values[input.id] ?? '').trim() !== '';
+  });
+}
+
+/**
+ * يحوّل قيم النموذج إلى `RawValue` بحسب نوع كل مدخل.
+ *
+ * الموضع الوحيد الذي يعرف كيف تعبر قيمة الحدَّ إلى النواة. المسار يُشذَّب من
+ * الفراغ المحيط لأن اللصق يجرّه معه؛ والاسم **لا يُشذَّب** لأن الفراغ في طرفه
+ * خطأٌ يجب أن تراه النواة وترفضه برسالتها، لا أن تُخفيه الواجهة فيُنشأ ملفٌ
+ * باسمٍ غير الذي كُتب.
+ */
+export function toRawValues(op: OperationSummary, values: FormValues): Record<string, RawValue> {
+  const out: Record<string, RawValue> = {};
+  for (const input of op.inputs) {
+    const raw = values[input.id] ?? '';
+    if (isFlagInput(input)) {
+      out[input.id] = { kind: 'flag', value: raw === '1' };
+    } else if (isPathInput(input)) {
+      out[input.id] = { kind: 'path', value: raw.trim() };
+    } else {
+      out[input.id] = { kind: 'text', value: raw };
+    }
+  }
+  return out;
+}
+
+/** هل في النموذج قيمةٌ تُفقد بالمغادرة؟ يغذّي `ExitCost` في `nav.ts`. */
+export function isDirty(values: FormValues): boolean {
+  return Object.values(values).some((v) => v.trim() !== '');
 }
