@@ -20,7 +20,7 @@
  * `auto-fill` لا `auto-fit` في العرض: الثانية تمطّ البطاقة الوحيدة على عرض
  * النافذة كلها فتبدو لوحةً لا خيارًا.
  */
-import { useId } from 'react';
+import { useEffect, useId, useRef } from 'react';
 import type { CoreErrorShape } from './ipc';
 import type { OperationCard } from './operations';
 import { errorText, t } from './i18n';
@@ -142,6 +142,17 @@ function CountLine({ cards }: { cards: OperationCard[] }) {
 export default function OperationsList(props: Props): JSX.Element {
   const { state, onSelect, onRetry, onOpenLog, onOpenSettings } = props;
   const ready = state.status === 'ready' ? state.cards : null;
+  const heading = useRef<HTMLHeadingElement>(null);
+
+  // القائمة هي الوجهة التي يُرجَع إليها من كل شاشة، وهي أوّل ما يلي الترحيب —
+  // فهي أكثر الشاشات وصولًا، وكانت أشدّها فقدًا للبؤرة: الزرّ الذي ضُغط يُنزع
+  // من الشجرة فتسقط البؤرة إلى `body`، ويستأنف Tab من رأس المستند لا من هنا.
+  // نقلُها إلى العنوان يجعل أول ما يُنطق سؤالَ الشاشة، وأول ما يليه أفعالها.
+  // وهي الآلية نفسها التي تستعملها الإعدادات والسجلّ وشاشة الترحيب، لا ثانيةً
+  // بجانبها.
+  useEffect(() => {
+    heading.current?.focus();
+  }, []);
 
   return (
     <section className="ops" aria-labelledby="ops-heading">
@@ -149,7 +160,7 @@ export default function OperationsList(props: Props): JSX.Element {
         <div className="ops__intro">
           {/* `h1` للتطبيق كله في الغلاف، فترويسة الشاشة `h2`. حجمها من الصنف
               لا من مستواها: المستوى بنيةٌ للقارئ، والحجم قرارٌ بصري. */}
-          <h2 id="ops-heading" className="t-page-title">
+          <h2 id="ops-heading" className="t-page-title ops__title" tabIndex={-1} ref={heading}>
             {t('ops.heading')}
           </h2>
           <p className="t-body-sec ops__sub">{t('ops.subheading')}</p>

@@ -150,8 +150,16 @@ function Peek() {
         <div className="command__bar">
           <span className="command__label">{t('app.satr')}</span>
         </div>
-        {/* `white-space: pre` في `.command__body`: لا مسافة مصدرٍ بين الوسوم. */}
-        <div className="command__body">
+        {/* `white-space: pre` في `.command__body`: لا مسافة مصدرٍ بين الوسوم.
+
+            و`tabindex="-1"` ليس زينة: الصندوق يمرّر أفقيًا (`overflow-x: auto`)
+            لأن الأمر أطول من البطاقة، والمتصفّحات الحديثة تجعل كل صندوق تمريرٍ
+            بلا ابنٍ قابلٍ للتبويب محطّةَ تبويبٍ من تلقائها كي يبقى تمريرُه
+            بالمفتاح ممكنًا. فكانت أوّل ضغطة Tab في الشاشة تقع على هذا الرسم لا
+            على «ابدأ الآن» — وهو `aria-hidden`، فيقع التركيز على ما لا ينطقه
+            القارئ الصوتي: صمتٌ يظنّه المستخدم عطلًا. لا شيء هنا يُقرأ ولا
+            يُمرَّر طلبًا لمعنى: نصّ الخطوة الثالثة يقول ما يقوله كاملًا. */}
+        <div className="command__body" tabIndex={-1}>
           <span className="tok-prompt">$ </span>
           {PEEK_ARGV.map(([token, role], i) => (
             <span key={token}>

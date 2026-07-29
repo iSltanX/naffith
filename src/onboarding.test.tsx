@@ -90,6 +90,25 @@ describe('شاشة الترحيب', () => {
     }
   });
 
+  it('المقتطف خارج ترتيب التبويب: أول Tab للفعل لا للرسم المحجوب', () => {
+    const { container } = render(<Onboarding onStart={() => {}} />);
+    const peek = container.querySelector('.onboarding__peek');
+
+    expect(peek?.getAttribute('aria-hidden')).toBe('true');
+
+    // منطقةٌ محجوبة عن القارئ الصوتي وفيها محطّة تبويب مخالفةٌ صريحة: يقف
+    // المستخدم على عنصرٍ لا يُنطق له اسم. فلا محطّة داخلها البتّة.
+    const stops = peek?.querySelectorAll(
+      'a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])',
+    );
+    expect(stops?.length).toBe(0);
+
+    // وهذا هو الموضع الذي جاءت منه المحطّة: صندوقٌ يمرّر أفقيًا تجعله
+    // المتصفّحات الحديثة قابلًا للتبويب من تلقائها — لا يمنعه إلا تصريح.
+    // (‏jsdom لا يفعل ذلك، فيُحرَس التصريح نفسه لا أثره.)
+    expect(peek?.querySelector('.command__body')?.getAttribute('tabindex')).toBe('-1');
+  });
+
   it('الفعل الأساسي يُبلَغ ويُفعَّل بلوحة المفاتيح وحدها', async () => {
     const onStart = vi.fn();
     const user = userEvent.setup();

@@ -343,6 +343,16 @@ export default function App() {
   // إلا الحيّة، فلا يبقى أمرٌ قديم معلّقًا بعد أن يفرّغ المستخدم حقلًا.
   const shownPlan = phase === 'idle' ? plan : (plan ?? executed);
 
+  /**
+   * هويّة الشاشة المعروضة، نصًّا.
+   *
+   * الشاشة كائن يُبنى من جديد في كل انتقال، فمقارنتُه بمرجعه تعلن تبدّلًا حيث
+   * لا تبدّل. والمعرّف داخلٌ فيه لأن الانتقال من عمليةٍ إلى أخرى انتقالُ شاشةٍ
+   * كامل وإن بقي الاسم واحدًا.
+   */
+  const screenKey =
+    screen.name === 'operation-view' ? `${screen.name}:${screen.opId}` : screen.name;
+
   // ── الرسم ────────────────────────────────────────────────────────────
 
   if (screen.name === 'onboarding') {
@@ -359,7 +369,7 @@ export default function App() {
 
   if (screen.name === 'operations-list') {
     return (
-      <Page>
+      <Page focusKey={screenKey}>
         <OperationsList
           state={opsState}
           onSelect={(opId) => go({ type: 'operation.selected', opId })}
@@ -374,7 +384,7 @@ export default function App() {
 
   if (screen.name === 'settings') {
     return (
-      <Page>
+      <Page focusKey={screenKey}>
         <SettingsScreen
           onBack={() => go({ type: 'back' })}
           onReplayOnboarding={replayOnboarding}
@@ -387,7 +397,7 @@ export default function App() {
 
   if (screen.name === 'run-log') {
     return (
-      <Page>
+      <Page focusKey={screenKey}>
         <RunLog onBack={() => go({ type: 'back' })} />
         {leaveDialog}
       </Page>
@@ -398,7 +408,7 @@ export default function App() {
   // بين اختيارها وفتحها — والحالتان مختلفتان ولا يجوز أن تُعرضا نصًّا واحدًا.
   if (!operation) {
     return (
-      <Page variant="message">
+      <Page variant="message" focusKey={screenKey}>
         <p className="t-body">{operations === null ? t('ops.loading') : t('ops.gone')}</p>
         <button type="button" className="btn btn--quiet" onClick={() => go({ type: 'back' })}>
           {t('nav.back')}
@@ -408,7 +418,7 @@ export default function App() {
   }
 
   return (
-    <Page>
+    <Page focusKey={screenKey}>
       <main className="page__body">
         <Naffith
           operation={operation}
@@ -444,17 +454,59 @@ export default function App() {
  *
  * وحوارُ المغادرة ابنٌ له بلا ضرر: `.scrim` مثبّت `fixed` بلا محوّل على
  * الوعاء، فلا يقيّده عرضه الأقصى ولا يشارك في تخطيطه المرن.
+ *
+ * ## ولماذا يقبل الوعاء البؤرة
+ *
+ * تبديل الشاشة في تطبيق صفحةٍ واحدة لا يحرّك التركيز من تلقائه: الزرّ الذي
+ * ضُغط يُنزع من الشجرة، فتسقط البؤرة إلى `body` ويستأنف Tab من رأس المستند —
+ * يفقد من يتنقّل بلوحة المفاتيح موضعه في كل انتقال.
+ *
+ * وأكثر الشاشات تعرف أين تضع البؤرة فتضعها بنفسها: عنوانُ الإعدادات والسجلّ
+ * وقائمة العمليات، وأولُ حقلٍ في نموذجٍ بِكر. هذا الوعاء **شبكة أمانٍ تحتها**
+ * لا آليةٌ ثانية بجانبها: أثرُ الابن يسبق أثر الأب، فحين يصل الدور إلى هنا
+ * تكون الشاشة قد أخذت البؤرة وهذا الأثر لا يفعل شيئًا. ولا يلتقطها إلا إن
+ * بقيت على `body` — كنموذجٍ مملوء لا يسحب المؤشّر إلى حقله عمدًا.
  */
 function Page({
   children,
   variant,
+  focusKey,
 }: {
   children: ReactNode;
   /** `message` لسطرٍ وزرّ: يُوسَّط رأسيًا بدل أن يبدأ من الأعلى. */
   variant?: 'message';
+  /** هويّة الشاشة نصًّا. تبدّلُها وحده يحرّك البؤرة، لا كل إعادة رسم. */
+  focusKey: string;
 }) {
-  return <div className={variant ? `page page--${variant}` : 'page'}>{children}</div>;
+  const frame = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const active = document.activeElement;
+    const stranded =
+      active === null || active === document.body || active === document.documentElement;
+    if (!stranded) return;
+    frame.current?.focus();
+  }, [focusKey]);
+
+  return (
+    // `tabIndex={-1}` هدفٌ للبرنامج لا محطّة لـTab: الوعاء ليس شيئًا يُفعل به
+    // شيء، وإقحامه في ترتيب التبويب يزيد ضغطةً بلا مقابل في كل شاشة.
+    <div className={variant ? `page page--${variant}` : 'page'} tabIndex={-1} ref={frame}>
+      {children}
+    </div>
+  );
 }
+
+/**
+ * ما يمكن أن يقع عليه Tab داخل الحوار.
+ *
+ * قائمةٌ مكتوبة لا مكتبة: الحوار زرّان لا أكثر، وحبسُ البؤرة فيهما لا يستحقّ
+ * تبعيةً كاملة بشجرتها وتحديثاتها. والمعطَّل مستثنًى لأنه ليس محطّة أصلًا،
+ * و`tabindex="-1"` كذلك لأنه هدفٌ للبرنامج لا للمفتاح.
+ */
+const FOCUS_STOPS =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]),' +
+  ' textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /**
  * قرار المغادرة أثناء تشغيل نشط.
@@ -462,6 +514,18 @@ function Page({
  * حوارٌ مقاطع لا إشعارٌ عابر: الانتقال الصامت أثناء تشغيلٍ يكتب على قرص
  * المستخدم يخفي عنه أن شيئًا ما زال يجري. و«البقاء» هو الفعل الافتراضي —
  * يأخذ التركيز — لأن الخطأ في اتجاه البقاء غير مكلف.
+ *
+ * ## `aria-modal` دعوى، وهذه براهينها الثلاثة
+ *
+ * الوسم وحده لا يفعل شيئًا؛ من يقرأه ينتظر سلوكًا:
+ *
+ * - **Escape يُغلق** بمعنى «البقاء»، وهو ما يفعله النقر على العتمة أصلًا.
+ *   المخرج الآمن هو غير المكلف دائمًا، فمن ضغط Escape هربًا من الحوار لا
+ *   يجوز أن يجد تشغيله وقد غُودر.
+ * - **البؤرة محبوسة**: بلا حبسٍ يخرج Tab إلى الشاشة التي خلف العتمة، فيملأ
+ *   المستخدم حقولًا لا يراها ويظنّ الحوار ما زال يحاوره.
+ * - **البؤرة تُعاد** إلى ما كان يحملها عند الفتح، فلا تُدفع إلى `body` بعد
+ *   قرارٍ اتُّخذ ويستأنف Tab من رأس المستند.
  */
 function ConfirmLeave({
   reason,
@@ -473,7 +537,50 @@ function ConfirmLeave({
   onLeave: () => void;
 }) {
   const stay = useRef<HTMLButtonElement>(null);
-  useEffect(() => stay.current?.focus(), []);
+  const box = useRef<HTMLDivElement>(null);
+
+  // مرّةً واحدة عند الفتح: يُحفظ حاملُ البؤرة ثم تُنقل إلى «البقاء»، وتُعاد
+  // إليه عند الإغلاق. وشرطُ `isConnected` لأن الحوار قد يُغلق بمغادرةٍ تنزع
+  // الشاشة كلها — وتركيزُ عنصرٍ خارج الشجرة يترك البؤرة على `body` صامتًا.
+  useEffect(() => {
+    const opener = document.activeElement;
+    stay.current?.focus();
+    return () => {
+      if (opener instanceof HTMLElement && opener.isConnected) opener.focus();
+    };
+  }, []);
+
+  // المستمع على المستند لا على الحوار: Escape يجب أن يُغلق أينما وقعت البؤرة،
+  // ولو كانت خارج الحوار في اللحظة التي تسبق حبسها.
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onStay();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+
+      const stops = box.current?.querySelectorAll<HTMLElement>(FOCUS_STOPS) ?? [];
+      const first = stops[0];
+      const last = stops[stops.length - 1];
+      if (!first || !last) return;
+
+      const active = document.activeElement;
+      const inside = box.current?.contains(active) ?? false;
+      // الخروج من الطرف يُلفّ إلى الطرف الآخر؛ والبؤرة الشاردة خارج الحوار
+      // تُعاد إلى أوّله بدل أن تتابع في الصفحة المحجوبة تحته.
+      const edge = event.shiftKey ? first : last;
+      const wrap = event.shiftKey ? last : first;
+      if (!inside || active === edge) {
+        event.preventDefault();
+        wrap.focus();
+      }
+    }
+
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [onStay]);
 
   const titleId = `leave-${reason}-title`;
   const bodyId = `leave-${reason}-body`;
@@ -486,6 +593,7 @@ function ConfirmLeave({
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={bodyId}
+        ref={box}
         onClick={(e) => e.stopPropagation()}
       >
         <h2 id={titleId} className="t-section-title dialog__title">
