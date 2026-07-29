@@ -1,0 +1,40 @@
+[package]
+name = "naffith"
+version = "0.1.0"
+description = "نَفِّذ — سَطْر · Arabic-first macOS productivity tool"
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "naffith_core"
+crate-type = ["lib", "staticlib", "cdylib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+# اختيار المجلدات وحده. الصلاحية الممنوحة في capabilities/default.json هي
+# `dialog:allow-open` فقط — لا حفظ ولا رسائل ولا تأكيد. المسار العائد من
+# الحوار يُعامل معاملة أي نص من الواجهة: غير موثوق، ويتحقّق منه paths.rs.
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["process", "io-util", "sync", "time", "rt", "macros"] }
+rand = "0.8"
+libc = "0.2"
+
+[dev-dependencies]
+tempfile = "3"
+
+[features]
+# The internal test operation is compiled in always so the core is testable,
+# but the runtime Policy decides whether it can be planned. See policy.rs.
+default = []
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

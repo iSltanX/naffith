@@ -1,0 +1,234 @@
+/* أنماط شاشة المنتج.
+   لا قيمة لونية ولا مقاسية مكتوبة هنا: كلها رموز من نظام التصميم، فالشاشة
+   تتبع الوضعين الليلي والنهاري وتباينَهما دون أن تعرف بهما. */
+
+html, body, #root { height: 100%; }
+body { background: var(--bg-canvas); color: var(--text-primary); }
+
+.app {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-20);
+  padding: var(--space-32) var(--space-24) var(--space-48);
+  max-width: 1120px;
+  margin-inline: auto;
+}
+
+/* ── الترويسة ─────────────────────────────────────────────────────── */
+.app__head { display: flex; align-items: center; gap: var(--space-12); }
+.app__mark { width: 40px; height: 40px; flex: none; color: var(--brand-ink); }
+.app__title { margin: 0; }
+
+/* ── التخطيط ──────────────────────────────────────────────────────── */
+/* عمودان على الشاشات الواسعة: «نَفِّذ» و«سَطْر» معًا لا بالتناوب — رؤية الأمر
+   وهو يتغيّر مع الحقل هي الفكرة كلها. وعمود واحد حين تضيق الشاشة. */
+.app__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-20);
+  align-items: start;
+}
+@media (max-width: 940px) {
+  .app__body { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ── نَفِّذ ─────────────────────────────────────────────────────────── */
+.naffith {
+  padding: var(--space-24);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+.naffith__head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-12); }
+.naffith__head h2 { margin: 0; }
+.naffith__op { margin: var(--space-4) 0 0; }
+.naffith__desc { margin: 0; }
+.naffith__form { display: flex; flex-direction: column; gap: var(--space-16); }
+.naffith__actions { display: flex; gap: var(--space-8); flex-wrap: wrap; }
+
+.row-field { display: flex; flex-direction: column; gap: var(--space-4); }
+.row-field__control { display: flex; align-items: center; gap: var(--space-8); }
+.row-field__control .field { flex: 1; min-width: 0; }
+.field__icon { width: var(--icon-sm); height: var(--icon-sm); flex: none; color: var(--text-muted); }
+.suffix-hint {
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  color: var(--text-muted);
+  flex: none;
+}
+
+.field-error {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: var(--fs-caption);
+  color: var(--status-danger-text);
+}
+.field-error svg { width: var(--icon-xs); height: var(--icon-xs); flex: none; }
+.field-error--block {
+  padding: var(--space-8) var(--space-12);
+  background: var(--status-danger-tint);
+  border: var(--border-hairline) solid var(--status-danger-border);
+  border-radius: var(--radius-control);
+}
+
+/* ── الملخّص ──────────────────────────────────────────────────────── */
+.summary {
+  background: var(--bg-sunken);
+  border: var(--border-hairline) solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  padding: var(--space-16);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+.summary--empty { color: var(--text-muted); }
+.summary--empty p { margin: 0; }
+.summary__title { margin: 0; color: var(--text-secondary); }
+.summary__line { display: flex; flex-direction: column; gap: var(--space-2); margin: 0; }
+/* المسار الناتج LTR ومقطوع بأناقة إن طال، ولا يدفع الصندوق ليتمدّد. */
+.summary__path { font-size: var(--fs-caption); overflow-wrap: anywhere; }
+/* الأداة والتقدير: صفّان لا جدول. `dt` و`dd` يبقيان مرتبطين دلاليًا، والشكل
+   شبكةٌ ذات عمود أول بعرض المحتوى — فتتحاذى القيمتان رأسيًا مهما طال العنوان. */
+.summary__meta {
+  margin: 0;
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-4) var(--space-8);
+  align-items: baseline;
+  /* helper لا caption: التصحيح البصري ‎0.92em‎ على الخطّ الأحادي في نظام
+     التصميم مُعايَر تحت نصّ المتن. فوق caption (‏11px) ينزل به إلى ‎10px‎ وهو
+     دون أصغر مقاس مقصود. عند 12px يهبط الأحادي إلى ‎11px‎ فيطابق درجة caption. */
+  font-size: var(--fs-helper);
+}
+.summary__meta dt { color: var(--text-secondary); }
+.summary__meta dd { margin: 0; overflow-wrap: anywhere; }
+.summary__meta code { font-family: var(--font-mono); color: var(--text-primary); }
+.summary__estimate-note { color: var(--text-muted); }
+
+.summary__facts, .summary__warnings { margin: 0; padding-inline-start: var(--space-16); }
+.summary__facts {
+  color: var(--text-secondary);
+  font-family: var(--font-body);
+  font-size: var(--fs-caption);
+  display: flex; flex-direction: column; gap: var(--space-2);
+}
+.summary__warnings { list-style: none; padding-inline-start: 0; display: flex; flex-direction: column; gap: var(--space-4); }
+/* نصّ التحذير على أرضيته المحلولة معه، لا على أرضية الملخّص الغائرة.
+   قياسًا في المتصفّح: لون التحذير على --bg-sunken الفاتح يعطي 4.42:1 وهو دون
+   حدّ AA؛ وعلى --status-warning-tint يعطي النسبة التي حُلّ من أجلها. */
+.warning {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-8);
+  border-radius: var(--radius-control);
+  background: var(--status-warning-tint);
+  border: var(--border-hairline) solid var(--status-warning-border);
+  font-family: var(--font-body);
+  font-size: var(--fs-caption);
+  color: var(--status-warning-text);
+}
+.warning svg { width: var(--icon-xs); height: var(--icon-xs); flex: none; margin-block-start: 2px; }
+
+/* ── حالة التشغيل ─────────────────────────────────────────────────── */
+.runstate {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  flex-wrap: wrap;
+  padding: var(--space-12) var(--space-16);
+  border-radius: var(--radius-card);
+  border: var(--border-hairline) solid var(--border-subtle);
+  background: var(--bg-sunken);
+}
+.runstate p { margin: 0; }
+.runstate--ok { border-color: var(--status-success-border); background: var(--status-success-tint); }
+.runstate--bad { border-color: var(--status-danger-border); background: var(--status-danger-tint); }
+.runstate__path { font-size: var(--fs-caption); flex: 1; min-width: 0; overflow-wrap: anywhere; }
+
+/* ── سَطْر ─────────────────────────────────────────────────────────── */
+.satr { display: flex; flex-direction: column; gap: var(--space-12); }
+.satr__head { display: flex; align-items: baseline; gap: var(--space-8); flex-wrap: wrap; }
+.satr__head h2 { margin: 0; }
+.satr__subtitle { color: var(--text-muted); margin: 0; }
+.satr__empty {
+  padding: var(--space-24);
+  border: var(--border-hairline) dashed var(--border-default);
+  border-radius: var(--radius-card);
+  color: var(--text-muted);
+  margin: 0;
+}
+.satr__notes { display: flex; flex-direction: column; gap: var(--space-8); }
+.satr__notes p { margin: 0; }
+.satr__fineprint { color: var(--text-muted); }
+
+/* الوسائط، كلٌّ في صفّه: هكذا لا تُقرأ مسافةٌ داخل اسمٍ فاصلًا بين وسيطين.
+   القائمة امتداد لسطح «سَطْر»، فتأخذ مادّته: داكنة في الوضعين.
+
+   السبب ليس ذوقًا. ألوان الرموز (‏--command-name وأخواتها) محلولةٌ للتباين
+   على الأرضية الداكنة وحدها؛ وضعُها على سطح الصفحة الفاتح يجعل `-c` ورديًا
+   شاحبًا لا يكاد يُقرأ. إمّا اللون على أرضيته، وإمّا لا لون. */
+.args {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  background: var(--command-bg);
+  border: var(--border-hairline) solid var(--command-border);
+  border-radius: var(--radius-card);
+}
+.arg {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-8);
+  padding: var(--space-8) var(--space-12);
+  border-radius: var(--radius-control);
+  background: var(--command-bg-header);
+  border: var(--border-hairline) solid var(--command-border);
+}
+.arg__index {
+  flex: none;
+  width: 1.5em;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  color: var(--command-prompt);
+  padding-block-start: 2px;
+}
+.arg__main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--space-4); }
+/* حدٌّ حول الرمز يجعل المسافة في طرفه مرئية بدل أن تختفي في الفراغ. */
+.arg__token {
+  display: inline-block;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-xs);
+  background: var(--command-bg);
+  border: var(--border-hairline) solid var(--command-border);
+  color: var(--command-text);
+  font-size: var(--fs-caption);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+/* الشرح هو مقصود «سَطْر»، فيأخذ لون النصّ الأساسي على سطحه لا لونًا خافتًا. */
+.arg__note { margin: 0; color: var(--command-text); }
+.arg__flagged {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  /* لون التحذير على الأرضية الداكنة، لا لون تحذير الصفحة. */
+  color: var(--command-string);
+}
+.arg__flagged svg { width: var(--icon-xs); height: var(--icon-xs); flex: none; }
+.arg__role { flex: none; color: var(--command-prompt); }
+
+/* ألوان أدوار الرموز داخل قائمة الوسائط تتبع لوحة «سَطْر» نفسها. */
+.arg__token.tok-name { color: var(--command-name); }
+.arg__token.tok-flag { color: var(--command-flag); }
+.arg__token.tok-path { color: var(--command-path); }
+.arg__token.tok-string { color: var(--command-string); }

@@ -1,0 +1,584 @@
+//! مخزن الخطط ورموزها.
+//!
+//! العقد الذي يحمي التنفيذ:
+//!
+//! * الخطة تُبنى وتُحفظ **داخل النواة**. الواجهة لا ترى `argv` إلا كنص للعرض،
+//!   ولا تستطيع إعادة إرساله.
+//! * الرمز ‏٢٥٦ بت عشوائية من مولّد النظام — غير قابل للتخمين عمليًا.
+//! * **أحادي الاستخدام**: `take` ينتزع الخطة من المخزن، فإعادة الإرسال تفشل.
+//! * **قصير العمر**: تنتهي صلاحيته بعد `TTL`، ويُكنس دوريًا.
+//! * **مرتبط ببصمة نظام الملفات** وقت التخطيط، ويُعاد التحقّق منها قبل التشغيل.
+//! * **محدود العدد** لكل جلسة وإجمالًا، فلا يمكن إغراق الذاكرة بخطط.
+
+use crate::error::{CoreError, Result, StaleReason};
+use crate::spec::PlannedCommand;
+use crate::value::Inputs;
+use rand::RngCore;
+use serde::Serialize;
+use std::collections::HashMap;
+use std::os::unix::fs::MetadataExt;
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
+
+/// عمر الخطة. أطول من زمن مراجعة بشرية معقولة، وأقصر من أن تصير بصمتها كذبًا.
+pub const PLAN_TTL: Duration = Duration::from_secs(180);
+pub const MAX_PLANS_PER_SESSION: usize = 16;
+pub const MAX_PLANS_TOTAL: usize = 64;
+pub const MAX_SESSIONS: usize = 8;
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
+pub struct PlanToken(String);
+
+impl PlanToken {
+    fn generate() -> Self {
+        let mut bytes = [0u8; 32];
+        rand::thread_rng().fill_bytes(&mut bytes);
+        let mut s = String::with_capacity(64);
+        for b in bytes {
+            s.push_str(&format!("{b:02x}"));
+        }
+        PlanToken(s)
+    }
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for PlanToken {
+    fn from(s: String) -> Self {
+        PlanToken(s)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
+pub struct SessionId(String);
+
+impl SessionId {
+    pub fn generate() -> Self {
+        let mut bytes = [0u8; 16];
+        rand::thread_rng().fill_bytes(&mut bytes);
+        let mut s = String::with_capacity(32);
+        for b in bytes {
+            s.push_str(&format!("{b:02x}"));
+        }
+        SessionId(s)
+    }
+}
+
+pub fn random_suffix() -> String {
+    let mut bytes = [0u8; 8];
+    rand::thread_rng().fill_bytes(&mut bytes);
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// بصمة مسار وقت التخطيط. `dev`+`ino` يكشفان الاستبدال حتى لو بقي الاسم،
+/// و`mtime` يكشف تعديل المحتوى.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PathFingerprint {
+    dev: u64,
+    ino: u64,
+    mtime: i64,
+    is_dir: bool,
+}
+
+impl PathFingerprint {
+    fn capture(p: &Path) -> Option<Self> {
+        let m = std::fs::symlink_metadata(p).ok()?;
+        Some(PathFingerprint { dev: m.dev(), ino: m.ino(), mtime: m.mtime(), is_dir: m.is_dir() })
+    }
+}
+
+/// ما يجب أن يبقى صحيحًا بين لحظة التخطيط ولحظة الضغط على «نفّذ».
+///
+/// الفجوة بينهما فجوة حقيقية يتصرّف فيها المستخدم وغيره: قد يُحذف المصدر، أو
+/// يُفصل القرص، أو يظهر ملف بالاسم النهائي، أو يُحدَّث النظام فتختفي الأداة.
+/// التحقّق عند التخطيط وحده يعني أن الأمر يُطلق على عالمٍ لم يعد موجودًا.
+#[derive(Debug, Clone)]
+struct Preconditions {
+    /// المسارات القائمة التي بُنيت الخطة عليها.
+    inputs: Vec<(PathBuf, PathFingerprint)>,
+    /// المسار النهائي الذي يجب أن يبقى **غير موجود** حتى لحظة التشغيل.
+    final_path_must_be_absent: Option<PathBuf>,
+    /// المجلد الذي سيُكتب فيه الناتج. يُعاد فحص كتابته لا قراءة صلاحياته.
+    destination_must_be_writable: Option<PathBuf>,
+    /// الأداة التي حُلّت عند التخطيط. اختفاؤها بين اللحظتين حالة واقعية.
+    program: PathBuf,
+}
+
+impl Preconditions {
+    fn capture(inputs: &Inputs, command: &PlannedCommand) -> Self {
+        let mut captured = Vec::new();
+        for p in inputs.existing_paths() {
+            if let Some(fp) = PathFingerprint::capture(p) {
+                captured.push((p.to_path_buf(), fp));
+            }
+        }
+        let artifact = command.artifact.as_ref();
+        Preconditions {
+            inputs: captured,
+            final_path_must_be_absent: artifact.map(|a| a.final_path.clone()),
+            destination_must_be_writable: artifact
+                .and_then(|a| a.final_path.parent())
+                .map(Path::to_path_buf),
+            program: command.program.clone(),
+        }
+    }
+
+    fn verify(&self) -> Result<()> {
+        for (path, expected) in &self.inputs {
+            match PathFingerprint::capture(path) {
+                None => {
+                    return Err(CoreError::PlanStale { detail: StaleReason::SourceGone });
+                }
+                Some(now) if now != *expected => {
+                    return Err(CoreError::PlanStale { detail: StaleReason::SourceReplaced });
+                }
+                Some(_) => {}
+            }
+        }
+        if let Some(final_path) = &self.final_path_must_be_absent {
+            // symlink_metadata لا يتبع الروابط: رابط معلَّق بالاسم النهائي
+            // ما زال تضاربًا يجب أن يوقفنا.
+            if std::fs::symlink_metadata(final_path).is_ok() {
+                return Err(CoreError::PlanStale { detail: StaleReason::FinalPathAppeared });
+            }
+        }
+        if let Some(dir) = &self.destination_must_be_writable {
+            if !dir.is_dir() {
+                return Err(CoreError::PlanStale { detail: StaleReason::DestinationGone });
+            }
+            // فحص كتابة جديد: نجاحه عند التخطيط لا يلزم منه بقاؤه. قرص قد
+            // يُعاد تركيبه للقراءة فقط، أو تتغيّر ACL، بين اللحظتين.
+            if !crate::paths::is_writable_dir(dir) {
+                return Err(CoreError::PlanStale { detail: StaleReason::DestinationNotWritable });
+            }
+        }
+        let usable = std::fs::metadata(&self.program).map(|m| m.is_file()).unwrap_or(false);
+        if !usable {
+            return Err(CoreError::PlanStale { detail: StaleReason::ToolGone });
+        }
+        Ok(())
+    }
+}
+
+pub struct StoredPlan {
+    /// معرّف **عام** غير سرّي، يربط قيود السجل: planned ← running ← النتيجة.
+    ///
+    /// ليس الرمز. الرمز قدرةٌ تُنفَّذ بها الخطة ولا يجوز أن يُكتب على القرص؛
+    /// هذا معرّف مراسلة لا يفتح شيئًا.
+    pub id: String,
+    pub op_id: &'static str,
+    pub inputs: Inputs,
+    pub command: PlannedCommand,
+    pub session: SessionId,
+    created: Instant,
+    preconditions: Preconditions,
+}
+
+impl StoredPlan {
+    /// يُعاد التحقّق قبل التشغيل مباشرة. الفجوة بين التخطيط والضغط على «نفّذ»
+    /// فجوة حقيقية: قد يُحذف المصدر أو يُنشأ ملف بالاسم النهائي خلالها.
+    pub fn verify_still_valid(&self) -> Result<()> {
+        self.preconditions.verify()
+    }
+}
+
+pub struct PlanStore {
+    plans: HashMap<PlanToken, StoredPlan>,
+    sessions: Vec<SessionId>,
+    ttl: Duration,
+}
+
+impl Default for PlanStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl PlanStore {
+    pub fn new() -> Self {
+        Self::with_ttl(PLAN_TTL)
+    }
+
+    /// عمر الخطة قابل للضبط كي تتمكّن الاختبارات من إثبات انتهاء الصلاحية
+    /// دون انتظار ثلاث دقائق، ودون فتح باب خلفي في نوع الإنتاج.
+    pub fn with_ttl(ttl: Duration) -> Self {
+        Self { plans: HashMap::new(), sessions: Vec::new(), ttl }
+    }
+
+    pub fn register_session(&mut self) -> Result<SessionId> {
+        self.sweep();
+        if self.sessions.len() >= MAX_SESSIONS {
+            return Err(CoreError::PlanLimitReached);
+        }
+        let id = SessionId::generate();
+        self.sessions.push(id.clone());
+        Ok(id)
+    }
+
+    pub fn insert(
+        &mut self,
+        session: &SessionId,
+        op_id: &'static str,
+        inputs: Inputs,
+        command: PlannedCommand,
+    ) -> Result<(PlanToken, String)> {
+        self.sweep();
+
+        // خطة الجلسة الأقدم تُطرح لتفسح للأحدث.
+        //
+        // «نَفِّذ» يعيد التخطيط عند كل تغيير في النموذج كي تبقى المعاينة صادقة،
+        // فكتابة اسم من عشرين حرفًا تحجز خططًا أكثر من السقف. الرفض هنا كان
+        // سيعني أن نموذجًا يعمل يتوقّف عن العمل كلما أطال المستخدم الكتابة.
+        //
+        // والسقف يبقى محفوظًا: العدد الحيّ لا يتجاوز `MAX_PLANS_PER_SESSION`
+        // أبدًا، والطرح يُفشل الرمز المطروح — أي يفشل مغلقًا.
+        while self.plans.values().filter(|p| p.session == *session).count() >= MAX_PLANS_PER_SESSION
+        {
+            let Some(oldest) = self
+                .plans
+                .iter()
+                .filter(|(_, p)| p.session == *session)
+                .min_by_key(|(_, p)| p.created)
+                .map(|(token, _)| token.clone())
+            else {
+                break;
+            };
+            self.plans.remove(&oldest);
+        }
+
+        // السقف الإجمالي يبقى رفضًا: تجاوزه يعني جلسات كثيرة لا مستخدمًا يكتب.
+        if self.plans.len() >= MAX_PLANS_TOTAL {
+            return Err(CoreError::PlanLimitReached);
+        }
+
+        let preconditions = Preconditions::capture(&inputs, &command);
+        let token = PlanToken::generate();
+        let id = random_suffix();
+        self.plans.insert(
+            token.clone(),
+            StoredPlan {
+                id: id.clone(),
+                op_id,
+                inputs,
+                command,
+                session: session.clone(),
+                created: Instant::now(),
+                preconditions,
+            },
+        );
+        Ok((token, id))
+    }
+
+    /// ينتزع الخطة. النجاح مرّة واحدة فقط — وهذا ما يجعل الرمز أحادي الاستخدام.
+    pub fn take(&mut self, token: &PlanToken, session: &SessionId) -> Result<StoredPlan> {
+        self.sweep();
+        match self.plans.remove(token) {
+            // خطة جلسة أخرى تُعامل كأنها غير موجودة: لا نكشف وجودها.
+            Some(p) if p.session != *session => {
+                self.plans.insert(token.clone(), p);
+                Err(CoreError::PlanNotFound)
+            }
+            Some(p) => Ok(p),
+            None => Err(CoreError::PlanNotFound),
+        }
+    }
+
+    pub fn discard(&mut self, token: &PlanToken) {
+        self.plans.remove(token);
+    }
+
+    pub fn len(&self) -> usize {
+        self.plans.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.plans.is_empty()
+    }
+
+    fn sweep(&mut self) {
+        let now = Instant::now();
+        let ttl = self.ttl;
+        self.plans.retain(|_, p| now.duration_since(p.created) < ttl);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::spec::PlannedCommand;
+
+    fn dummy_command() -> PlannedCommand {
+        PlannedCommand {
+            program: PathBuf::from("/bin/echo"),
+            args: vec![],
+            cwd: None,
+            explain: vec![],
+            warnings: vec![],
+            artifact: None,
+            estimate: None,
+        }
+    }
+
+    #[test]
+    fn tokens_are_256_bit_and_never_repeat() {
+        let mut seen = std::collections::HashSet::new();
+        for _ in 0..1000 {
+            let t = PlanToken::generate();
+            assert_eq!(t.as_str().len(), 64, "expected 32 bytes hex-encoded");
+            assert!(seen.insert(t), "token collision");
+        }
+    }
+
+    #[test]
+    fn a_plan_can_be_taken_exactly_once() {
+        let mut store = PlanStore::new();
+        let s = store.register_session().unwrap();
+        let (t, _) = store.insert(&s, "x", Inputs::default(), dummy_command()).unwrap();
+
+        assert!(store.take(&t, &s).is_ok());
+        assert!(matches!(store.take(&t, &s), Err(CoreError::PlanNotFound)));
+    }
+
+    #[test]
+    fn a_forged_token_is_rejected() {
+        let mut store = PlanStore::new();
+        let s = store.register_session().unwrap();
+        let forged = PlanToken("00".repeat(32));
+        assert!(matches!(store.take(&forged, &s), Err(CoreError::PlanNotFound)));
+    }
+
+    #[test]
+    fn an_expired_plan_is_rejected_and_dropped() {
+        let mut store = PlanStore::with_ttl(Duration::from_millis(10));
+        let s = store.register_session().unwrap();
+        let (t, _) = store.insert(&s, "x", Inputs::default(), dummy_command()).unwrap();
+        std::thread::sleep(Duration::from_millis(30));
+        assert!(matches!(store.take(&t, &s), Err(CoreError::PlanNotFound)));
+        assert!(store.is_empty(), "expired plans must not linger");
+    }
+
+    #[test]
+    fn a_plan_cannot_be_taken_by_another_session() {
+        let mut store = PlanStore::new();
+        let a = store.register_session().unwrap();
+        let b = store.register_session().unwrap();
+        let (t, _) = store.insert(&a, "x", Inputs::default(), dummy_command()).unwrap();
+
+        assert!(matches!(store.take(&t, &b), Err(CoreError::PlanNotFound)));
+        // ولا يُستهلك بمحاولة الجلسة الأخرى.
+        assert!(store.take(&t, &a).is_ok());
+    }
+
+    #[test]
+    fn the_live_count_per_session_never_exceeds_the_cap() {
+        let mut store = PlanStore::new();
+        let s = store.register_session().unwrap();
+        // نموذجٌ يُعاد تخطيطه عند كل ضغطة مفتاح: مئة خطة، والسقف ستّ عشرة.
+        for _ in 0..100 {
+            store.insert(&s, "x", Inputs::default(), dummy_command()).unwrap();
+            assert!(store.len() <= MAX_PLANS_PER_SESSION, "the cap must always hold");
+        }
+        assert_eq!(store.len(), MAX_PLANS_PER_SESSION);
+    }
+
+    #[test]
+    fn the_oldest_plan_is_the_one_evicted_and_it_fails_closed() {
+        let mut store = PlanStore::new();
+        let s = store.register_session().unwrap();
+
+        let (first, _) = store.insert(&s, "x", Inputs::default(), dummy_command()).unwrap();
+        // خطط `created` تُقاس بـ Instant، ودقّته دون المللي ثانية على macOS،
+        // لكن ننام قليلًا كي يكون الترتيب لا لبس فيه.
+        std::thread::sleep(Duration::from_millis(2));
+        let mut newest = first.clone();
+        for _ in 0..MAX_PLANS_PER_SESSION {
+            newest = store.insert(&s, "x", Inputs::default(), dummy_command()).unwrap().0;
+        }
+
+        assert!(
+            matches!(store.take(&first, &s), Err(CoreError::PlanNotFound)),
+            "the evicted token must fail, not execute something stale"
+        );
+        assert!(store.take(&newest, &s).is_ok(), "the newest plan must still be redeemable");
+    }
+
+    #[test]
+    fn one_session_cannot_evict_another_sessions_plans() {
+        let mut store = PlanStore::new();
+        let a = store.register_session().unwrap();
+        let b = store.register_session().unwrap();
+
+        let (kept, _) = store.insert(&a, "x", Inputs::default(), dummy_command()).unwrap();
+        for _ in 0..MAX_PLANS_PER_SESSION * 2 {
+            store.insert(&b, "x", Inputs::default(), dummy_command()).unwrap();
+        }
+
+        assert!(store.take(&kept, &a).is_ok(), "eviction is per session, not global");
+    }
+
+    #[test]
+    fn session_count_is_capped() {
+        let mut store = PlanStore::new();
+        for _ in 0..MAX_SESSIONS {
+            store.register_session().unwrap();
+        }
+        assert!(matches!(store.register_session(), Err(CoreError::PlanLimitReached)));
+    }
+
+    #[test]
+    fn a_plan_goes_stale_when_its_source_is_replaced() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("source");
+        std::fs::create_dir(&src).unwrap();
+
+        let pre = Preconditions {
+            inputs: vec![(src.clone(), PathFingerprint::capture(&src).unwrap())],
+            final_path_must_be_absent: None,
+            destination_must_be_writable: None,
+            program: PathBuf::from("/bin/echo"),
+        };
+        assert!(pre.verify().is_ok());
+
+        // نفس الاسم، عقدة مختلفة — وهذا ما يكشفه dev+ino ولا يكشفه الاسم.
+        std::fs::remove_dir(&src).unwrap();
+        std::fs::create_dir(&src).unwrap();
+        assert!(matches!(
+            pre.verify(),
+            Err(CoreError::PlanStale { detail: StaleReason::SourceReplaced })
+        ));
+    }
+
+    #[test]
+    fn a_plan_goes_stale_when_the_final_name_appears_meanwhile() {
+        let dir = tempfile::tempdir().unwrap();
+        let final_path = dir.path().join("out.zip");
+
+        let pre = Preconditions {
+            inputs: vec![],
+            final_path_must_be_absent: Some(final_path.clone()),
+            destination_must_be_writable: None,
+            program: PathBuf::from("/bin/echo"),
+        };
+        assert!(pre.verify().is_ok());
+
+        std::fs::write(&final_path, b"someone got here first").unwrap();
+        assert!(matches!(
+            pre.verify(),
+            Err(CoreError::PlanStale { detail: StaleReason::FinalPathAppeared })
+        ));
+    }
+
+    #[test]
+    fn the_public_plan_id_is_unique_and_is_not_the_token() {
+        let mut store = PlanStore::new();
+        let s = store.register_session().unwrap();
+        let (t1, id1) = store.insert(&s, "x", Inputs::default(), dummy_command()).unwrap();
+        let (_, id2) = store.insert(&s, "x", Inputs::default(), dummy_command()).unwrap();
+
+        assert_ne!(id1, id2, "each plan needs its own correlation id");
+        assert_ne!(id1, t1.as_str(), "the journal id must never be the capability token");
+        assert!(!t1.as_str().contains(&id1), "the id must not leak part of the token");
+    }
+
+    #[test]
+    fn a_plan_goes_stale_when_its_tool_disappears() {
+        let dir = tempfile::tempdir().unwrap();
+        let fake_tool = dir.path().join("tool");
+        std::fs::write(&fake_tool, b"#!/bin/sh\n").unwrap();
+
+        let pre = Preconditions {
+            inputs: vec![],
+            final_path_must_be_absent: None,
+            destination_must_be_writable: None,
+            program: fake_tool.clone(),
+        };
+        assert!(pre.verify().is_ok());
+
+        std::fs::remove_file(&fake_tool).unwrap();
+        assert!(matches!(
+            pre.verify(),
+            Err(CoreError::PlanStale { detail: StaleReason::ToolGone })
+        ));
+    }
+
+    #[test]
+    fn a_plan_goes_stale_when_the_destination_stops_being_writable() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("dest");
+        std::fs::create_dir(&dest).unwrap();
+
+        let pre = Preconditions {
+            inputs: vec![],
+            final_path_must_be_absent: None,
+            destination_must_be_writable: Some(dest.clone()),
+            program: PathBuf::from("/bin/echo"),
+        };
+        assert!(pre.verify().is_ok(), "a writable destination must pass");
+
+        std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o500)).unwrap();
+        let r = pre.verify();
+        std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o700)).unwrap();
+
+        assert!(
+            matches!(r, Err(CoreError::PlanStale { detail: StaleReason::DestinationNotWritable })),
+            "the check at plan time is not a promise for execute time: {r:?}"
+        );
+    }
+
+    #[test]
+    fn a_plan_goes_stale_when_the_destination_is_removed() {
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("dest");
+        std::fs::create_dir(&dest).unwrap();
+
+        let pre = Preconditions {
+            inputs: vec![],
+            final_path_must_be_absent: None,
+            destination_must_be_writable: Some(dest.clone()),
+            program: PathBuf::from("/bin/echo"),
+        };
+        std::fs::remove_dir(&dest).unwrap();
+        assert!(matches!(
+            pre.verify(),
+            Err(CoreError::PlanStale { detail: StaleReason::DestinationGone })
+        ));
+    }
+
+    #[test]
+    fn re_verifying_leaves_no_write_probe_in_the_destination() {
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("dest");
+        std::fs::create_dir(&dest).unwrap();
+
+        let pre = Preconditions {
+            inputs: vec![],
+            final_path_must_be_absent: None,
+            destination_must_be_writable: Some(dest.clone()),
+            program: PathBuf::from("/bin/echo"),
+        };
+        for _ in 0..10 {
+            pre.verify().unwrap();
+        }
+        assert_eq!(std::fs::read_dir(&dest).unwrap().count(), 0, "probes must not accumulate");
+    }
+
+    #[test]
+    fn a_dangling_symlink_at_the_final_name_still_counts_as_a_conflict() {
+        let dir = tempfile::tempdir().unwrap();
+        let final_path = dir.path().join("out.zip");
+        std::os::unix::fs::symlink(dir.path().join("nowhere"), &final_path).unwrap();
+
+        let pre = Preconditions {
+            inputs: vec![],
+            final_path_must_be_absent: Some(final_path.clone()),
+            destination_must_be_writable: None,
+            program: PathBuf::from("/bin/echo"),
+        };
+        assert!(
+            matches!(pre.verify(), Err(CoreError::PlanStale { .. })),
+            "a dangling symlink would still be clobbered by a rename"
+        );
+    }
+}
