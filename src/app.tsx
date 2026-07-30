@@ -16,7 +16,7 @@
  * `PlanResponse`.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import Naffith from './naffith';
+import Naffith, { OperationBar } from './naffith';
 import Satr from './satr';
 import Onboarding from './onboarding';
 import OperationsList, { type OperationsState } from './operations-list';
@@ -418,24 +418,29 @@ export default function App() {
   }
 
   return (
-    <Page focusKey={screenKey}>
-      <main className="page__body">
-        <Naffith
-          operation={operation}
-          values={values}
-          onChange={setValues}
-          plan={plan}
-          error={error}
-          phase={uiPhase}
-          outcome={outcome}
-          onExecute={onExecute}
-          onCancel={onCancel}
-          onReveal={onReveal}
-          onReset={onReset}
-          onBack={() => go({ type: 'back' })}
-        />
-        <Satr plan={shownPlan} />
-      </main>
+    <Page variant="bleed" focusKey={screenKey}>
+      {/* شريطٌ يعلو السطحين بعرض النافذة، ثم سطحان متجاوران يملآن ما تحته.
+          «نَفِّذ» و«سَطْر» ليسا وضعين يتبادلان: هما قراءتان لخطّةٍ واحدة تُعرضان
+          معًا، ورؤيةُ الأمر وهو يتغيّر مع الحقل هي الفكرة كلّها. */}
+      <div className="op">
+        <OperationBar operation={operation} onBack={() => go({ type: 'back' })} />
+        <main className="op__panes">
+          <Naffith
+            operation={operation}
+            values={values}
+            onChange={setValues}
+            plan={plan}
+            error={error}
+            phase={uiPhase}
+            outcome={outcome}
+            onExecute={onExecute}
+            onCancel={onCancel}
+            onReveal={onReveal}
+            onReset={onReset}
+          />
+          <Satr plan={shownPlan} />
+        </main>
+      </div>
       {leaveDialog}
     </Page>
   );
@@ -474,7 +479,7 @@ function Page({
 }: {
   children: ReactNode;
   /** `message` لسطرٍ وزرّ: يُوسَّط رأسيًا بدل أن يبدأ من الأعلى. */
-  variant?: 'message';
+  variant?: 'message' | 'bleed';
   /** هويّة الشاشة نصًّا. تبدّلُها وحده يحرّك البؤرة، لا كل إعادة رسم. */
   focusKey: string;
 }) {

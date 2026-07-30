@@ -9,24 +9,120 @@ body { background: var(--bg-canvas); color: var(--text-primary); }
    الغلاف — كل شاشة تمرّ بهما، لا شاشة «نَفِّذ — سَطْر» وحدها. تركُهما هنا هو
    ما جعل الشاشات الثلاث الأخرى بلا حشوة. */
 
+/* ══ شاشة العملية ═══════════════════════════════════════════════════════
+   شريطٌ يعلو سطحين متجاورين، والثلاثة تملأ النافذة من حافّة إلى حافّة.
+
+   كانت الشاشة بطاقةً مؤطَّرة في عمودٍ موسَّط عرضُه ‎1120px‎: «نَفِّذ» محشورٌ في
+   نصفٍ ضيّق بحدٍّ وزوايا وظلّ تعزله عمّا حوله، و«سَطْر» نصفٌ فارغ يحجز ‎480px‎
+   من الارتفاع بلا شيء فيه. أي أن نصف النافذة كان فراغًا لا يؤدّي وظيفة،
+   والنصف الآخر مزدحمًا.
+
+   والعلاج ليس توسيع البطاقة بل حذفها: السطحان *هما* الشاشة، يفصل بينهما خطٌّ
+   شعرة وفرقُ مادّة — `--bg-surface` للفعل و`--bg-sunken` للطبقة تحته. وهي
+   إشارة العمق نفسها التي تبيعها الشاشة: «سَطْر» ما تحت «نَفِّذ». */
+.op {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+/* الشريط: الرجوع، ثم الهويّة، بعرض النافذة كاملًا.
+   وضعُ الهويّة هنا لا في أعلى العمود يحرّر النموذج من أربعة أسطر كانت تزاحمه،
+   ويعطي الوصفَ سطرًا مريحًا بدل التفافه في نصف عرض. */
+.opbar {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-16);
+  padding: var(--space-20) clamp(var(--space-20), 3vw, var(--space-40));
+  border-block-end: var(--border-hairline) solid var(--border-subtle);
+  background: var(--bg-surface);
+}
+/* الزرّ لا يتمدّد ولا ينضغط، ويحاذي أعلى الهويّة لا وسطها. */
+.opbar__back { flex: none; }
+.opbar__ident { display: flex; align-items: flex-start; gap: var(--space-12); min-width: 0; }
+/* الأيقونة مربّعٌ ثابت: هي وسمُ العملية، ومقاسها لا يتبع النافذة. */
+.opbar__icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: var(--control-h-md);
+  height: var(--control-h-md);
+  border-radius: var(--radius-control);
+  background: var(--bg-sunken);
+  border: var(--border-hairline) solid var(--border-subtle);
+  color: var(--text-accent);
+}
+.opbar__icon svg { width: var(--icon-sm); height: var(--icon-sm); }
+.opbar__text { min-width: 0; }
+.opbar__title { margin: 0; }
+/* تُدفع إلى آخر الشريط، وتحاذي العنوان لا أعلى الصندوق. */
+.opbar__danger { flex: none; margin-inline-start: auto; align-self: center; }
+/* الوصف سطرٌ واحد مريح لا فقرة ملتفّة: حدُّه طولُ السطر لا عرضُ الشريط. */
+.opbar__desc {
+  margin: var(--space-4) 0 0;
+  max-width: var(--width-prose);
+  color: var(--text-secondary);
+}
+
+/* في النافذة الضيّقة يلتفّ الوصف على ثلاثة أسطر فيأكل الشريطُ ثلث الارتفاع،
+   والنموذج هو ما جاء المستخدم من أجله. فيسقط الوصف وحده: العنوان يبقى، وقائمة
+   العمليات قد عرضت الوصف كاملًا قبل الدخول. والمخفيّ هنا شرحٌ مكرَّر، لا فعلٌ
+   ولا معلومة تلزم لإتمام العملية. */
+@media (max-width: 820px) {
+  .opbar__desc { display: none; }
+}
+
+/* السطحان. `minmax(0, …)` في العمودين لأن الأمر في «سَطْر» صندوق تمرير: بلا
+   حدٍّ أدنى صفري يفرض عرضَه على الشبكة فيتجاوز السطحان النافذة.
+   ونصيب «نَفِّذ» أكبر قليلًا: فيه النموذج والملخّص والفعل، وفي «سَطْر» الأمر. */
+.op__panes {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  min-height: 0;
+}
+
 /* ── نَفِّذ ─────────────────────────────────────────────────────────── */
+/* سطحٌ يملأ عموده، ومحتوًى بعرضٍ مقروء داخله. الفرق بينهما هو ما كان مفقودًا:
+   السطح يستعمل النافذة، والحقول لا تتمدّد معه إلى عرضٍ لا يُقرأ. */
 .naffith {
-  padding: var(--space-24);
+  background: var(--bg-surface);
+  min-height: 0;
+  /* مجرًى يمرّ، وقاعدةٌ لا تمرّ. */
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+.naffith__body {
+  overflow-y: auto;
+  padding: clamp(var(--space-20), 3vw, var(--space-40));
+}
+.naffith__foot {
+  padding: var(--space-16) clamp(var(--space-20), 3vw, var(--space-40));
+  border-block-start: var(--border-hairline) solid var(--border-subtle);
+  background: var(--bg-surface);
+}
+/* عمودٌ واحد يجمع المجرى والقاعدة على محورٍ واحد: بلا حدٍّ للعرض تتمدّد الحقول
+   في نافذةٍ عريضة إلى مقاسٍ لا يُقرأ، وبحدٍّ على أحدهما دون الآخر يختلّ الاصطفاف
+   بين النموذج وزرّه. */
+.naffith__col {
+  max-width: var(--width-base);
   display: flex;
   flex-direction: column;
-  gap: var(--space-16);
+  gap: var(--space-20);
 }
-/* الرجوع في صفّه وحده أعلى البطاقة: صندوق مرن كي لا يتمدّد الزرّ إلى عرض
-   العمود كما يفعل أيّ ابنٍ مباشر لعمودٍ مرن. وهو أول ما يبلغه المفتاح. */
-.naffith__nav { display: flex; }
-.naffith__head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-12); }
+/* رأس السطح، بنفس بنية رأس «سَطْر» ومقاسه. */
+.naffith__head { display: flex; align-items: baseline; gap: var(--space-8); flex-wrap: wrap; }
 .naffith__head h2 { margin: 0; }
-.naffith__op { margin: var(--space-4) 0 0; }
-.naffith__desc { margin: 0; }
+.naffith__subtitle { color: var(--text-muted); margin: 0; }
 .naffith__form { display: flex; flex-direction: column; gap: var(--space-16); }
 /* الفعل وسببُه كتلة واحدة: فجوة البطاقة (‏16) كانت تفصل السبب عن زرّه حتى
-   يبدو تعليقًا على ما بعده لا تفسيرًا لما فوقه. */
-.naffith__act { display: flex; flex-direction: column; gap: var(--space-8); }
+   يبدو تعليقًا على ما بعده لا تفسيرًا لما فوقه.
+
+   وهي ملتصقة بأسفل العمود: الملخّص يطول بطول ما تعلنه الخطة، فكان «نفِّذ» يقع
+   تحت الطيّة عند ‎800px‎ من الارتفاع — الفعل الأساسي لا يُبحث عنه بالتمرير.
+   و`sticky` لا `fixed`: حين يتّسع العمود تجلس في مجراها الطبيعي بلا فرقٍ يُرى،
+   وحين يضيق تلتصق. الأرضية والحدّ يمنعان النصّ من المرور تحتها شبحًا. */
+.naffith__act { gap: var(--space-8); }
 .naffith__actions { display: flex; gap: var(--space-8); flex-wrap: wrap; }
 /* سبب تعطّل «نفِّذ»: حالةٌ لا خطأ. لا أرضية حمراء ولا أيقونة تحذير ولا لون
    خطر — نبرته إرشاد، وهي نبرة `t-helper` نفسها تحت كل حقل في النموذج. */
@@ -150,22 +246,33 @@ body { background: var(--bg-canvas); color: var(--text-primary); }
 .runstate__path { font-size: var(--fs-caption); flex: 1; min-width: 0; overflow-wrap: anywhere; }
 
 /* ── سَطْر ─────────────────────────────────────────────────────────── */
-.satr { display: flex; flex-direction: column; gap: var(--space-12); }
+/* الطبقة التي تحت: سطحٌ غائر يملأ عموده، فيُقرأ الفراغ فيه مادّةً مقصودة لا
+   نقصًا. وهو الفرق بين نصفٍ فارغ ونصفٍ هادئ. */
+.satr {
+  background: var(--bg-sunken);
+  padding: clamp(var(--space-20), 3vw, var(--space-40));
+  border-inline-start: var(--border-hairline) solid var(--border-subtle);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
 .satr__head { display: flex; align-items: baseline; gap: var(--space-8); flex-wrap: wrap; }
 .satr__head h2 { margin: 0; }
 .satr__subtitle { color: var(--text-muted); margin: 0; }
 /* المسرح: مكان الأمر حين يوجد، ومكان الكتابة المائية حين لا يوجد.
 
-   الارتفاع الأدنى ليس زينة. بدونه ينكمش العمود إلى سطرين في الانتظار ثم يقفز
-   إلى مئات البكسلات لحظةَ وصول الخطة، فتتحرّك الصفحة كلّها لأن المستخدم أكمل
-   حقلًا. القيمة مركّبة من رمز المسافة لا مكتوبة رقمًا: ثلاثة أضعاف أكبر مسافة
-   في النظام تقارب ارتفاع الأمر بوسائطه الستّة، فيبقى العمودان متقاربين. */
+   `flex: 1` لا `min-block-size`: كان يحجز ‎480px‎ ثابتة، فيترك في النافذة
+   الطويلة فراغًا أسفله وفي القصيرة يدفع ما تحته. وارتفاعه الآن ما تبقّى من
+   العمود — تقرّره النافذة لا المحتوى، فلا يقفز شيء لحظة وصول الخطة أصلًا:
+   المسرح لم يتغيّر، إنّما امتلأ. */
 .satr__stage {
   position: relative;
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: var(--space-12);
-  min-block-size: calc(var(--space-96) * 5);
 }
 
 /* كتابة مائية لا بطاقة: تجلس في الفراغ نفسه بلا حدّ ولا أرضية ولا حشو يوحي

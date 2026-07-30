@@ -13,7 +13,7 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import Naffith from './naffith';
+import Naffith, { OperationBar } from './naffith';
 import { AR } from './i18n';
 import type { OperationSummary, PlanResponse } from './ipc';
 import type { FormValues } from './operations';
@@ -63,7 +63,6 @@ function view(op: OperationSummary, over: Partial<Parameters<typeof Naffith>[0]>
     onCancel: vi.fn(),
     onReveal: vi.fn(),
     onReset: vi.fn(),
-    onBack: vi.fn(),
     ...over,
   };
   return { ...render(<Naffith {...props} />), props };
@@ -102,12 +101,13 @@ describe('عملية الضغط بعد التعميم', () => {
   });
 
   it('تشتقّ شارة الخطورة من العملية، وتصمت حين لا ترجمة', () => {
-    view(COMPRESS);
+    // الشارة انتقلت إلى شريط الشاشة: هي وسمُ العملية لا وسمُ النموذج.
+    render(<OperationBar operation={COMPRESS} onBack={vi.fn()} />);
     expect(screen.getByText(AR['summary.danger.creates'])).toBeTruthy();
 
     cleanup();
     // `modifies` بلا ترجمة اليوم: شارةٌ تعرض المفتاح خامًا أسوأ من غيابها.
-    view(SYNTHETIC);
+    render(<OperationBar operation={SYNTHETIC} onBack={vi.fn()} />);
     expect(screen.queryByText('summary.danger.modifies')).toBeNull();
   });
 });
@@ -226,11 +226,21 @@ describe('ملخّص «ما الذي سيحدث»', () => {
   });
 });
 
-describe('الرجوع', () => {
-  it('يُعرض ويستدعي `onBack`', async () => {
+describe('شريط الشاشة', () => {
+  it('يعرض الرجوع ويستدعيه، وهويّة العملية معه', async () => {
+    // الرجوع وهويّة العملية صارا في شريطٍ يعلو السطحين بعرض النافذة: كانا
+    // محشورين في أعلى عمود «نَفِّذ» يزاحمان النموذج بينما نصف الشاشة فارغ.
     const user = userEvent.setup();
-    const { props } = view(COMPRESS);
+    const onBack = vi.fn();
+    render(<OperationBar operation={COMPRESS} onBack={onBack} />);
+    expect(screen.getByText(AR['op.compress.folder.zip.title'])).toBeTruthy();
+    expect(screen.getByText(AR['op.compress.folder.zip.description'])).toBeTruthy();
     await user.click(screen.getByRole('button', { name: AR['nav.back'] }));
-    expect(props.onBack).toHaveBeenCalledTimes(1);
+    expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
+  it('لا يعرض «نَفِّذ» زرّ رجوعٍ ثانيًا', () => {
+    view(COMPRESS);
+    expect(screen.queryByRole('button', { name: AR['nav.back'] })).toBeNull();
   });
 });

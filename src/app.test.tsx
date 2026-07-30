@@ -93,7 +93,7 @@ beforeEach(() => {
 
 /** جذر الشاشة المعروضة أيًّا كانت: قائمة، أو شاشة ثانوية، أو شاشة عملية. */
 function screenRoot(container: HTMLElement): Element {
-  const root = container.querySelector('.ops, .screen, .page__body');
+  const root = container.querySelector('.ops, .screen, .op');
   expect(root, 'لم تُرسم أي شاشة').toBeTruthy();
   return root as Element;
 }
@@ -134,8 +134,11 @@ describe('وعاء الصفحة في كل شاشة', () => {
     await user.click(
       await screen.findByRole('button', { name: new RegExp(AR['op.compress.folder.zip.title']) }),
     );
-    expect(container.querySelector('.page__body')).toBeTruthy();
-    expect(screenRoot(container).closest('.page')).toBeTruthy();
+    // شاشة العملية تملك تخطيطها وتمتدّ إلى حواف النافذة: شريطٌ فوق سطحين،
+    // بلا حشوة الوعاء ولا حدّه الأقصى — وحصرُها فيهما كان يترك ثلث النافذة
+    // فراغًا ويحشر النموذج في نصفٍ ضيّق.
+    expect(container.querySelector('.op__panes')).toBeTruthy();
+    expect(screenRoot(container).closest('.page--bleed')).toBeTruthy();
   });
 });
 
