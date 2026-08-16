@@ -25,6 +25,8 @@ pub struct PlanResponse {
     pub op_id: &'static str,
     pub title_key: &'static str,
     pub description_key: &'static str,
+    /// القسم الذي تنتمي إليه العملية. يُقيَّد في السجل ويُصفّى به لاحقًا.
+    pub category: crate::spec::Category,
     pub danger: Danger,
     /// البرنامج ووسائطه كنصوص معروضة — لا كمدخل قابل للتنفيذ.
     pub argv_display: Vec<String>,
@@ -79,6 +81,20 @@ fn display(command: &PlannedCommand) -> Vec<String> {
     v
 }
 
+/// ما يخرج من التخطيط: ما يعبر إلى الواجهة، وما يُكتب في السجل.
+///
+/// **زوجٌ لا بنيةٌ واحدة.** المدخلات المنقَّحة يحتاجها `lib.rs` ليكتب القيد،
+/// ولا تحتاجها الواجهة — هي التي أرسلتها أصلًا. وحشرُها في `PlanResponse`
+/// بـ`#[serde(skip)]` كان يجعل بنيةً تعبر الحدّ تحمل حقلًا لا يعبره، وهو
+/// بالضبط ما يمنع اختبارُ `wire-contract` وقوعَه: كل حقلٍ في بنية سلكٍ يجب أن
+/// يقابله حقلٌ في الواجهة، ولا استثناء يُكتب لتسهيل تمريرٍ داخلي.
+#[derive(Debug)]
+pub struct Planned {
+    pub response: PlanResponse,
+    /// المدخلات كما تُقيَّد في السجل، بعد تنقيح السرّي منها.
+    pub journal_inputs: Vec<crate::journal::InputRecord>,
+}
+
 /// يخطّط عملية: يبحث عنها، يتحقّق من مدخلاتها، يبني أمرها، ويحجز لها رمزًا.
 pub fn plan(
     store: &mut PlanStore,
@@ -86,7 +102,7 @@ pub fn plan(
     policy: Policy,
     op_id: &str,
     raw_inputs: &BTreeMap<String, RawValue>,
-) -> Result<PlanResponse> {
+) -> Result<Planned> {
     let op = registry::find(op_id, policy)?;
     let inputs = value::validate(op, raw_inputs)?;
     let command = (op.plan)(&inputs)?;
@@ -102,6 +118,21 @@ pub fn plan(
         }
     }
 
+    // ثابتةٌ تُفرض هنا لا تُوثَّق فحسب: التوجيه لا يكون إلا إلى الملف المؤقّت
+    // الذي حجزته الخطة. عمليةٌ توجّه خرجها إلى أي موضعٍ آخر تكون قد اخترعت
+    // كتابةً خارج الترقية الذرّية — بلا حجزٍ حصريّ، وبلا حارسٍ ينظّف عند الفشل.
+    //
+    // فحصٌ حقيقي لا `debug_assert`: البناء الموزَّع هو الذي يعمل على ملفات
+    // المستخدم، وثابتةٌ لا تُفحص إلا في التطوير ثابتةٌ لا تُفحص.
+    let redirect_is_our_own_temp = match (&command.stdout_to, &command.artifact) {
+        (None, _) => true,
+        (Some(target), Some(a)) => *target == a.temp && a.kind == crate::spec::ArtifactKind::File,
+        (Some(_), None) => false,
+    };
+    if !redirect_is_our_own_temp {
+        return Err(CoreError::RedirectOutsidePlan);
+    }
+
     let response_argv = display(&command);
     let produces = command.artifact.as_ref().map(|a| a.final_path.display().to_string());
     let writes_to = command.artifact.as_ref().map(|a| a.temp.display().to_string());
@@ -115,14 +146,16 @@ pub fn plan(
         complete: e.complete,
     });
 
+    let journal_inputs = inputs.journal_form(op);
     let (token, plan_id) = store.insert(session, op.id, inputs, command)?;
 
-    Ok(PlanResponse {
+    let response = PlanResponse {
         token,
         plan_id,
         op_id: op.id,
         title_key: op.title_key,
         description_key: op.description_key,
+        category: op.category,
         danger: op.danger,
         argv_display: response_argv,
         explain,
@@ -133,7 +166,8 @@ pub fn plan(
         produces,
         writes_to,
         working_directory: cwd,
-    })
+    };
+    Ok(Planned { response, journal_inputs })
 }
 
 #[cfg(test)]
@@ -157,6 +191,7 @@ mod tests {
         )
         .unwrap();
 
+        let r = r.response;
         assert_eq!(r.argv_display, vec!["/bin/echo".to_string(), "مرحبا".to_string()]);
         assert_eq!(r.token.as_str().len(), 64);
         assert_eq!(store.len(), 1, "the plan must be retained in the core, not handed out");

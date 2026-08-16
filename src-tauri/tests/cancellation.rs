@@ -28,6 +28,8 @@ fn command(program: &str, args: &[&str], artifact: Option<Artifact>) -> PlannedC
         warnings: vec![],
         artifact,
         estimate: None,
+        stdout_to: None,
+        reveal_target: None,
     }
 }
 
@@ -207,7 +209,7 @@ async fn cancelling_removes_the_temporary_output_and_produces_no_final_file() {
     let temp = atomic::temp_path_for(&final_path).unwrap();
     std::fs::write(&temp, "نصف أرشيف").unwrap();
 
-    let artifact = Artifact { temp: temp.clone(), final_path: final_path.clone() };
+    let artifact = Artifact::file(temp.clone(), final_path.clone());
     let (task, cancel, mut rx) = run_collecting(command(
         "/bin/sh",
         &["-c", "echo $$; sleep 30 & echo $!; wait"],
@@ -253,7 +255,7 @@ async fn cancelling_a_real_ditto_run_leaves_the_destination_clean() {
             source.to_str().unwrap(),
             temp.to_str().unwrap(),
         ],
-        Some(Artifact { temp: temp.clone(), final_path: final_path.clone() }),
+        Some(Artifact::file(temp.clone(), final_path.clone())),
     );
 
     let (out_tx, _rx) = mpsc::channel(64);

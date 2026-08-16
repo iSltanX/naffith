@@ -17,12 +17,12 @@ import type {
   InputSummary,
   OperationSummary,
   PlanResponse,
+  RunFinishedEvent,
 } from "./ipc";
 import { asCoreError, pickDirectory } from "./ipc";
 import {
   extensionHint,
   fieldKeys,
-  iconForCategory,
   isComplete,
   isDirectoryInput,
   isDirty,
@@ -43,12 +43,23 @@ export type { FormValues } from "./operations";
 interface Props {
   /** العملية كما أعلنتها النواة. منها يُرسم النموذج كلّه. */
   operation: OperationSummary;
+  /** أيقونة قسم العملية كما أعلنتها النواة. انظر `iconFor`. */
+  categoryIcon: string;
   values: FormValues;
   onChange: (next: FormValues) => void;
   plan: PlanResponse | null;
   error: CoreErrorShape | null;
   phase: Phase;
-  outcome: { status: string; produced?: string | null; key?: string } | null;
+  /**
+   * ناتج التشغيل كما وصل من النواة، بشكله الكامل لا بشكلٍ مختزل هنا.
+   *
+   * كان النوع مكتوبًا في هذا الملف: `{ status; produced?; key? }` — ثلاثة حقول
+   * من ستّة. و`ipc.ts` يحذّر من هذا حرفيًا: «حقلٌ يعلنه ذاك ويغفله هذا لا سبيل
+   * لقراءته». وهو ما وقع: `code` و`signal` تصلان الواجهة في كل فشلٍ ولا يمكن
+   * قراءتهما، فكانت شاشة الفشل تقول «لم تكتمل العملية» وحدها وتُهمل الرقم الذي
+   * يشرح السبب. والنوعُ الواحد يمنع أن يتكرّر ذلك مع حقلٍ يُضاف غدًا.
+   */
+  outcome: RunFinishedEvent | null;
   onExecute: () => void;
   onCancel: () => void;
   onReveal: () => void;
@@ -62,11 +73,14 @@ interface Props {
  * العملية نفسها: الحقل الذي يسمّي الناتج يحمل صورة ما يُنتَج. خريطةٌ من معرّف
  * الحقل إلى أيقونة كانت ستكون قائمة الحقول المكتوبة يدويًا عائدةً من الباب
  * الخلفي، وتُنسى فيظهر حقلٌ بلا أيقونة في أول عملية جديدة.
+ *
+ * وأيقونة الفئة **تُمرَّر** ولا تُشتقّ هنا: القسم يعلن أيقونته في النواة
+ * (`categories.rs`)، وخريطةٌ ثانية في الواجهة كانت ستتقادم يوم يُضاف قسم.
  */
-function iconFor(op: OperationSummary, input: InputSummary): string {
+function iconFor(categoryIcon: string, input: InputSummary): string {
   if (isDirectoryInput(input)) return "#i-folder";
   if (isPathInput(input)) return "#i-file";
-  return iconForCategory(op.category);
+  return categoryIcon;
 }
 
 /** شارة الخطورة: خريطة مغلقة على نوعٍ مغلق، فلا تتقادم بعملية جديدة. */
@@ -135,9 +149,21 @@ function PathField({
       <label className="t-label" htmlFor={id}>
         {label}
       </label>
+      {/* النصّ المساعد قبل الضابط لا بعده: هو ما يُقرأ لتُعرف قيمةُ الحقل، وقد
+          كان يقع تحته — فيصل بعد أن كتب المستخدم. وموضعُه صفُّ الوسم نفسه:
+          جملةٌ قصيرة بجانب وسمٍ قصير، فيوفّر الصفُّ المشترك سطرًا في كل حقل. */}
+      <p id={helpId} className="t-helper">
+        {help}
+      </p>
       <div className="row-field__control">
-        {/* المسار LTR داخل نموذج عربي: قراءته من اليمين تفسد ترتيب مقاطعه. */}
-        <span className="field field--path">
+        {/* المسار LTR داخل نموذج عربي: قراءته من اليمين تفسد ترتيب مقاطعه.
+            وزرّ الاختيار داخل الضابط لا شقيقًا له: كان شقيقًا، فكان عرض المربّع
+            يساوي عرض الصفّ ناقصًا عرض زرٍّ يتبع طول وسمه — فيختلف عن عرض مربّع
+            الحقل الذي لا زرّ له، وتتعرّج حوافّ النموذج اليسرى من حقلٍ إلى حقل.
+            و`field--with-action` نمطُ نظام التصميم نفسه لهذه الحالة. */}
+        <span
+          className={`field field--path${onPick ? " field--with-action" : ""}`}
+        >
           <svg viewBox="0 0 24 24" aria-hidden="true" className="field__icon">
             <use href={icon} />
           </svg>
@@ -155,24 +181,21 @@ function PathField({
             aria-invalid={error ? true : undefined}
             onChange={(e) => onType(e.target.value)}
           />
+          {onPick && (
+            <button
+              type="button"
+              className="btn btn--quiet btn--sm"
+              onClick={onPick}
+              disabled={disabled}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <use href="#i-folder-open" />
+              </svg>
+              {value ? t("field.chosen") : t("field.choose")}
+            </button>
+          )}
         </span>
-        {onPick && (
-          <button
-            type="button"
-            className="btn btn--quiet"
-            onClick={onPick}
-            disabled={disabled}
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <use href="#i-folder-open" />
-            </svg>
-            {value ? t("field.chosen") : t("field.choose")}
-          </button>
-        )}
       </div>
-      <p id={helpId} className="t-helper">
-        {help}
-      </p>
       {error && <FieldError id={errorId} text={error} />}
     </div>
   );
@@ -211,6 +234,9 @@ function TextField({
       <label className="t-label" htmlFor={id}>
         {label}
       </label>
+      <p id={helpId} className="t-helper">
+        {help}
+      </p>
       <div className="row-field__control">
         {/* اسم الملف نصّ المستخدم، فيبقى باتجاه الصفحة لا LTR قسرًا. */}
         <span className="field">
@@ -230,17 +256,16 @@ function TextField({
             aria-invalid={error ? true : undefined}
             onChange={(e) => onType(e.target.value)}
           />
+          {/* اللاحقة عرضٌ لما تضيفه النواة، لا جزءٌ من قيمة الحقل. وموضعها داخل
+              الحقل لا بعده: هي طرفُ الاسم الذي يُكتب، وسطحُ الحقل هو ما يقول
+              ذلك. كانت شقيقةً للحقل تطفو خارجه فتُقرأ عنصرًا ثالثًا في الصفّ. */}
+          {suffix && (
+            <span className="suffix-hint lat" aria-hidden="true">
+              {suffix}
+            </span>
+          )}
         </span>
-        {/* اللاحقة عرضٌ لما تضيفه النواة، لا جزءٌ من قيمة الحقل. */}
-        {suffix && (
-          <span className="suffix-hint lat" aria-hidden="true">
-            {suffix}
-          </span>
-        )}
       </div>
-      <p id={helpId} className="t-helper">
-        {help}
-      </p>
       {error && <FieldError id={errorId} text={error} />}
     </div>
   );
@@ -293,20 +318,36 @@ function FlagField({
 }
 
 /**
- * شريط الشاشة — الرجوع وهويّة العملية، عرضَ النافذة كاملًا.
+ * شريط الشاشة — زرّ الرجوع، ثم هويّة العملية، في صفٍّ واحد مدمج.
  *
- * كان هذا كلّه محشورًا في أعلى عمود «نَفِّذ»: زرّ الرجوع في صفّه، ثم عنوانٌ
- * صغير، ثم اسم العملية، ثم وصفها ملتفًّا في نصف عرض النافذة — أربعة أسطر
- * تتزاحم في العمود الأضيق بينما نصف الشاشة الآخر فارغ.
+ * ## ما كان، ولماذا سقط
  *
- * وموضعُه هنا فوق السطحين لا داخل أحدهما: الهويّة تخصّ الشاشة لا العمود، وهي
- * أول ما يجب أن تقع عليه العين — فمنها يعرف المستخدم أين هو وبماذا يبدأ.
+ * كان الشريط يعطي العنوان `--fs-page-title` (‏28px بوزن ‎800) ويضع تحته الوصف
+ * فقرةً، ويدفع شارة الخطورة إلى أقصى الشريط بـ`margin-inline-start: auto`.
+ * الحصيلة رأسٌ يأكل ‎170px‎ من ارتفاع النافذة قبل أن يبدأ النموذج، وشارةٌ تطفو
+ * وحدها في فراغٍ بعيدٍ عن الاسم الذي تصفه، وزرُّ رجوعٍ مؤطَّر يحاذي رأس كتلةٍ
+ * أطول منه بثلاثة أضعاف فيبدو ملصقًا فوق الواجهة لا جزءًا منها.
+ *
+ * ## القاعدة الآن
+ *
+ * كل عنصر يبرّر حجمه وموضعه:
+ *
+ * - **الرجوع** زرٌّ شفّاف بشيفرون واحد ووسمٍ من كلمة، بمقاس عناصر التحكّم
+ *   الصغيرة، محاذٍ لمركز الشريط رأسيًا — كزرّ شريط أدوات في macOS. ووسمُه
+ *   المعروض كلمة، واسمُه المقروء الجملة كاملة (`nav.back`)، فهو يبقى مفهومًا
+ *   بالصوت كما هو مفهوم بالعين.
+ * - **فاصلٌ شعرة** بعده: يفصل التنقّل عن الهويّة بلا أن يرسم صندوقًا حول أيّهما.
+ * - **الأيقونة والاسم والوصف** كتلةٌ واحدة: الأيقونة تحاذي سطر الاسم، والشارة
+ *   تجاور الاسم في صفّه لأنها وسمٌ عليه — لا تُنبذ إلى الطرف المقابل.
  */
 export function OperationBar({
   operation,
+  categoryIcon,
   onBack,
 }: {
   operation: OperationSummary;
+  /** أيقونة القسم كما أعلنتها النواة. انظر `iconFor`. */
+  categoryIcon: string;
   onBack: () => void;
 }) {
   const dangerLabelKey = `summary.danger.${operation.danger}`;
@@ -318,45 +359,60 @@ export function OperationBar({
   return (
     <header className="opbar">
       {/* الرجوع أوّل ما يُبلَغ بالمفتاح، كما هو أوّل ما تقع عليه العين. والشيفرون
-          يُترك بلا `data-directional`: رأسه يشير يمينًا، واليمين في صفحة RTL هو
-          جهة الرجوع أصلًا، فقلبُه كان سيعكس المعنى. */}
+          يُترك بلا قلب: رأسه يشير يمينًا، واليمين في صفحة RTL هو جهة الرجوع
+          أصلًا، فقلبُه كان سيعكس المعنى. */}
       <button
         type="button"
-        className="btn btn--quiet btn--sm opbar__back"
+        className="btn btn--ghost opbar__back"
         onClick={onBack}
+        aria-label={t("nav.back")}
       >
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <use href="#i-chevron" />
         </svg>
-        {t("nav.back")}
+        {t("nav.back.short")}
       </button>
+
+      <span className="opbar__rule" aria-hidden="true" />
 
       <div className="opbar__ident">
         <span className="opbar__icon" aria-hidden="true">
           <svg viewBox="0 0 24 24">
-            <use href={iconForCategory(operation.category)} />
+            <use href={categoryIcon} />
           </svg>
         </span>
         <div className="opbar__text">
-          <h1 className="t-page-title opbar__title">
+          <h1 className="t-section-title opbar__title">
             {t(operation.title_key)}
           </h1>
-          <p className="t-body-sec opbar__desc">
-            {t(operation.description_key)}
-          </p>
+
+          {/* الوصف والشارة صفٌّ واحد تحت الاسم: الشارة **داخل معلومات العملية**
+              بعيدًا عن الاسم، لا ملاصقةً له ولا في أقصى الشريط.
+
+              جُرِّبت المواضع الثلاثة. ملاصقةً للاسم تزاحمه: شارةٌ ملوّنة بجانب
+              عنوان ‎20px‎ تسحب النظر إليها أوّلًا، والاسم هو ما يجب أن يُقرأ
+              أوّلًا. وفي أقصى الشريط تصطدم بما هو أسوأ من الزحام: النافذة
+              `titleBarStyle: Overlay` بلا عنوان (‏`tauri.conf.json`)، فأزرار
+              النظام الثلاثة تُرسم فوق أعلى يسار الشريط — وهو بالضبط الموضع الذي
+              كانت الشارة تُدفع إليه. عناصرُ الواجهة لا توضع تحت أزرار النظام.
+
+              وموضعُها الآن آخرَ سطر الوصف: داخل الكتلة التي تعرّف العملية، على
+              خطٍّ يقع تحت نطاق أزرار النظام كلّه. */}
+          <div className="opbar__meta">
+            <p className="opbar__desc">{t(operation.description_key)}</p>
+            {showDanger && (
+              <span
+                className={`chip ${DANGER_CHIP[operation.danger]} opbar__danger`}
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <use href={DANGER_ICON[operation.danger]} />
+                </svg>
+                {dangerLabel}
+              </span>
+            )}
+          </div>
         </div>
       </div>
-
-      {/* الشارة في أقصى الشريط لا ملاصقةً للعنوان: هي وسمُ أثرٍ يُقرأ لمحًا، لا
-          جزءٌ من الاسم. ولصقُها بالعنوان كان يزاحمه ويترك بقيّة الشريط فارغة. */}
-      {showDanger && (
-        <span className={`chip ${DANGER_CHIP[operation.danger]} opbar__danger`}>
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <use href={DANGER_ICON[operation.danger]} />
-          </svg>
-          {dangerLabel}
-        </span>
-      )}
     </header>
   );
 }
@@ -364,6 +420,7 @@ export function OperationBar({
 export default function Naffith(props: Props) {
   const {
     operation,
+    categoryIcon,
     values,
     onChange,
     plan,
@@ -426,10 +483,11 @@ export default function Naffith(props: Props) {
     <section className="naffith" aria-labelledby="naffith-heading">
       <div className="naffith__body">
         <div className="naffith__col">
-          {/* رأسٌ يوازن رأس «سَطْر» في العمود المقابل: السطحان قراءتان لخطّةٍ
-            واحدة، فرأسٌ كبير وآخر وسمٌ صغير كان يجعل أحدهما يبدو تابعًا. */}
+          {/* وسمُ اللوحة: اسمُها وسطرٌ يقول وظيفتها. مقاسُه دون مقاس اسم العملية
+            في الشريط عمدًا — الشاشة عن *هذه العملية*، واللوحتان تقسيمٌ داخلها.
+            رأسان بمقاس العنوان كانا يتنافسان معه على أول نظرة. */}
           <div className="naffith__head">
-            <h2 id="naffith-heading" className="t-section-title">
+            <h2 id="naffith-heading" className="t-card-title naffith__name">
               {t("app.naffith")}
             </h2>
             <p className="t-caption naffith__subtitle">
@@ -472,7 +530,7 @@ export default function Naffith(props: Props) {
                   <PathField
                     key={input.id}
                     id={id}
-                    icon={iconFor(operation, input)}
+                    icon={iconFor(categoryIcon, input)}
                     label={label}
                     help={help}
                     placeholder={tFirst(keys.placeholder)}
@@ -492,7 +550,7 @@ export default function Naffith(props: Props) {
                 <TextField
                   key={input.id}
                   id={id}
-                  icon={iconFor(operation, input)}
+                  icon={iconFor(categoryIcon, input)}
                   label={label}
                   help={help}
                   placeholder={tFirst(keys.placeholder)}
@@ -517,67 +575,79 @@ export default function Naffith(props: Props) {
               {generalError}
             </p>
           )}
-        </div>
-      </div>
 
-      {/* قاعدة العمود: خارج المجرى الممرَّر لا ملتصقةٌ به. الالتصاق كان يُبقي
-          الزرّ مرئيًا لكن بقيّة الملخّص تمرّ من تحته — وقاعدةٌ حقيقية تُنهي
-          العمود، فلا يمرّ خلفها شيء ولا يقع الفعل تحت الطيّة أبدًا. */}
-      <div className="naffith__foot">
-        <div className="naffith__col naffith__act">
-          <div className="naffith__actions">
-            {phase !== "finished" && (
-              <>
-                {/* الزرّ ظاهر دائمًا ومعطّل بسببٍ مكتوب تحته. زرٌّ يظهر ويختفي مع
-                  صلاحية الخطة يجعل الفعل الأساسي يرقص مع كل ضغطة مفتاح، ويحرم
-                  من لم تكتمل حقوله من معرفة أن ثمّة زرًّا أصلًا. */}
-                <button
-                  type="button"
-                  className="btn btn--primary btn--lg"
-                  onClick={onExecute}
-                  disabled={blocked !== null || busy}
-                  aria-describedby={showWhy ? whyId : undefined}
-                >
-                  <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <use href="#i-execute" />
-                  </svg>
-                  {t("action.execute")}
-                </button>
-                {busy && (
+          {/* الفعل في مجرى النموذج، آخرَ خطوةٍ في طريقٍ يُقرأ من أعلى إلى أسفل:
+              حقول، ثم ما سيحدث، ثم افعلْه.
+
+              كان شريطًا ملتصقًا بأسفل العمود بأرضيةٍ وحدٍّ يعلوه. غرضُه ألّا يقع
+              الزرّ تحت الطيّة، وثمنُه أن يقطع الشاشة أفقيًا في كل حال — حتى حين
+              لا يوجد ما يُمرَّر أصلًا، وهي الحالة الغالبة. وفصلُه عن الملخّص كان
+              يجعل «سبب التعطّل» يشرح شيئًا فوق حدٍّ يفصله عمّا يشرحه.
+
+              وقعُ الزرّ تحت الطيّة يعالجه الآن ما كان يجب أن يعالجه: رأسٌ مدمج
+              ولوحةٌ لا تُقسَم نصفين، فيبقى في العمود ارتفاعٌ يكفي النموذج وفعلَه
+              معًا. وإن طال الملخّص على نافذةٍ قصيرة، فالتمرير يصل إلى الفعل لأنه
+              في مجراه لا خلفه. */}
+          <div className="naffith__act">
+            {/* الحالة قبل الفعل التالي: بعد تشغيلٍ انتهى يُقرأ الناتج أوّلًا ثم
+                يُقرَّر ما بعده. كانت بعده، فكان زرّ «ضغط مجلد آخر» يعلو خبرَ
+                النجاح — سؤالٌ عن الخطوة التالية قبل الجواب عن السابقة. */}
+            <RunState phase={phase} outcome={outcome} onReveal={onReveal} />
+
+            <div className="naffith__actions">
+              {phase !== "finished" && (
+                <>
+                  {/* الزرّ ظاهر دائمًا ومعطّل بسببٍ مكتوب تحته. زرٌّ يظهر ويختفي مع
+                    صلاحية الخطة يجعل الفعل الأساسي يرقص مع كل ضغطة مفتاح، ويحرم
+                    من لم تكتمل حقوله من معرفة أن ثمّة زرًّا أصلًا. */}
                   <button
                     type="button"
-                    className="btn btn--danger"
-                    onClick={onCancel}
-                    disabled={phase === "cancelling"}
+                    className="btn btn--primary btn--lg naffith__go"
+                    onClick={onExecute}
+                    disabled={blocked !== null || busy}
+                    aria-describedby={showWhy ? whyId : undefined}
                   >
                     <svg viewBox="0 0 24 24" aria-hidden="true">
-                      <use href="#i-close" />
+                      <use href="#i-execute" />
                     </svg>
-                    {t("action.cancel")}
+                    {t("action.execute")}
                   </button>
-                )}
-              </>
-            )}
-            {phase === "finished" && (
-              <button
-                type="button"
-                className="btn btn--quiet btn--lg"
-                onClick={onReset}
-              >
-                {t("action.again")}
-              </button>
-            )}
+                  {busy && (
+                    <button
+                      type="button"
+                      className="btn btn--quiet"
+                      onClick={onCancel}
+                      disabled={phase === "cancelling"}
+                    >
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <use href="#i-close" />
+                      </svg>
+                      {t("action.cancel")}
+                    </button>
+                  )}
+                </>
+              )}
+              {phase === "finished" && (
+                <button
+                  type="button"
+                  className="btn btn--quiet btn--lg"
+                  onClick={onReset}
+                >
+                  {t("action.again")}
+                </button>
+              )}
+
+              {/* حالة لا خطأ: `t-helper` خافتة صغيرة، بلا لون الخطر وبلا
+                `role=alert`. و`aria-live` مهذّبة لأن السبب يتبدّل تحت يد المستخدم
+                وهو يكتب. وموضعُها في صفّ الزرّ لا تحته: سطرٌ واحد قصير بجانب
+                الفعل يُقرأ معه، وسطرٌ تحته كان يزيد ارتفاع الكتلة بلا داعٍ. */}
+              {showWhy && blocked && (
+                <p id={whyId} className="t-helper naffith__why" aria-live="polite">
+                  {t(blocked)}
+                </p>
+              )}
+            </div>
           </div>
-
-          {/* حالة لا خطأ: `t-helper` خافتة صغيرة، بلا لون الخطر وبلا `role=alert`.
-            و`aria-live` مهذّبة لأن السبب يتبدّل تحت يد المستخدم وهو يكتب. */}
-          {showWhy && blocked && (
-            <p id={whyId} className="t-helper naffith__why" aria-live="polite">
-              {t(blocked)}
-            </p>
-          )}
-
-          <RunState phase={phase} outcome={outcome} onReveal={onReveal} />
         </div>
       </div>
     </section>
@@ -622,21 +692,28 @@ function Summary({ plan, phase }: { plan: PlanResponse | null; phase: Phase }) {
     <div className="summary" aria-live="polite">
       <h3 className="t-label summary__title">{t("summary.title")}</h3>
 
-      <p className="summary__line">
-        <span className="t-body-sec">{t("summary.will_create")}</span>
-        <bdi className="path summary__path">{plan.produces}</bdi>
-      </p>
-      <p className="summary__line">
-        <span className="t-body-sec">{t("summary.from")}</span>
-        <bdi className="path summary__path">
-          {plan.argv_display[plan.argv_display.length - 2]}
-        </bdi>
-      </p>
-
-      {/* الأداة والتقدير: حقائق قبل التنفيذ، لا بعده. */}
+      {/* صفٌّ واحد لكل حقيقة، وعمودٌ واحد لكل العناوين.
+          كان الناتجُ ومصدره فقرتين مستقلّتين، كلٌّ منهما عنوانٌ فوق قيمته —
+          أربعة أسطر بعرضٍ حرّ فوق جدولٍ من ثلاثة صفوف بعمودٍ مصطفّ. فكان في
+          الملخّص محاذاتان: واحدة للفقرتين وأخرى للجدول، والعين ترى الاختلاف
+          ولا تجد له سببًا. الآن الخمسة صفوفٌ في جدولٍ واحد: عنوانٌ في عموده،
+          وقيمةٌ في عمودها، وارتفاعٌ أقلّ بأربعة أسطر. */}
       {/* `dt`/`dd` أبناءٌ مباشرون للشبكة لا مغلَّفون، وإلا صار كل صفّ شبكةً
           مستقلّة فاختلف عرض عموده الأول وتعرّجت القيم. */}
       <dl className="summary__meta">
+        <dt className="t-body-sec">{t("summary.will_create")}</dt>
+        <dd>
+          <bdi className="path summary__path">{plan.produces}</bdi>
+        </dd>
+
+        <dt className="t-body-sec">{t("summary.from")}</dt>
+        <dd>
+          <bdi className="path summary__path">
+            {plan.argv_display[plan.argv_display.length - 2]}
+          </bdi>
+        </dd>
+
+        {/* الأداة والتقدير: حقائق قبل التنفيذ، لا بعده. */}
         <dt className="t-body-sec">{t("summary.tool")}</dt>
         <dd>
           <code className="lat">{plan.tool.id}</code>{" "}
@@ -679,13 +756,25 @@ function Summary({ plan, phase }: { plan: PlanResponse | null; phase: Phase }) {
         )}
       </dl>
 
-      <ul className="summary__facts">
-        <li>{t("summary.untouched")}</li>
-        {/* سياسة التضارب تُقرأ من الخطة لا تُكتب هنا: نصٌّ ثابت كان سيبقى
-            معروضًا لو تغيّرت السياسة يومًا، فيَعِد بما لا تفعله النواة. */}
-        <li>{t(`summary.conflict.${plan.conflict}`)}</li>
-        <li>{t("summary.atomic")}</li>
-      </ul>
+      {/* الضمانات مطويّة: ثلاث جملٍ ثابتة تقول ما **لن** يحدث، لا تتغيّر بين
+          تخطيطٍ وآخر. قراءتها مرّةً تكفي، وبقاؤها مفتوحة يزيد الملخّص ‎63px‎ في
+          كل مرّة — وهي المسافة التي كانت تدفع زرّ «نفِّذ» بعيدًا عن آخر حقل.
+          والتحذيرات ليست منها: تلك تبقى ظاهرة أبدًا (أسفل هذه الكتلة). */}
+      <details className="summary__more">
+        <summary className="t-caption summary__more-label">
+          {t("summary.facts.heading")}
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <use href="#i-chevron-down" />
+          </svg>
+        </summary>
+        <ul className="summary__facts">
+          <li>{t("summary.untouched")}</li>
+          {/* سياسة التضارب تُقرأ من الخطة لا تُكتب هنا: نصٌّ ثابت كان سيبقى
+              معروضًا لو تغيّرت السياسة يومًا، فيَعِد بما لا تفعله النواة. */}
+          <li>{t(`summary.conflict.${plan.conflict}`)}</li>
+          <li>{t("summary.atomic")}</li>
+        </ul>
+      </details>
 
       {plan.warnings.length > 0 && (
         <ul className="summary__warnings">
@@ -716,7 +805,7 @@ function RunState({
   onReveal,
 }: {
   phase: Phase;
-  outcome: { status: string; produced?: string | null; key?: string } | null;
+  outcome: RunFinishedEvent | null;
   onReveal: () => void;
 }) {
   if (phase === "running" || phase === "cancelling") {
@@ -771,6 +860,24 @@ function RunState({
     );
   }
 
+  /**
+   * تفصيل الفشل الذي تعلنه النواة، أو `null`.
+   *
+   * ثلاث نهايات غير ناجحة تصل هذا الفرع: `failed` بـ`code`، و`signalled`
+   * بـ`signal`، و`error` بمفتاح. وكان الفرع يعرض للثلاثة نصًّا واحدًا —
+   * «لم يُنشأ أرشيف، وحُذف الملف المؤقّت» — فيُهمل الرقمَ الذي يشرح السبب.
+   * ورمزُ خروجٍ معروض هو ما يجعل الفشل قابلًا للبحث والسؤال عنه.
+   *
+   * والصفر مستبعدٌ عمدًا بـ`?? null` لا بـ`||`: خروجٌ بصفر لا يصل هنا أصلًا،
+   * لكن `||` كانت ستُسقط أيضًا `code: 0` لو وصل يومًا فتخفي حالةً شاذّة.
+   */
+  const detail: { label: string; value: number } | null =
+    outcome.status === "signalled" && outcome.signal !== undefined && outcome.signal !== null
+      ? { label: "state.failed.signal", value: outcome.signal }
+      : outcome.code !== undefined && outcome.code !== null
+        ? { label: "state.failed.code", value: outcome.code }
+        : null;
+
   return (
     <div className="runstate runstate--bad" role="alert">
       <span className="chip chip--danger">
@@ -779,10 +886,14 @@ function RunState({
         </svg>
         {t("state.failed")}
       </span>
-      <p className="t-body-sec">
+      {detail && (
+        <span className="t-caption runstate__detail">
+          {t(detail.label)} <bdi className="num">{detail.value}</bdi>
+        </span>
+      )}
+      <p className="t-body-sec runstate__note">
         {outcome.key ? errorText(outcome.key) : t("state.failed.note")}
       </p>
-      {outcome.key && <p className="t-caption">{t("state.failed.note")}</p>}
     </div>
   );
 }

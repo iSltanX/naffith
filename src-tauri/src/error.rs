@@ -29,6 +29,14 @@ pub enum CoreError {
     #[error("invalid file name: {reason:?}")]
     InvalidName { reason: NameRejection },
 
+    /// عددٌ خارج المدى الذي تعلنه المواصفة. منفصلٌ عن `WrongInputType` لأن
+    /// «‏٥٠٠٠ فوق الحدّ ‎٤٠٠٠» رسالةٌ تُصلح، و«نوع غير متوقّع» ليست كذلك.
+    #[error("number out of range for `{id}`: {min}..={max}")]
+    NumberOutOfRange { id: &'static str, min: i64, max: i64 },
+
+    #[error("input `{id}` is not a usable http(s) url")]
+    InvalidUrl { id: &'static str },
+
     // ── المسارات ───────────────────────────────────────────────────────
     #[error("path must be absolute")]
     PathNotAbsolute,
@@ -58,9 +66,40 @@ pub enum CoreError {
     #[error("the destination lies inside the source")]
     DestinationInsideSource,
 
+    /// المصدر يقع داخل الوجهة، أو الوجهة داخل المصدر — نسخٌ يبتلع نفسه.
+    #[error("the source lies inside the destination")]
+    SourceInsideDestination,
+
+    /// المصدر والوجهة نفس الموضع بعد حلّ الروابط.
+    #[error("the source and the destination are the same place")]
+    SamePath,
+
+    /// أرشيفٌ يحوي مدخلةً تخرج من جذر الاستخراج (‏Zip Slip).
+    ///
+    /// **يُرفض قبل التشغيل لا بعده**: أداةٌ تكتب ثم نكتشف الخروج تكون قد كتبت.
+    #[error("the archive contains an entry that escapes its extraction root")]
+    ArchiveEscapes,
+
+    /// أرشيفٌ لا يُقرأ فهرسُه أصلًا: تالف، أو ليس بالصيغة المعلَنة.
+    #[error("the archive could not be read")]
+    ArchiveUnreadable,
+
     /// لا ناتج مسجَّل لهذا التشغيل يمكن إظهاره.
     #[error("this run produced nothing to reveal")]
     NothingToReveal,
+
+    /// قيدٌ مطلوب حذفُه لا وجود له في السجل.
+    #[error("no such journal entry")]
+    JournalEntryNotFound,
+
+    /// عمليةٌ وجّهت خرجها إلى موضعٍ ليس ملفها المؤقّت. عطبُ برمجةٍ لا عطبُ
+    /// مستخدم: يُرفض قبل التشغيل بدل أن يُكتب خارج الترقية الذرّية.
+    #[error("an operation tried to redirect its output outside its own plan")]
+    RedirectOutsidePlan,
+
+    /// وسيطٌ يبدأ بشرطة في موضع قيمة. يُرفض قبل أن يصل إلى الأداة فيُقرأ رايةً.
+    #[error("an argument would be read as a flag")]
+    ArgumentLooksLikeFlag,
 
     // ── الأدوات ────────────────────────────────────────────────────────
     #[error("required tool `{id}` not found at its expected absolute path")]
@@ -145,6 +184,8 @@ impl CoreError {
             WrongInputType { .. } => "err.input.type",
             UnexpectedInput(_) => "err.input.unexpected",
             InvalidName { .. } => "err.name.invalid",
+            NumberOutOfRange { .. } => "err.input.range",
+            InvalidUrl { .. } => "err.input.url",
             PathNotAbsolute => "err.path.relative",
             PathTraversal => "err.path.traversal",
             PathOutsideAllowedRoots => "err.path.outside",
@@ -154,7 +195,14 @@ impl CoreError {
             DestinationExists => "err.dest.exists",
             DestinationNotWritable => "err.dest.readonly",
             DestinationInsideSource => "err.dest.inside_source",
+            SourceInsideDestination => "err.source.inside_dest",
+            SamePath => "err.path.same",
+            ArchiveEscapes => "err.archive.escapes",
+            ArchiveUnreadable => "err.archive.unreadable",
             NothingToReveal => "err.reveal.nothing",
+            JournalEntryNotFound => "err.journal.not_found",
+            RedirectOutsidePlan => "err.redirect",
+            ArgumentLooksLikeFlag => "err.arg.flag",
             ToolMissing { .. } => "err.tool.missing",
             ToolNotExecutable { .. } => "err.tool.not_exec",
             PlanNotFound => "err.plan.not_found",
@@ -181,6 +229,8 @@ impl CoreError {
             CoreError::OnInput { id, .. } => Some(id),
             CoreError::MissingInput(id) => Some(id),
             CoreError::WrongInputType { id } => Some(id),
+            CoreError::NumberOutOfRange { id, .. } => Some(id),
+            CoreError::InvalidUrl { id } => Some(id),
             _ => None,
         }
     }
@@ -197,6 +247,10 @@ impl CoreError {
             CoreError::PlanStale { detail } => serde_json::to_value(detail).ok(),
             CoreError::ToolMissing { id } | CoreError::ToolNotExecutable { id } => {
                 Some(serde_json::json!({ "tool": id }))
+            }
+            // المدى يُعرض في الرسالة: «بين ‎1‎ و‎4000‎» تُصلح، و«خارج المدى» لا.
+            CoreError::NumberOutOfRange { min, max, .. } => {
+                Some(serde_json::json!({ "min": min, "max": max }))
             }
             _ => None,
         };

@@ -1,0 +1,278 @@
+/* عناصر الإدخال المشتركة — مربّع البحث والقائمة المنسدلة.
+
+   ── لماذا ملفٌّ مشترك لا سطورٌ في كل شاشة
+
+   كان `class="input"` مكتوبًا على مربّع بحث المكتبة وعلى مرشّحات السجلّ،
+   و**لا قاعدة بهذا الاسم في أي ملفٍّ يحمّله المنتج**: `base.css` يعرّف `.field`
+   و`.btn` ولا يعرّف `.input`، و`mockups-v3.css` ليست من ملفّات التطبيق. فكان
+   الاثنان يُرسمان بأثاث الوكيل الخام — ارتفاعٌ لا يطابق شيئًا في الشاشة، وحدٌّ
+   من النظام تحته حدُّنا، وحلقةُ تركيزٍ ثانية فوق حلقة الوكيل: الإطار المزدوج
+   الذي كان يُرى ولا يُفسَّر.
+
+   وعلاجُه هنا لا في `library-screen.css` ولا في `shell-screens.css`: العطل نفسه
+   ظهر في شاشتين لأن المكوّن لم يكن موجودًا أصلًا. فيُكتب مرّةً حيث تقرؤه كل
+   شاشة — `main.tsx` يحمّله مع `app.css` — وتُستهلك القاعدة ولا تُنسخ.
+
+   ── والحدّ واحد، والحلقة واحدة
+
+   لكل ضابطٍ هنا حدٌّ واحد (`--border-default`) على سطحٍ درجةً فوق أرضية الصفحة
+   (`--bg-surface` فوق `--bg-canvas`)، وعند التركيز **يتلوّن الحدُّ نفسه** وتُضاف
+   حوله حلقةٌ ملاصقة بلا إزاحة — فتُقرآن حلقةً واحدة سميكة لا إطارين. وهذه هي
+   معالجة `.field:focus-within` في نظام التصميم نفسها، مطبَّقةً على القائمة
+   المنسدلة كي لا يكون في الشاشة نبرتا تركيزٍ مختلفتان.
+
+   لا لون ولا مقاس مكتوب هنا: كل قيمة رمزٌ من نظام التصميم أو حسابٌ من رموز،
+   والاتجاه منطقي فلا سطر يفترض العربية ولا يفترض غيرها. */
+
+/* ══ مربّع البحث ═════════════════════════════════════════════════════════ */
+/* مبنيٌّ على `.field` من نظام التصميم لا على قاعدةٍ خاصّة: بذلك يأخذ ارتفاع
+   عناصر الإدخال (`--control-h-md`) وحشوتها وحدَّها وحلقةَ تركيزها من المصدر
+   الذي تأخذ منه حقول شاشة العملية — فيتطابق الاثنان بالبناء لا بالمصادفة.
+   و`.field input { outline: none }` في الأساس هو ما يمنع حلقةَ `:focus-visible`
+   العامّة من أن تُرسم فوق حلقة الحقل: إطارٌ واحد لا اثنان. */
+.field--search {
+  /* مربّعُ بحثٍ بعرض النافذة كلّها يقول «اكتب فقرة»، وما يُكتب فيه كلمة.
+     والحدّ منطقيّ (`max-inline-size`) لا مطلق، وقيمتُه رمزُ العرض الضيّق من
+     سلّم الهوية — لا رقمٌ مُقدَّر بالعين. */
+  max-inline-size: var(--width-narrow);
+  inline-size: 100%;
+}
+/* أيقونةٌ واحدة داخل الحقل في مبدئه، لا اثنتان ولا واحدةٌ خارجه.
+   كانت في المكتبة مثبَّتةً `absolute` فوق الحقل بحشوةٍ محسوبةٍ لها في مبدئه؛
+   وداخل `.field` تكفي أنها ابنٌ أوّل في صفٍّ مرن، فتنعكس مع الاتجاه بلا قاعدة.
+   والقاعدة هنا لا في `app.css`: هي جزءٌ من الحقل يستعمله أكثر من شاشة. */
+.field__icon {
+  inline-size: var(--icon-sm);
+  block-size: var(--icon-sm);
+  flex: none;
+  color: var(--text-muted);
+}
+
+/* زرّ المسح الأصليّ في WebKit يرث لون النصّ فيختفي في الوضع الليلي. */
+.field--search input[type='search']::-webkit-search-cancel-button {
+  appearance: none;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  cursor: pointer;
+  background: currentColor;
+  opacity: var(--opacity-muted);
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M6 6l12 12M18 6L6 18' stroke='black' stroke-width='2' fill='none' stroke-linecap='round'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+.field--search input[type='search']::-webkit-search-cancel-button:hover { opacity: 1; }
+
+/* ══ القائمة المنسدلة ════════════════════════════════════════════════════
+   زرٌّ وقائمةٌ من مادّةٍ واحدة: نفس السطح، ونفس الحدّ، ونفس نصف القطر، ونفس
+   ارتفاع الصفّ. الفرق بينهما أن القائمة ترتفع بظلٍّ فوق ما تحتها — وهو ما يقول
+   إنها طبقةٌ مؤقّتة لا قسمٌ من الصفحة.
+
+   ── ولماذا لم تبقَ `select` أصلية
+
+   كانت المرشّحات `select` أصلية بحجّةٍ صحيحة: لوحة المفاتيح وقارئ الشاشة
+   والبحثُ بالحرف الأوّل تأتي مجّانًا. لكن القائمة المفتوحة في WKWebView قائمةُ
+   النظام، ولا يبلغها سطرُ CSS واحد: لا سطحُها ولا حدُّها ولا اتجاهُها ولا
+   ارتفاع صفّها. فكان في الشاشة نظامان بصريّان — واحدٌ نملكه مغلقًا، وآخر لا
+   نملكه مفتوحًا.
+   والبديل يدفع ثمنه صراحةً: ما كان يأتي مجّانًا صار مكتوبًا في `select.tsx`
+   — الأسهم وHome/End وEnter وEscape والبحث بالحرف الأوّل و`aria-activedescendant`
+   — ويُختبر في `select.test.tsx`. لا نُقصان في ما يستطيعه المستخدم. */
+
+/* أدنى عرضٍ على المكوّن نفسه لا على الصفّ الذي يحمله: كان على
+   `.control-row > .select`، فأي قائمةٍ تُستعمل خارج ذلك الصفّ تنكمش إلى عرض
+   قرصها ويُقصّ نصّها — وهو بالضبط ما يجعل القصّ في `.select__value` سلوكًا
+   يوميًّا بدل أن يكون احتياطًا. القيمة ثلاثة أرباع الشريط الجانبي (‏174px):
+   تتّسع لأطول خيارٍ في الشاشة وحشوته وقرصه. */
+.select {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-inline-size: calc(var(--sidebar-w) * 0.75);
+}
+
+/* الوسم فوق الضابط لا بجانبه: بجانبه يتبع عرضُ الضابط طولَ وسمه، فتتعرّج
+   المرشّحات الثلاثة في صفٍّ واحد ولا يتحاذى منها اثنان. */
+.select__label { color: var(--text-muted); }
+
+/* الزرّ: صفٌّ فيه القيمة ثم القرص في الطرف المقابل.
+   ‏`appearance: none` وخطٌّ وحدٌّ ولونٌ مكتوبة صراحةً: الوكيل يمنح كل `button`
+   أرضيةً رماديةً وحدًّا محزَّزًا وخطَّ النظام ونصًّا موسَّطًا، فبلا نزعها يظهر
+   الضابط بمادّتين — مادّتنا فوق مادّته. */
+.select__button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  inline-size: 100%;
+  min-inline-size: 0;
+  block-size: var(--control-h-md);
+  padding-inline: var(--space-12) var(--space-8);
+  background: var(--bg-surface);
+  border: var(--border-hairline) solid var(--border-default);
+  border-radius: var(--radius-control);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: var(--fs-body-secondary);
+  text-align: start;
+  cursor: pointer;
+  appearance: none;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+.select__button:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+/* التركيز: الحدُّ نفسه يتلوّن وتلتصق به حلقةٌ بلا إزاحة، فيُقرآن حلقةً واحدة.
+   ونزعُ `outline` هنا لازم لا تجميل: حلقةُ `:focus-visible` العامّة تُرسم
+   بإزاحة ‎2px‎ خارج الحدّ، فتظهر مع حدّ الضابط إطارين متراكزين — وهو بالضبط
+   «الإطار البرتقالي المزدوج». */
+.select__button:focus-visible {
+  outline: none;
+  border-color: var(--focus-ring-color);
+  box-shadow: 0 0 0 var(--focus-ring-width)
+    color-mix(in srgb, var(--focus-ring-color) 30%, transparent);
+}
+/* والمفتوحة تُعلن نفسها بالحدّ الملوّن وحده — بلا حلقة: الحلقة تقول «هنا
+   البؤرة»، والبؤرة حينئذٍ داخل القائمة لا على الزرّ. */
+.select__button[aria-expanded='true'] {
+  border-color: var(--focus-ring-color);
+  background: var(--bg-surface);
+}
+
+/* القيمة تأخذ ما تبقّى، ولا تلتفّ داخل زرٍّ بارتفاع صفٍّ واحد.
+
+   والقصُّ بالنقاط الثلاث ليس خرقًا لـ«لا يُخفى محتوًى»: القيمة كاملةً في الاسم
+   المقروء وفي القائمة على بُعد ضغطةٍ واحدة، فلا شيء يصير غير قابلٍ للوصول —
+   وهو الضرر الذي جاء القانون يمنعه. و`clip` لا `hidden` عمدًا: الثانية تُنشئ
+   سياق تمريرٍ يقصّ حلقةَ التركيز كذلك.
+   وأدنى عرضٍ للمرشّح (أسفل الملفّ) محسوبٌ ليتّسع لأطول خيارٍ في الشاشة، فالقصّ
+   احتياطٌ لا سلوكٌ يومي. */
+.select__value {
+  flex: 1;
+  min-inline-size: 0;
+  overflow: clip;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* القرص في الطرف المقابل للنصّ في الاتجاهين: `flex: none` في صفٍّ منطقي يكفي،
+   ولا يحتاج قاعدةً ثانية لـ RTL. ودورانُه هو ما يفرّق المفتوحة من المغلقة بلا
+   رمزٍ ثانٍ. */
+.select__caret {
+  flex: none;
+  inline-size: var(--icon-sm);
+  block-size: var(--icon-sm);
+  color: var(--text-muted);
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+.select__button[aria-expanded='true'] .select__caret { transform: rotate(180deg); }
+
+/* القائمة: بعرض الزرّ تمامًا (`inset-inline: 0`) فتُقرأ امتدادًا له لا صندوقًا
+   طافيًا بجانبه. وارتفاعُها مسقوف بمنطقةٍ تُمرَّر — لا إخفاء، كما يوجب قانون
+   التخطيط. */
+.select__menu {
+  position: absolute;
+  inset-block-start: calc(100% + var(--space-4));
+  inset-inline: 0;
+  z-index: var(--z-dropdown);
+  list-style: none;
+  margin: 0;
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-block-size: calc(var(--sidebar-w) + var(--space-32));
+  overflow-y: auto;
+  /* ‏`--bg-surface` لا `--bg-elevated`، وهو فرقٌ قِيس لا ذوق.
+     الارتفاع هنا يقوله الظلّ والحدّ، لا درجةُ السطح. و`--bg-hover` — لونُ الصفّ
+     تحت المؤشّر — محلولٌ في النظام فوق `--bg-surface`؛ فوق `--bg-elevated`
+     يعطي في الوضع الليلي ‎#222234‎ على ‎#212133‎ = **1.01:1**، أي لا شيء: يمرّ
+     المؤشّر على القائمة فلا يتبدّل صفّ. فوق `--bg-surface` (‏#1A1A2B) يعود
+     الزوجُ إلى ما عُوير له. وفي الوضع النهاري الرمزان بيضاوان معًا، فلا يتغيّر
+     شيء. */
+  background: var(--bg-surface);
+  border: var(--border-hairline) solid var(--border-default);
+  border-radius: var(--radius-control);
+  box-shadow: var(--shadow-lg);
+  animation: select-open var(--duration-fast) var(--ease-out) both;
+}
+/* الظهور بالشفافية وحدها، بلا `transform`.
+   كانت الحركة انزلاقًا صغيرًا من أعلى، وثمنُها طبقةُ تركيبٍ (compositing layer)
+   تبقى على العنصر بعد انتهائها — فرُصدت القائمة في القياس تُرسم شفّافةً فوق
+   السجلّ لحظةَ فتحها وإن كانت أرضيتها معتمة بالحساب (`#212133` وopacity ‎1).
+   والشفافية وحدها تكفي المعنى: القائمة تظهر ثم تستقرّ. وهي المعالجة نفسها
+   التي تتبعها لوحة «سَطْر» عند التوسّع (`.satr--live > *` في `app.css`). */
+@keyframes select-open {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* الخيار صفٌّ لا زرّ: القائمة `listbox` وأبناؤها `option`، والتفعيل يمرّ
+   بالقائمة نفسها (`aria-activedescendant`) فلا يقفز التركيز من صفٍّ إلى صفّ.
+   وعلامةُ المختار محرفٌ ظاهر لا لونٌ وحده — اللون لا يحمل حالةً في هذا المنتج. */
+.select__option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-block-size: var(--control-h-sm);
+  padding-inline: var(--space-8);
+  /* حدٌّ شفّاف في المبدأ محجوزٌ للصفّ النشِط: بلا حجزه ينزاح نصُّ الصفوف كلّها
+     ‎3px‎ كلّما تحرّك النشِط، فتهتزّ القائمة مع كل ضغطة سهم. */
+  border-inline-start: var(--border-accent) solid transparent;
+  border-radius: var(--radius-xs);
+  color: var(--text-secondary);
+  font-family: var(--font-body);
+  font-size: var(--fs-body-secondary);
+  cursor: pointer;
+}
+/* التحويم والصفّ النشِط بلوحة المفاتيح يقولان الشيء نفسه بالشكل نفسه: «هذا ما
+   سيقع لو فعّلتَ الآن». تمييزُهما بشكلين يجعل من يستعمل الاثنين يرى حالتين.
+
+   ── ولماذا خطٌّ في المبدأ لا أرضيةٌ وحدها
+
+   ‏`--bg-hover` محلولٌ في النظام ليكون حجابًا خفيفًا (‏`--opacity-hover-veil`
+   ‏6٪) فوق `--bg-surface`: يعطي في الوضع الليلي ‎#222234‎ على ‎#1A1A2B‎ = 1.10:1.
+   ذلك يكفي صفًّا في شريطٍ جانبي تعرف موضعك فيه، ولا يكفي صفًّا في قائمةٍ
+   منسدلة هو **ما سيقع عند Enter**. والحلّ من مفردات النظام لا من خارجها:
+   «الاختيار يُعلَّم بخطٍّ في المبدأ ووزنٍ وسطح، لا باللون وحده» — نصُّ
+   `base.css` في بابه `NAVIGATION ITEM`، وهو ما يفعله `.nav-item[aria-current]`
+   حرفًا بحرف. فيبقى الحجاب على خفوته المقصود، ويحمل الخطُّ الدلالة. */
+.select__option:hover,
+.select__option--active {
+  background: var(--bg-hover);
+  border-inline-start-color: var(--action-primary);
+  color: var(--text-primary);
+}
+.select__option--on {
+  color: var(--text-primary);
+  font-weight: var(--fw-bold);
+}
+.select__check {
+  flex: none;
+  inline-size: var(--icon-xs);
+  block-size: var(--icon-xs);
+  color: var(--text-accent);
+}
+/* خانةُ العلامة محجوزة في كل صفّ وإن خلا منها: بلا ذلك يزحف نصُّ الصفوف غير
+   المختارة نحو الحافّة، فتتعرّج القائمة عند كل تبديل. */
+.select__option:not(.select__option--on) .select__check { visibility: hidden; }
+
+/* ══ صفٌّ من ضوابط ═══════════════════════════════════════════════════════ */
+/* مرشّحاتٌ متجاورة في صفٍّ يلتفّ، تتقاسم عرضه بالتساوي: `flex: 1 1 auto` لا
+   `none`، فلا يتبع عرضُ المرشّح طولَ أطول خيارٍ فيه فتتعرّج الثلاثة.
+
+   وأدنى عرضٍ لا صفر: بلا حدٍّ أدنى ينكمش المرشّح إلى عرض قرصه فيُقصّ نصُّه في
+   كل نافذة. القيمة ثلاثة أرباع الشريط الجانبي (‏174px) — تتّسع لأطول خيارٍ في
+   الشاشة (اسم قسمٍ من كلمتين) وحشوته وقرصه. وسقفُه عرض الشريط نفسه: مرشّحٌ
+   أعرض من ذلك يبدو حقلَ إدخالٍ لا خيارًا من قائمة.
+   وتحت هذا العرض يلتفّ الصفّ ويأخذ كلٌّ سطره كاملًا — ترتيبٌ لا مقاس. */
+.control-row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-12);
+  flex-wrap: wrap;
+}
+.control-row > .select {
+  flex: 1 1 auto;
+  max-inline-size: var(--sidebar-w);
+}
+.control-row > .btn { flex: none; }

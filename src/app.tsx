@@ -19,7 +19,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import Naffith, { OperationBar } from './naffith';
 import Satr from './satr';
 import Onboarding from './onboarding';
-import OperationsList, { type OperationsState } from './operations-list';
+import LibraryScreen, { type LibraryState } from './library-screen';
+import CategoryScreen from './category-screen';
 import SettingsScreen from './settings-screen';
 import RunLog from './run-log';
 import { t } from './i18n';
@@ -28,6 +29,7 @@ import {
   confirmNavigation,
   initialScreen,
   navigate,
+  screenKey,
   type ExitCost,
   type NavEvent,
   type Screen,
@@ -37,6 +39,8 @@ import {
   loadSettings,
   saveSettings,
   shouldShowOnboarding,
+  withFavouriteToggled,
+  withLastCategory,
   withOnboardingCompleted,
   withOnboardingReset,
   type Settings,
@@ -44,23 +48,36 @@ import {
 import {
   emptyValues,
   isComplete,
-  toCards,
   toRawValues,
   type FormValues,
 } from './operations';
 import {
+  favouriteOperations,
+  findCategory,
+  operationsIn,
+  recentOperations,
+  toCategoryCard,
+  toOperationCard,
+} from './library';
+import {
   asCoreError,
   cancel as cancelRun,
   execute,
+  listCategories,
   listOperations,
   onRunFinished,
+  onRunOutput,
   plan as planOperation,
+  recentRuns,
   reveal as revealRun,
+  type CategorySummary,
   type CoreErrorShape,
+  type JournalEntry,
   type OperationSummary,
   type PlanResponse,
   type RunFinishedEvent,
 } from './ipc';
+import { appendLine, type StreamLine } from './run-stream';
 
 /**
  * مهلة قبل إعادة التخطيط.
@@ -101,25 +118,56 @@ export default function App() {
   /** انتقالٌ ينتظر قرار المستخدم. انظر `nav.ts`. */
   const [pending, setPending] = useState<{ screen: Screen; reason: 'dirty' | 'busy' } | null>(null);
 
-  // ── فهرس العمليات ────────────────────────────────────────────────────
+  // ── المكتبة: الأقسام والعمليات ───────────────────────────────────────
+  //
+  // نداءان لا واحد، ويُنتظران معًا: الأقسام تكفي لرسم الشاشة الأولى، لكن
+  // البحث والمفضّلة والمستخدَمة حديثًا كلها تحتاج العمليات — فعرضُ الشبكة قبل
+  // وصولها كان يعني شاشةً تكتمل على مرحلتين أمام العين.
   const [operations, setOperations] = useState<OperationSummary[] | null>(null);
+  const [categories, setCategories] = useState<CategorySummary[] | null>(null);
   const [opsError, setOpsError] = useState<CoreErrorShape | null>(null);
 
-  const loadOperations = useCallback(() => {
+  const loadLibrary = useCallback(() => {
     setOperations(null);
+    setCategories(null);
     setOpsError(null);
-    listOperations()
-      .then((ops) => setOperations(ops))
+    Promise.all([listOperations(), listCategories()])
+      .then(([ops, cats]) => {
+        setOperations(ops);
+        setCategories(cats);
+      })
       .catch((e) => setOpsError(asCoreError(e)));
   }, []);
 
-  useEffect(loadOperations, [loadOperations]);
+  useEffect(loadLibrary, [loadLibrary]);
 
-  const opsState: OperationsState = opsError
+  /**
+   * السجلّ، مقروءًا لأجل «المستخدَمة حديثًا».
+   *
+   * يُعاد قراءته بعد كل تشغيلٍ ينتهي لا مرّةً عند الإقلاع: صفٌّ اسمه «آخر ما
+   * استخدمت» لا يحمل ما استُخدم قبل دقيقة هو صفٌّ يكذب.
+   */
+  const [journal, setJournal] = useState<JournalEntry[]>([]);
+  const loadJournal = useCallback(() => {
+    recentRuns()
+      .then(setJournal)
+      // تعذّرُ قراءة السجل لا يُسقط الشاشة: أسوأ ما يقع أن يفرغ صفٌّ يختفي
+      // حين يفرغ أصلًا.
+      .catch(() => setJournal([]));
+  }, []);
+  useEffect(loadJournal, [loadJournal]);
+
+  const categoryCards = useMemo(() => (categories ?? []).map(toCategoryCard), [categories]);
+  const operationCards = useMemo(
+    () => (operations ?? []).map((op) => toOperationCard(op, categoryCards)),
+    [operations, categoryCards],
+  );
+
+  const libraryState: LibraryState = opsError
     ? { status: 'failed', error: opsError }
-    : operations === null
+    : operations === null || categories === null
       ? { status: 'loading' }
-      : { status: 'ready', cards: toCards(operations) };
+      : { status: 'ready', categories: categoryCards, operations: operationCards };
 
   // ── حالة النموذج، محفوظة لكل عملية ───────────────────────────────────
   //
@@ -144,6 +192,14 @@ export default function App() {
    */
   const [executed, setExecuted] = useState<PlanResponse | null>(null);
   const [outcome, setOutcome] = useState<RunFinishedEvent | null>(null);
+  /**
+   * ما بثّته النواة من خرج الأداة في التشغيل الحالي.
+   *
+   * تُفرَّغ عند بدء تشغيلٍ جديد لا عند انتهاء السابق: بعد النهاية يُقرأ المجرى —
+   * وهو لحظة السؤال «ماذا قالت الأداة؟» — فمحوُه عند `run://finished` يمحوه في
+   * اللحظة التي يُحتاج فيها.
+   */
+  const [stream, setStream] = useState<StreamLine[]>([]);
 
   /** يبطل ناتج تخطيطٍ سبقه تخطيطٌ أحدث، فلا تظهر معاينة قديمة بعد الجديدة. */
   const planSeq = useRef(0);
@@ -154,13 +210,22 @@ export default function App() {
       setOutcome(event);
       setPhase('finished');
       setRunId(null);
+      // السجلّ صار فيه قيدٌ جديد، و«المستخدَمة حديثًا» تُقرأ منه.
+      loadJournal();
+    }).then((u) => unlisten.current.push(u));
+
+    // خرج الأداة. لا تصفية بمعرّف التشغيل: النواة تحجز خانةً واحدة فلا تشغيلان
+    // معًا، والأسطر الأولى قد تصل **قبل** أن يعود `execute` بمعرّفه — فتصفيةٌ
+    // بالمعرّف كانت تُسقط أوّل ما تقوله الأداة، وهو غالبًا أهمّه.
+    onRunOutput((event) => {
+      setStream((kept) => appendLine(kept, event));
     }).then((u) => unlisten.current.push(u));
 
     return () => {
       unlisten.current.forEach((u) => u());
       unlisten.current = [];
     };
-  }, []);
+  }, [loadJournal]);
 
   const openOpId = screen.name === 'operation-view' ? screen.opId : null;
   const operation = useMemo(
@@ -228,6 +293,8 @@ export default function App() {
     if (!plan) return;
     setError(null);
     setOutcome(null);
+    // مجرى التشغيل السابق يُمحى هنا: من هذه اللحظة كل سطرٍ يصل يخصّ هذا التشغيل.
+    setStream([]);
     setPhase('running');
     try {
       setExecuted(plan);
@@ -264,6 +331,7 @@ export default function App() {
     setOutcome(null);
     setPlan(null);
     setExecuted(null);
+    setStream([]);
     setError(null);
     setPhase('idle');
   }, []);
@@ -294,10 +362,25 @@ export default function App() {
    */
   const exitCost: ExitCost = phase === 'running' || phase === 'cancelling' ? 'busy' : 'free';
 
+  /**
+   * الشاشة التي فُتحت منها العمليةُ الحالية.
+   *
+   * العملية تُفتح من ثلاثة مواضع — قسمٌ، ونتائجُ بحث، وصفُّ مستخدَمة حديثًا —
+   * والرجوع يجب أن يعيد إلى ما جاء منه. بدونه كان من يفتح عمليةً من البحث
+   * يجد نفسه في قسمٍ لم يزره.
+   *
+   * يُلتقط عند الانتقال لا يُشتقّ من العملية: القسمُ الذي تنتمي إليه العملية
+   * ليس بالضرورة الشاشة التي جاء منها المستخدم.
+   */
+  const [origin, setOrigin] = useState<Screen | null>(null);
+
   const go = useCallback(
     (event: NavEvent) => {
-      const result = navigate(screen, event, exitCost);
+      const result = navigate(screen, event, exitCost, origin);
       if (result.kind === 'navigate') {
+        if (result.screen.name === 'operation-view' && screen.name !== 'operation-view') {
+          setOrigin(screen);
+        }
         setScreen(result.screen);
         // تشغيلٌ انتهى وغادر المستخدم شاشته: لا يبقى ناتجه معلّقًا على شاشة
         // عمليةٍ أخرى يفتحها بعد قليل.
@@ -306,7 +389,7 @@ export default function App() {
         setPending({ screen: result.pending, reason: result.reason });
       }
     },
-    [screen, exitCost, phase, clearRun],
+    [screen, exitCost, phase, clearRun, origin],
   );
 
   const confirmLeave = useCallback(() => {
@@ -336,6 +419,59 @@ export default function App() {
     go({ type: 'onboarding.replay' });
   }, [persist, settings, go]);
 
+  // ── المفضّلة والمستخدَمة حديثًا ──────────────────────────────────────
+
+  const onToggleFavourite = useCallback(
+    (opId: string) => persist(withFavouriteToggled(settings, opId)),
+    [persist, settings],
+  );
+
+  const favourites = useMemo(
+    () => favouriteOperations(settings.favourites, operationCards),
+    [settings.favourites, operationCards],
+  );
+  const recents = useMemo(
+    () => recentOperations(journal, operationCards),
+    [journal, operationCards],
+  );
+
+  const openCategory = useCallback(
+    (categoryId: string) => {
+      persist(withLastCategory(settings, categoryId));
+      go({ type: 'category.selected', categoryId });
+    },
+    [persist, settings, go],
+  );
+
+  /**
+   * «أعد هذه العملية بالقيم السابقة».
+   *
+   * يملأ النموذج وينتقل إليه، **ولا ينفّذ**. الفرق كل الفرق: إعادةُ تشغيلٍ
+   * بضغطةٍ واحدة من شاشة السجل كانت ستُطلق أمرًا على ملفات المستخدم بلا أن
+   * يرى معاينته — وهو بالضبط ما يوجد «نَفِّذ/سَطْر» لمنعه. ما يفعله الزرّ أنه
+   * يوفّر إعادة الملء، ثم يقف حيث يقف كل مسارٍ آخر: أمام زرّ «نفِّذ».
+   *
+   * والقيمة المنقَّحة (`value === null`) تُترك فارغة: الحقل يبقى للمستخدم بدل
+   * أن يُملأ بفراغٍ فيبدو كأن كل شيء استُعيد.
+   */
+  const rerun = useCallback(
+    (entry: JournalEntry) => {
+      const op = operations?.find((o) => o.id === entry.op_id);
+      if (!op) return;
+      const restored: FormValues = emptyValues(op);
+      for (const input of entry.inputs ?? []) {
+        if (input.value === null || input.value === undefined) continue;
+        // مدخلٌ لم تعد العملية تعلنه — نواةٌ تغيّرت بين التشغيلين — يُهمَل بدل
+        // أن يُحقن في نموذجٍ سيرفضه التحقّق بعد قليل بخطأٍ لا يفهمه المستخدم.
+        if (!(input.id in restored)) continue;
+        restored[input.id] = input.value;
+      }
+      setFormsByOp((all) => ({ ...all, [op.id]: restored }));
+      go({ type: 'operation.selected', opId: op.id });
+    },
+    [operations, go],
+  );
+
   // «قيد التخطيط» حالةُ عرضٍ مشتقّة لا حالةُ تشغيل. انظر تعليق `RunPhase`.
   const uiPhase: Phase = phase === 'idle' && planning ? 'planning' : phase;
 
@@ -344,14 +480,17 @@ export default function App() {
   const shownPlan = phase === 'idle' ? plan : (plan ?? executed);
 
   /**
-   * هويّة الشاشة المعروضة، نصًّا.
+   * أيقونة قسم العملية المفتوحة.
    *
-   * الشاشة كائن يُبنى من جديد في كل انتقال، فمقارنتُه بمرجعه تعلن تبدّلًا حيث
-   * لا تبدّل. والمعرّف داخلٌ فيه لأن الانتقال من عمليةٍ إلى أخرى انتقالُ شاشةٍ
-   * كامل وإن بقي الاسم واحدًا.
+   * تُحسب هنا وتُمرَّر إلى شاشة العملية: القسم يعلن أيقونته في النواة، وخريطةٌ
+   * ثانية داخل `naffith.tsx` كانت ستتقادم يوم يُضاف قسم.
    */
-  const screenKey =
-    screen.name === 'operation-view' ? `${screen.name}:${screen.opId}` : screen.name;
+  const categoryIcon = operation
+    ? (findCategory(categoryCards, operation.category)?.icon ?? '#i-file')
+    : '#i-file';
+
+  /** هويّة الشاشة المعروضة نصًّا. تُحسب في `nav.ts` كي لا تُحسب في موضعين. */
+  const currentKey = screenKey(screen);
 
   // ── الرسم ────────────────────────────────────────────────────────────
 
@@ -369,11 +508,16 @@ export default function App() {
 
   if (screen.name === 'operations-list') {
     return (
-      <Page focusKey={screenKey}>
-        <OperationsList
-          state={opsState}
-          onSelect={(opId) => go({ type: 'operation.selected', opId })}
-          onRetry={loadOperations}
+      <Page focusKey={currentKey}>
+        <LibraryScreen
+          state={libraryState}
+          favourites={favourites}
+          recents={recents}
+          favouriteIds={settings.favourites}
+          onOpenCategory={openCategory}
+          onOpenOperation={(opId) => go({ type: 'operation.selected', opId })}
+          onToggleFavourite={onToggleFavourite}
+          onRetry={loadLibrary}
           onOpenLog={() => go({ type: 'log.opened' })}
           onOpenSettings={() => go({ type: 'settings.opened' })}
         />
@@ -382,9 +526,38 @@ export default function App() {
     );
   }
 
+  if (screen.name === 'category-view') {
+    const category = findCategory(categoryCards, screen.categoryId);
+    // القسم قد يختفي بين اختياره وفتحه — نواةٌ أُعيد تحميل فهرسها، أو معرّفٌ
+    // محفوظٌ من إصدارٍ أقدم. الحالتان تُعرضان نصًّا واحدًا ومخرجًا واضحًا.
+    if (!category) {
+      return (
+        <Page variant="message" focusKey={currentKey}>
+          <p className="t-body">{categories === null ? t('lib.loading') : t('lib.category.gone')}</p>
+          <button type="button" className="btn btn--quiet" onClick={() => go({ type: 'back' })}>
+            {t('nav.back.library')}
+          </button>
+        </Page>
+      );
+    }
+    return (
+      <Page focusKey={currentKey}>
+        <CategoryScreen
+          category={category}
+          operations={operationsIn(operationCards, category.id)}
+          favouriteIds={settings.favourites}
+          onOpenOperation={(opId) => go({ type: 'operation.selected', opId })}
+          onToggleFavourite={onToggleFavourite}
+          onBack={() => go({ type: 'back' })}
+        />
+        {leaveDialog}
+      </Page>
+    );
+  }
+
   if (screen.name === 'settings') {
     return (
-      <Page focusKey={screenKey}>
+      <Page focusKey={currentKey}>
         <SettingsScreen
           onBack={() => go({ type: 'back' })}
           onReplayOnboarding={replayOnboarding}
@@ -397,8 +570,12 @@ export default function App() {
 
   if (screen.name === 'run-log') {
     return (
-      <Page focusKey={screenKey}>
-        <RunLog onBack={() => go({ type: 'back' })} />
+      <Page focusKey={currentKey}>
+          <RunLog
+          onBack={() => go({ type: 'back' })}
+          onRerun={rerun}
+          onChanged={loadJournal}
+        />
         {leaveDialog}
       </Page>
     );
@@ -408,8 +585,8 @@ export default function App() {
   // بين اختيارها وفتحها — والحالتان مختلفتان ولا يجوز أن تُعرضا نصًّا واحدًا.
   if (!operation) {
     return (
-      <Page variant="message" focusKey={screenKey}>
-        <p className="t-body">{operations === null ? t('ops.loading') : t('ops.gone')}</p>
+      <Page variant="message" focusKey={currentKey}>
+        <p className="t-body">{operations === null ? t('lib.loading') : t('ops.gone')}</p>
         <button type="button" className="btn btn--quiet" onClick={() => go({ type: 'back' })}>
           {t('nav.back')}
         </button>
@@ -418,15 +595,20 @@ export default function App() {
   }
 
   return (
-    <Page variant="bleed" focusKey={screenKey}>
+    <Page variant="bleed" focusKey={currentKey}>
       {/* شريطٌ يعلو السطحين بعرض النافذة، ثم سطحان متجاوران يملآن ما تحته.
           «نَفِّذ» و«سَطْر» ليسا وضعين يتبادلان: هما قراءتان لخطّةٍ واحدة تُعرضان
           معًا، ورؤيةُ الأمر وهو يتغيّر مع الحقل هي الفكرة كلّها. */}
       <div className="op">
-        <OperationBar operation={operation} onBack={() => go({ type: 'back' })} />
+        <OperationBar
+            operation={operation}
+            categoryIcon={categoryIcon}
+            onBack={() => go({ type: 'back' })}
+          />
         <main className="op__panes">
           <Naffith
             operation={operation}
+            categoryIcon={categoryIcon}
             values={values}
             onChange={setValues}
             plan={plan}
@@ -438,7 +620,12 @@ export default function App() {
             onReveal={onReveal}
             onReset={onReset}
           />
-          <Satr plan={shownPlan} />
+          <Satr
+            plan={shownPlan}
+            stream={stream}
+            phase={uiPhase}
+            status={outcome?.status}
+          />
         </main>
       </div>
       {leaveDialog}

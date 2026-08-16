@@ -104,7 +104,7 @@ describe('القراءة', () => {
     const result = loadSettings(fakeStorage(valid()));
     expect(result).toEqual({
       status: 'loaded',
-      settings: { schemaVersion: SETTINGS_SCHEMA_VERSION, onboardingCompletedAt: COMPLETED_AT },
+      settings: { ...defaultSettings(), onboardingCompletedAt: COMPLETED_AT },
       // لا ترقية وقعت: الإصدار هو إصدار هذا البناء.
       migratedFrom: null,
     });
@@ -169,7 +169,7 @@ describe('القيمة التالفة', () => {
     // فالقيمة مقروءة، والحقل وحده يُطبَّع.
     expect(loadSettings(fakeStorage(valid({ onboardingCompletedAt: '' })))).toEqual({
       status: 'loaded',
-      settings: { schemaVersion: SETTINGS_SCHEMA_VERSION, onboardingCompletedAt: null },
+      settings: { ...defaultSettings(), onboardingCompletedAt: null },
       migratedFrom: null,
     });
   });
@@ -195,7 +195,7 @@ describe('القيمة التالفة', () => {
     const result = loadSettings(fakeStorage(valid({ theme: 'dark' })));
     expect(result.status).toBe('loaded');
     expect(result.settings).toEqual({
-      schemaVersion: SETTINGS_SCHEMA_VERSION,
+      ...defaultSettings(),
       onboardingCompletedAt: COMPLETED_AT,
     });
   });
@@ -296,7 +296,7 @@ describe('الكتابة', () => {
    */
   it('تبصم الإصدار الحالي مهما كان الإصدار الممرَّر', () => {
     const store = fakeStorage();
-    const stale: Settings = { schemaVersion: 0, onboardingCompletedAt: COMPLETED_AT };
+    const stale: Settings = { ...defaultSettings(), schemaVersion: 0, onboardingCompletedAt: COMPLETED_AT };
     expect(saveSettings(store, stale)).toBe(true);
     expect(storedValue(store)['schemaVersion']).toBe(SETTINGS_SCHEMA_VERSION);
     expect(loadSettings(store).status).toBe('loaded');
@@ -350,7 +350,7 @@ describe('حالة الترحيب', () => {
 
   it('الإتمام يحفظ بقية الحقول', () => {
     const done = withOnboardingCompleted(
-      { schemaVersion: SETTINGS_SCHEMA_VERSION, onboardingCompletedAt: null },
+      { ...defaultSettings(), onboardingCompletedAt: null },
       new Date(COMPLETED_AT),
     );
     expect(done.schemaVersion).toBe(SETTINGS_SCHEMA_VERSION);

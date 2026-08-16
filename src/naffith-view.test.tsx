@@ -30,6 +30,11 @@ const COMPRESS: OperationSummary = {
   description_key: 'op.compress.folder.zip.description',
   category: 'compress',
   danger: 'creates',
+  conflict: 'refuse',
+  tool: 'ditto',
+  availability: { state: 'available' },
+  sort_order: 10,
+  search_terms: ['ditto', 'zip'],
   inputs: [
     { id: 'source', required: true, kind: 'existing_dir' },
     { id: 'destination', required: true, kind: 'target_dir' },
@@ -44,6 +49,11 @@ const SYNTHETIC: OperationSummary = {
   description_key: 'op.invented.description',
   category: 'files',
   danger: 'modifies',
+  conflict: 'no_artifact',
+  tool: 'invented',
+  availability: { state: 'available' },
+  sort_order: 10,
+  search_terms: ['invented'],
   inputs: [
     { id: 'document', required: true, kind: 'existing_file' },
     { id: 'overwrite', required: false, kind: 'flag' },
@@ -53,6 +63,7 @@ const SYNTHETIC: OperationSummary = {
 function view(op: OperationSummary, over: Partial<Parameters<typeof Naffith>[0]> = {}) {
   const props = {
     operation: op,
+    categoryIcon: '#i-compress',
     values: emptyValues(op) as FormValues,
     onChange: vi.fn(),
     plan: null,
@@ -102,12 +113,12 @@ describe('عملية الضغط بعد التعميم', () => {
 
   it('تشتقّ شارة الخطورة من العملية، وتصمت حين لا ترجمة', () => {
     // الشارة انتقلت إلى شريط الشاشة: هي وسمُ العملية لا وسمُ النموذج.
-    render(<OperationBar operation={COMPRESS} onBack={vi.fn()} />);
+    render(<OperationBar categoryIcon="#i-compress" operation={COMPRESS} onBack={vi.fn()} />);
     expect(screen.getByText(AR['summary.danger.creates'])).toBeTruthy();
 
     cleanup();
     // `modifies` بلا ترجمة اليوم: شارةٌ تعرض المفتاح خامًا أسوأ من غيابها.
-    render(<OperationBar operation={SYNTHETIC} onBack={vi.fn()} />);
+    render(<OperationBar categoryIcon="#i-compress" operation={SYNTHETIC} onBack={vi.fn()} />);
     expect(screen.queryByText('summary.danger.modifies')).toBeNull();
   });
 });
@@ -179,6 +190,7 @@ describe('ملخّص «ما الذي سيحدث»', () => {
     op_id: COMPRESS.id,
     title_key: COMPRESS.title_key,
     description_key: COMPRESS.description_key,
+  category: 'compress',
     danger: 'creates',
     argv_display: ['/usr/bin/ditto', '-c', '-k', '/Users/x/src', '/Users/x/dst/.n.part'],
     explain: [],
@@ -232,7 +244,7 @@ describe('شريط الشاشة', () => {
     // محشورين في أعلى عمود «نَفِّذ» يزاحمان النموذج بينما نصف الشاشة فارغ.
     const user = userEvent.setup();
     const onBack = vi.fn();
-    render(<OperationBar operation={COMPRESS} onBack={onBack} />);
+    render(<OperationBar categoryIcon="#i-compress" operation={COMPRESS} onBack={onBack} />);
     expect(screen.getByText(AR['op.compress.folder.zip.title'])).toBeTruthy();
     expect(screen.getByText(AR['op.compress.folder.zip.description'])).toBeTruthy();
     await user.click(screen.getByRole('button', { name: AR['nav.back'] }));

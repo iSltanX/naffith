@@ -5,6 +5,9 @@ import { createRoot } from 'react-dom/client';
 import '@ds/fonts.css';
 import '@ds/tokens.css';
 import '@ds/base.css';
+// عناصر الإدخال المشتركة قبل أنماط الشاشات: كل شاشة تستهلك المكوّن نفسه
+// (مربّع البحث والقائمة المنسدلة)، فمكانه الغلاف لا ملفّ شاشةٍ بعينها.
+import './controls.css';
 import './app.css';
 
 // الرموز تُحقن كتعريفات داخل المستند: الإشارة عبر ملف خارجي لا تعمل في

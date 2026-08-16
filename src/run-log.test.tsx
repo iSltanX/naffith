@@ -13,7 +13,7 @@
  *    مقاطعه، فيقرأ المستخدم أمرًا غير الذي شُغّل.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { JournalEntry } from './ipc';
 import { recentRuns } from './ipc';
@@ -64,10 +64,14 @@ beforeEach(() => {
 describe('سجلّ التشغيل', () => {
   it('يعرض كل حالة باسمها', async () => {
     vi.mocked(recentRuns).mockResolvedValue(ALL_STATES);
-    render(<RunLog onBack={vi.fn()} />);
+    render(<RunLog onBack={vi.fn()} onRerun={vi.fn()} onChanged={vi.fn()} />);
 
+    const list = await screen.findByRole('list');
     for (const state of ['planned', 'running', 'succeeded', 'failed', 'cancelled']) {
-      expect(await screen.findByText(t(`log.state.${state}`))).toBeDefined();
+      // داخل القائمة وحدها: مرشّح الحالة يعرض الأسماء نفسها حين يُفتح، وهي
+      // هناك أدوات تصفية لا قيودًا. (وهو اليوم مكوّنٌ لا `select` أصلية، فلا
+      // يرسم خياراته وهو مغلق — والحصرُ يبقى صحيحًا في الحالتين.)
+      expect(within(list).getByText(t(`log.state.${state}`))).toBeDefined();
     }
   });
 
@@ -75,38 +79,39 @@ describe('سجلّ التشغيل', () => {
     // تطبيقٌ قُتل في منتصف تشغيل يترك هذا القيد إلى الأبد. استنتاجُ نهايةٍ له
     // كذبٌ في الاتجاهين.
     vi.mocked(recentRuns).mockResolvedValue([entry({ state: 'running' })]);
-    render(<RunLog onBack={vi.fn()} />);
+    render(<RunLog onBack={vi.fn()} onRerun={vi.fn()} onChanged={vi.fn()} />);
 
-    expect(await screen.findByText(t('log.state.running'))).toBeDefined();
-    expect(screen.queryByText(t('log.state.succeeded'))).toBeNull();
-    expect(screen.queryByText(t('log.state.failed'))).toBeNull();
+    const list = await screen.findByRole('list');
+    expect(within(list).getByText(t('log.state.running'))).toBeDefined();
+    expect(within(list).queryByText(t('log.state.succeeded'))).toBeNull();
+    expect(within(list).queryByText(t('log.state.failed'))).toBeNull();
   });
 
   it('يعرض الفراغ حين لا تشغيلات', async () => {
     vi.mocked(recentRuns).mockResolvedValue([]);
-    render(<RunLog onBack={vi.fn()} />);
+    render(<RunLog onBack={vi.fn()} onRerun={vi.fn()} onChanged={vi.fn()} />);
 
     expect(await screen.findByText(t('log.empty'))).toBeDefined();
   });
 
   it('يعرض تعذّر القراءة حين ترفض النواة، ويُبقي إعادة المحاولة ممكنة', async () => {
     vi.mocked(recentRuns).mockRejectedValue({ key: 'err.io', input: null, detail: null });
-    render(<RunLog onBack={vi.fn()} />);
+    render(<RunLog onBack={vi.fn()} onRerun={vi.fn()} onChanged={vi.fn()} />);
 
     expect(await screen.findByText(t('log.failed'))).toBeDefined();
 
     vi.mocked(recentRuns).mockResolvedValue([entry({ state: 'succeeded' })]);
     await userEvent.click(screen.getByRole('button', { name: t('ops.retry') }));
 
-    expect(await screen.findByText(t('log.state.succeeded'))).toBeDefined();
+    expect(within(await screen.findByRole('list')).getByText(t('log.state.succeeded'))).toBeDefined();
     await waitFor(() => expect(screen.queryByText(t('log.failed'))).toBeNull());
   });
 
   it('يعزل المسارات فلا ينقلب ترتيبها داخل الصفّ العربي', async () => {
     vi.mocked(recentRuns).mockResolvedValue([entry({})]);
-    const { container } = render(<RunLog onBack={vi.fn()} />);
+    const { container } = render(<RunLog onBack={vi.fn()} onRerun={vi.fn()} onChanged={vi.fn()} />);
 
-    await screen.findByText(t('log.state.succeeded'));
+    within(await screen.findByRole('list')).getByText(t('log.state.succeeded'));
 
     const isolated = [...container.querySelectorAll('bdi[dir="ltr"]')].map((n) => n.textContent);
     expect(isolated).toContain(SOURCE);
@@ -118,9 +123,9 @@ describe('سجلّ التشغيل', () => {
     // ‏`at` بالثواني في `journal.rs`. لو مُرّر إلى `Date` كما هو لَظهر ١٩٧٠،
     // وهو تاريخ لا يبدو خطأً في الشاشة.
     vi.mocked(recentRuns).mockResolvedValue([entry({})]);
-    const { container } = render(<RunLog onBack={vi.fn()} />);
+    const { container } = render(<RunLog onBack={vi.fn()} onRerun={vi.fn()} onChanged={vi.fn()} />);
 
-    await screen.findByText(t('log.state.succeeded'));
+    within(await screen.findByRole('list')).getByText(t('log.state.succeeded'));
 
     const time = container.querySelector('time');
     expect(time?.getAttribute('datetime')?.startsWith('2026')).toBe(true);
@@ -132,9 +137,9 @@ describe('سجلّ التشغيل', () => {
       entry({ id: 'old', state: 'cancelled' }),
       entry({ id: 'new', state: 'succeeded' }),
     ]);
-    const { container } = render(<RunLog onBack={vi.fn()} />);
+    const { container } = render(<RunLog onBack={vi.fn()} onRerun={vi.fn()} onChanged={vi.fn()} />);
 
-    await screen.findByText(t('log.state.succeeded'));
+    within(await screen.findByRole('list')).getByText(t('log.state.succeeded'));
 
     const labels = [...container.querySelectorAll('.chip')].map((n) => n.textContent);
     expect(labels[0]).toBe(t('log.state.succeeded'));
@@ -143,7 +148,7 @@ describe('سجلّ التشغيل', () => {
 
   it('يستدعي الرجوع عند الضغط على «رجوع»', async () => {
     const onBack = vi.fn();
-    render(<RunLog onBack={onBack} />);
+    render(<RunLog onBack={onBack} onRerun={() => {}} onChanged={() => {}} />);
 
     await userEvent.click(screen.getByRole('button', { name: t('nav.back') }));
     expect(onBack).toHaveBeenCalledTimes(1);

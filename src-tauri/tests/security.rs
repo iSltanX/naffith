@@ -189,17 +189,38 @@ fn no_ipc_command_accepts_a_bare_path() {
     assert!(offenders.is_empty(), "an IPC command takes a raw path:\n{}", offenders.join("\n"));
 }
 
-/// القائمة المسجَّلة هي الحدّ، وهي ستة بالاسم.
+/// القائمة المسجَّلة هي الحدّ، وهي تسعة بالاسم.
 #[test]
-fn the_ipc_surface_is_exactly_the_six_registered_commands() {
+fn the_ipc_surface_is_exactly_the_nine_registered_commands() {
     assert_eq!(
         registered_commands(),
-        vec!["list_operations", "plan", "execute", "cancel", "recent_runs", "reveal"],
+        vec![
+            "list_operations",
+            "list_categories",
+            "plan",
+            "execute",
+            "cancel",
+            "recent_runs",
+            "journal_delete",
+            "journal_clear",
+            "reveal"
+        ],
         "the IPC surface changed. Every command is attack surface — \
          update this test deliberately, and say why in the commit.\n\
          M1 raised this from 5 to 6 by adding `reveal`, whose only parameter is a run id: \
          the core looks the produced path up in its own journal, so the frontend still \
-         cannot express a path. The alternative (an opener plugin) would have given it one."
+         cannot express a path. The alternative (an opener plugin) would have given it one.\n\
+         The library milestone raised it from 6 to 9, and each addition was weighed:\n\
+         · `list_categories` returns metadata and two counts computed from the registry. \
+           It takes no parameter and reads nothing outside the compiled catalogue. The \
+           alternative — counting in TypeScript — would have put a second, silently \
+           ageing index in the frontend.\n\
+         · `journal_delete` takes a run id, exactly like `reveal`. The core decides which \
+           lines that id owns; the frontend cannot name a file, a line, or an offset.\n\
+         · `journal_clear` takes nothing at all.\n\
+         Neither journal command touches anything outside the journal file: a run whose \
+         entry is deleted still has its output on disk. Erasing the trace is not erasing \
+         what it did."
     );
 }
 
@@ -586,6 +607,7 @@ fn a_symlink_swapped_between_plan_and_execute_cannot_redirect_the_run() {
         "compress.folder.zip",
         &compress_inputs(&link, &dst, "ناتج"),
     )
+    .map(|p| p.response)
     .expect("planning against the innocent target should succeed");
 
     // الأمر يحمل الهدف المحلول، لا اسم الرابط.
@@ -638,7 +660,8 @@ fn a_source_replaced_by_a_symlink_after_planning_invalidates_the_plan() {
         "compress.folder.zip",
         &compress_inputs(&src, &dst, "ناتج"),
     )
-    .unwrap();
+    .unwrap()
+    .response;
 
     std::fs::remove_dir_all(&src).unwrap();
     std::os::unix::fs::symlink(&elsewhere, &src).unwrap();
@@ -815,7 +838,8 @@ fn a_real_compress_token_cannot_be_replayed_either() {
         "compress.folder.zip",
         &compress_inputs(&src, &dst, "ناتج"),
     )
-    .unwrap();
+    .unwrap()
+    .response;
 
     let token = PlanToken::from(plan.token.as_str().to_owned());
     assert!(store.take(&token, &session).is_ok());
@@ -837,7 +861,8 @@ fn the_plan_id_in_the_response_is_not_the_token() {
         "compress.folder.zip",
         &compress_inputs(&src, &dst, "ناتج"),
     )
-    .unwrap();
+    .unwrap()
+    .response;
 
     assert_ne!(plan.plan_id, plan.token.as_str());
     // ولا يُقبل معرّف الخطة مكان الرمز.
@@ -882,5 +907,7 @@ fn dummy() -> naffith_core::spec::PlannedCommand {
         warnings: vec![],
         artifact: None,
         estimate: None,
+        stdout_to: None,
+        reveal_target: None,
     }
 }

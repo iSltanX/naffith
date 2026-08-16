@@ -26,10 +26,17 @@ pub enum RawValue {
 pub enum Value {
     Dir(PathBuf),
     File(PathBuf),
+    /// ملفٌ أو مجلد. العملية التي تعلن `ExistingPath` لا تفرّق بينهما.
+    AnyPath(PathBuf),
     TargetDir(PathBuf),
     /// اسم ملف مُنقّى، بلا فاصل مسار.
     Name(String),
     Text(String),
+    /// قيمةٌ من قائمةٍ مغلقة، مُتحقَّق أنها إحدى خياراتها المعلَنة.
+    Choice(&'static str),
+    Number(i64),
+    /// عنوان `http`/`https` مُتحقَّق من صيغته.
+    Url(String),
     Flag(bool),
 }
 
@@ -86,6 +93,51 @@ impl Inputs {
         }
     }
 
+    /// مسارٌ قائم أيًّا كان نوعه: مجلد، أو ملف، أو `ExistingPath`.
+    ///
+    /// يقبل الثلاثة عمدًا: عمليةٌ تعلن `ExistingFile` وأخرى تعلن `ExistingPath`
+    /// كلتاهما تريد «المسار الذي اختاره المستخدم»، وقصرُه على صيغةٍ واحدة كان
+    /// سيجبر كل عملية على معرفة أي دالّةٍ تناديها.
+    pub fn any_path(&self, id: &'static str) -> Result<&Path> {
+        match self.values.get(id) {
+            Some(Value::AnyPath(p) | Value::Dir(p) | Value::File(p) | Value::TargetDir(p)) => Ok(p),
+            Some(_) => Err(CoreError::WrongInputType { id }),
+            None => Err(CoreError::MissingInput(id)),
+        }
+    }
+
+    pub fn file(&self, id: &'static str) -> Result<&Path> {
+        match self.values.get(id) {
+            Some(Value::File(p)) => Ok(p),
+            Some(_) => Err(CoreError::WrongInputType { id }),
+            None => Err(CoreError::MissingInput(id)),
+        }
+    }
+
+    pub fn choice(&self, id: &'static str) -> Result<&'static str> {
+        match self.values.get(id) {
+            Some(Value::Choice(s)) => Ok(s),
+            Some(_) => Err(CoreError::WrongInputType { id }),
+            None => Err(CoreError::MissingInput(id)),
+        }
+    }
+
+    pub fn number(&self, id: &'static str) -> Result<i64> {
+        match self.values.get(id) {
+            Some(Value::Number(n)) => Ok(*n),
+            Some(_) => Err(CoreError::WrongInputType { id }),
+            None => Err(CoreError::MissingInput(id)),
+        }
+    }
+
+    pub fn url(&self, id: &'static str) -> Result<&str> {
+        match self.values.get(id) {
+            Some(Value::Url(s)) => Ok(s),
+            Some(_) => Err(CoreError::WrongInputType { id }),
+            None => Err(CoreError::MissingInput(id)),
+        }
+    }
+
     pub fn flag(&self, id: &'static str) -> bool {
         matches!(self.values.get(id), Some(Value::Flag(true)))
     }
@@ -96,10 +148,49 @@ impl Inputs {
         self.values
             .values()
             .filter_map(|v| match v {
-                Value::Dir(p) | Value::File(p) | Value::TargetDir(p) => Some(p.as_path()),
+                Value::Dir(p) | Value::File(p) | Value::AnyPath(p) | Value::TargetDir(p) => {
+                    Some(p.as_path())
+                }
                 _ => None,
             })
             .collect()
+    }
+
+    /// المدخلات كما تُقيَّد في السجل: معرّفٌ وقيمةٌ نصّية، والسرّيّ منقَّح.
+    ///
+    /// تُبنى من القيم **المُتحقَّق منها** لا من الخام: المسار الذي يُعاد التشغيل
+    /// به يجب أن يكون المسار الذي نُفِّذ عليه فعلًا — أي المحلول — لا الرابط
+    /// الرمزي الذي كتبه المستخدم وقد يشير اليوم إلى موضعٍ آخر.
+    pub fn journal_form(
+        &self,
+        op: &crate::spec::OperationSpec,
+    ) -> Vec<crate::journal::InputRecord> {
+        self.values
+            .iter()
+            .map(|(id, value)| {
+                let secret = op.input(id).is_some_and(|i| i.secret);
+                crate::journal::InputRecord {
+                    id: (*id).to_owned(),
+                    value: if secret { None } else { Some(value.as_journal_text()) },
+                }
+            })
+            .collect()
+    }
+}
+
+impl Value {
+    /// تمثيل القيمة نصًّا لإعادة ملء النموذج. يوافق ما تنتظره الواجهة في
+    /// `FormValues`: الراية `'1'` أو `''`، وما عداها نصّه.
+    pub fn as_journal_text(&self) -> String {
+        match self {
+            Value::Dir(p) | Value::File(p) | Value::AnyPath(p) | Value::TargetDir(p) => {
+                p.display().to_string()
+            }
+            Value::Name(s) | Value::Text(s) | Value::Url(s) => s.clone(),
+            Value::Choice(s) => (*s).to_owned(),
+            Value::Number(n) => n.to_string(),
+            Value::Flag(b) => (if *b { "1" } else { "" }).to_owned(),
+        }
     }
 }
 
@@ -134,6 +225,9 @@ pub fn validate(op: &OperationSpec, raw: &BTreeMap<String, RawValue>) -> Result<
             (InputKind::ExistingFile, RawValue::Path(s)) => {
                 Value::File(paths::existing_file(Path::new(s)).map_err(|e| e.on_input(spec.id))?)
             }
+            (InputKind::ExistingPath, RawValue::Path(s)) => {
+                Value::AnyPath(paths::existing_path(Path::new(s)).map_err(|e| e.on_input(spec.id))?)
+            }
             (InputKind::TargetDir, RawValue::Path(s)) => {
                 Value::TargetDir(paths::target_dir(Path::new(s)).map_err(|e| e.on_input(spec.id))?)
             }
@@ -144,12 +238,34 @@ pub fn validate(op: &OperationSpec, raw: &BTreeMap<String, RawValue>) -> Result<
                     None => clean,
                 })
             }
+            (InputKind::NewDirName, RawValue::Text(s)) => {
+                Value::Name(paths::sanitize_name(s).map_err(|e| e.on_input(spec.id))?)
+            }
             (InputKind::Text { max_len }, RawValue::Text(s)) => {
                 if s.len() > max_len {
                     return Err(CoreError::WrongInputType { id: spec.id });
                 }
                 Value::Text(s.clone())
             }
+            // القيمة العائدة `&'static str` من قائمة المواصفة لا نسخةٌ من نصّ
+            // الواجهة: ما يدخل الأمر يخرج من الشيفرة المُترجَمة، وما وصل من
+            // الواجهة لا يفعل إلا أن يختار بينها.
+            (InputKind::Choice { options }, RawValue::Text(s)) => {
+                let chosen = options
+                    .iter()
+                    .find(|o| o.value == s.as_str())
+                    .ok_or(CoreError::WrongInputType { id: spec.id })?;
+                Value::Choice(chosen.value)
+            }
+            (InputKind::Number { min, max, .. }, RawValue::Text(s)) => {
+                let n: i64 =
+                    s.trim().parse().map_err(|_| CoreError::WrongInputType { id: spec.id })?;
+                if n < min || n > max {
+                    return Err(CoreError::NumberOutOfRange { id: spec.id, min, max });
+                }
+                Value::Number(n)
+            }
+            (InputKind::Url, RawValue::Text(s)) => Value::Url(sanitize_url(s, spec.id)?),
             (InputKind::Flag, RawValue::Flag(b)) => Value::Flag(*b),
 
             // نوع لا يطابق ما تعلنه المواصفة — رفض، لا تحويل ضمني.
@@ -165,10 +281,89 @@ pub fn validate(op: &OperationSpec, raw: &BTreeMap<String, RawValue>) -> Result<
     Ok(Inputs { values: out, as_given: given })
 }
 
+/// أقصى طول عنوان يُقبل. أطول من أي عنوان معقول، وأقصر من أن يصير حمولة.
+const MAX_URL_LEN: usize = 2048;
+
+/// ينقّي عنوانًا قبل أن يصير وسيطًا لـ `curl`.
+///
+/// ثلاثة شروط، وكلٌّ منها يمنع شيئًا بعينه:
+///
+/// 1. **`http` أو `https` وحدهما.** `curl` تفهم `file:` و`scp:` و`smb:` وغيرها،
+///    فعنوانٌ بلا فحص المخطّط يصير قراءةً لملفٍ محليّ يتجاوز `paths.rs` كاملًا.
+/// 2. **لا محارف تحكّم ولا فراغ.** سطرٌ جديد داخل العنوان يفصله إلى شيئين في
+///    كل سياق يُعرض فيه — الشرح والسجلّ — فيُقرأ غير ما يُنفَّذ.
+/// 3. **لا يبدأ بشرطة.** المسارات المطلقة محميّةٌ ببدئها بـ `/`، والعنوان ليس
+///    كذلك: `-o/etc/passwd` عنوانٌ صالح الشكل ورايةٌ صالحة معًا.
+fn sanitize_url(raw: &str, id: &'static str) -> Result<String> {
+    let url = raw.trim();
+    if url.is_empty() || url.len() > MAX_URL_LEN {
+        return Err(CoreError::InvalidUrl { id });
+    }
+    let lower = url.to_ascii_lowercase();
+    if !lower.starts_with("http://") && !lower.starts_with("https://") {
+        return Err(CoreError::InvalidUrl { id });
+    }
+    if url.chars().any(|c| c.is_control() || c.is_whitespace()) {
+        return Err(CoreError::InvalidUrl { id });
+    }
+    if url.starts_with('-') {
+        return Err(CoreError::InvalidUrl { id });
+    }
+    // مضيفٌ فارغ (`https://`) ليس عنوانًا.
+    if lower.trim_start_matches("https://").trim_start_matches("http://").is_empty() {
+        return Err(CoreError::InvalidUrl { id });
+    }
+    Ok(url.to_owned())
+}
+
 #[cfg(test)]
 impl Inputs {
     /// بناء مباشر للاختبارات وحدها، يتجاوز التحقّق.
     pub fn from_pairs(pairs: Vec<(&'static str, Value)>) -> Self {
         Inputs { values: pairs.into_iter().collect(), as_given: BTreeMap::new() }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_http_and_https_are_accepted_as_urls() {
+        for good in ["http://example.com", "https://example.com/a?b=1", "HTTPS://EXAMPLE.COM"] {
+            assert!(sanitize_url(good, "url").is_ok(), "{good} must be accepted");
+        }
+        for bad in [
+            "file:///etc/passwd",
+            "ftp://example.com",
+            "scp://host/x",
+            "smb://host/share",
+            "//example.com",
+            "example.com",
+            "",
+            "https://",
+            "-o/etc/passwd",
+            "https://example.com/\nHost: evil",
+            "https://example.com/a b",
+        ] {
+            assert!(
+                matches!(sanitize_url(bad, "url"), Err(CoreError::InvalidUrl { id: "url" })),
+                "{bad:?} must be refused"
+            );
+        }
+    }
+
+    #[test]
+    fn an_over_long_url_is_refused_before_it_becomes_an_argument() {
+        let long = format!("https://example.com/{}", "a".repeat(MAX_URL_LEN));
+        assert!(matches!(sanitize_url(&long, "url"), Err(CoreError::InvalidUrl { .. })));
+    }
+
+    #[test]
+    fn the_url_is_trimmed_but_never_rewritten() {
+        assert_eq!(
+            sanitize_url("  https://example.com/x  ", "url").unwrap(),
+            "https://example.com/x"
+        );
     }
 }

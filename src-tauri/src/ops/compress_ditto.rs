@@ -81,14 +81,12 @@ pub const SPEC: OperationSpec = OperationSpec {
     tool: tools::DITTO,
     conflict: Conflict::Refuse,
     inputs: &[
-        InputSpec { id: "source", kind: InputKind::ExistingDir, required: true },
-        InputSpec { id: "destination", kind: InputKind::TargetDir, required: true },
-        InputSpec {
-            id: "archive_name",
-            kind: InputKind::NewName { ext: Some("zip") },
-            required: true,
-        },
+        InputSpec::new("source", InputKind::ExistingDir),
+        InputSpec::new("destination", InputKind::TargetDir),
+        InputSpec::new("archive_name", InputKind::NewName { ext: Some("zip") }),
     ],
+    sort_order: 10,
+    search_terms: &["ditto", "zip", "ضغط", "أرشيف", "compress", "archive", "مجلد"],
     plan,
 };
 
@@ -188,8 +186,10 @@ fn plan(inputs: &Inputs) -> Result<PlannedCommand> {
         cwd: None,
         explain,
         warnings: warnings_for(&size, &names, inputs, source, destination),
-        artifact: Some(Artifact { temp, final_path }),
+        artifact: Some(Artifact::file(temp, final_path)),
         estimate: Some(size),
+        stdout_to: None,
+        reveal_target: None,
     })
 }
 

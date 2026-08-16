@@ -147,6 +147,28 @@ pub fn existing_file(raw: &Path) -> Result<PathBuf> {
     Ok(canonical)
 }
 
+/// ملفٌ أو مجلدٌ قائم، محلول الروابط، ومسموح.
+///
+/// لعمليات لا تفرّق بين الاثنين — النسخ والنقل وقراءة الصلاحيات. تُرفض ما ليس
+/// ملفًا عاديًا ولا مجلدًا (مقبس، أنبوب مسمّى، جهاز): أدوات النظام تتصرّف معها
+/// تصرّفًا لا يشبه ما يتوقّعه المستخدم من «انسخ هذا».
+pub fn existing_path(raw: &Path) -> Result<PathBuf> {
+    if !raw.is_absolute() {
+        return Err(CoreError::PathNotAbsolute);
+    }
+    reject_dotdot(raw)?;
+    let canonical = raw.canonicalize().map_err(|e| match e.kind() {
+        std::io::ErrorKind::NotFound => CoreError::PathMissing,
+        _ => CoreError::Io(e),
+    })?;
+    let meta = std::fs::metadata(&canonical)?;
+    if !meta.is_file() && !meta.is_dir() {
+        return Err(CoreError::PathMissing);
+    }
+    check_policy(&canonical)?;
+    Ok(canonical)
+}
+
 /// مجلد وجهة: قائم، مسموح، وقابل للكتابة فعليًا لا اسميًا.
 pub fn target_dir(raw: &Path) -> Result<PathBuf> {
     let canonical = existing_dir(raw)?;
@@ -214,6 +236,14 @@ pub fn new_file_in(dir: &Path, name: &OsStr) -> Result<PathBuf> {
     Ok(canonical_dir.join(name))
 }
 
+/// مسار مجلدٍ جديد داخل مجلد وجهة قائم.
+///
+/// نفس قواعد `new_file_in` حرفيًا. دالّةٌ باسمها لأن المستدعي يقرأ نيّته في
+/// الاسم، ولأن ما يُبنى هنا يُرقّى بآليةٍ أخرى (‏`atomic::promote_dir`).
+pub fn new_dir_in(dir: &Path, name: &OsStr) -> Result<PathBuf> {
+    new_file_in(dir, name)
+}
+
 /// يرفض اسمًا نهائيًا لا يقبله نظام الملفات.
 ///
 /// هذا هو الفحص **الحاسم** لا الفحص في `sanitize_name`: ذاك يرى ما كتبه
@@ -272,7 +302,18 @@ pub fn sanitize_name(raw: &str) -> Result<String> {
         // ملف مخفيّ بالخطأ ناتجٌ لا يجده المستخدم بعد أن ينتظره.
         return Err(CoreError::InvalidName { reason: NameRejection::LeadingDot });
     }
-    if raw.ends_with(' ') || raw.ends_with('.') {
+    // **كل** فراغٍ طرفي لا المسافة وحدها.
+    //
+    // كان الفحص `raw.ends_with(' ')`، فكان الاسم المنتهي بسطرٍ جديد يمرّ:
+    // `trim` تُسقطه قبل فحص محارف التحكّم، فيُقبل `"اسم\n"` ويصير `"اسم"`.
+    // أي أن محرف تحكّمٍ في **وسط** الاسم يُرفض وفي **طرفه** يُقصّ صامتًا —
+    // تناقضٌ يعني أن ما يُنشأ على القرص ليس ما كُتب في الحقل.
+    //
+    // والقاعدة التي يقوم عليها هذا كلّه معلَنة في `operations.ts`: الاسم **لا
+    // يُشذَّب في الواجهة** عمدًا، «لأن الفراغ في طرفه خطأٌ يجب أن تراه النواة
+    // وترفضه برسالتها، لا أن تُخفيه الواجهة فيُنشأ ملفٌ باسمٍ غير الذي كُتب».
+    // فالنواة كانت تُخفيه في حالةٍ واحدة، وهذه هي.
+    if raw != raw.trim_end() || raw.ends_with('.') {
         return Err(CoreError::InvalidName { reason: NameRejection::TrailingSpaceOrDot });
     }
     Ok(name.to_owned())
@@ -329,6 +370,25 @@ mod tests {
                 other => panic!("expected rejection for {input:?}, got {other:?}"),
             }
         }
+    }
+
+    #[test]
+    fn every_kind_of_trailing_whitespace_is_refused_not_trimmed_away() {
+        // الاسم لا يُشذَّب في الواجهة عمدًا كي تراه النواة كما كُتب. وكان
+        // السطر الجديد يُقصّ هنا صامتًا بينما تُرفض المسافة — فمحرفُ تحكّمٍ في
+        // وسط الاسم يُرفض وفي طرفه يمرّ.
+        for bad in ["اسم ", "اسم\n", "اسم\r", "اسم\t", "اسم."] {
+            assert!(
+                matches!(
+                    sanitize_name(bad),
+                    Err(CoreError::InvalidName { reason: NameRejection::TrailingSpaceOrDot })
+                ),
+                "{bad:?} must be refused, not silently trimmed"
+            );
+        }
+        // والفراغ في **البداية** يُشذَّب كما كان: لصقٌ يجرّه، ولا يغيّر الاسم
+        // الناتج عمّا يقرؤه المستخدم في الحقل.
+        assert_eq!(sanitize_name("  اسم").unwrap(), "اسم");
     }
 
     #[test]

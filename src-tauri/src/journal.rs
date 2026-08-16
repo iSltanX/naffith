@@ -46,6 +46,7 @@
 //! ويبقى البرنامج ووسائطه، وفيهما مسارات المستخدم: هي أقلّ ما لا يصير السجلّ
 //! بدونه مراجعةً.
 
+use crate::error::CoreError;
 use crate::executor::Outcome;
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -97,11 +98,46 @@ impl State {
     }
 }
 
+/// مدخلٌ واحد كما يُقيَّد، لإعادة ملء النموذج لاحقًا.
+///
+/// `value: None` تعني «حقلٌ كان، وقيمته لا تُكتب» لا «حقلٌ فارغ». الفرق مهمّ
+/// على الشاشة: زرّ «أعد بهذه القيم» يعرف أن عليه ترك الحقل للمستخدم بدل أن
+/// يملأه بفراغ ويبدو كأنه استعاد كل شيء. انظر `InputSpec::secret`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InputRecord {
+    pub id: String,
+    #[serde(default)]
+    pub value: Option<String>,
+}
+
+/// أقصى عدد أسطر خرجٍ تُحفظ مع القيد النهائي.
+///
+/// ## ولماذا تُحفظ أصلًا
+///
+/// رأس هذا الملف كان يقول إن الخرج **لا** يُسجَّل، وسببه صحيح: خرج `ditto`
+/// على شجرةٍ كبيرة قد يحمل اسم كل ملفٍ فيها، وسجلٌّ يبتلعه يصير نسخةً من
+/// فهرس القرص. لكن الغرض من السجلّ أن يُراجَع، ومراجعةُ فشلٍ بلا سطرٍ واحد
+/// ممّا قالته الأداة ليست مراجعة: يبقى للمستخدم «رمز الخروج ‎1‎» ولا شيء غيره.
+///
+/// المقايضة محسومة بالحدّ لا بالمبدأ: **الذيل وحده** — وهو موضع رسالة الخطأ
+/// في كل أداةٍ تقريبًا — بعددٍ صغير من الأسطر، وكلٌّ منها مقصوصٌ على حدّه.
+/// فشجرةٌ من عشرة آلاف ملف تخلّف اثني عشر سطرًا لا عشرة آلاف.
+pub const MAX_TAIL_LINES: usize = 12;
+
+/// أقصى طول سطرٍ محفوظ، بالبايتات.
+pub const MAX_TAIL_LINE_BYTES: usize = 240;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Entry {
     /// المعرّف العام الذي يربط قيود التشغيل الواحد. ليس رمز الخطة.
     pub id: String,
     pub op_id: String,
+    /// القسم الذي تنتمي إليه العملية، مقيَّدًا لحظتها.
+    ///
+    /// يُكتب ولا يُشتقّ عند القراءة: عمليةٌ تنتقل بين قسمين في إصدارٍ لاحق —
+    /// أو تُحذف — تترك قيودها بلا قسمٍ يُصفّى به. القيد أثرٌ لما جرى وقتها.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
     /// وقت الحدث بالثواني منذ حقبة يونكس، UTC. الواجهة تعرضه بتوقيت المستخدم.
     pub at: u64,
     /// زمن التنفيذ. في القيد النهائي وحده.
@@ -111,6 +147,12 @@ pub struct Entry {
     pub args: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cwd: Option<String>,
+    /// المدخلات كما مُلئت، بعد تنقيح السرّي منها. تغذّي «أعد بهذه القيم».
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub inputs: Vec<InputRecord>,
+    /// آخر ما طبعته الأداة. في القيد النهائي وحده، ومحدودٌ بالحدّين أعلاه.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tail: Vec<String>,
     #[serde(flatten)]
     pub state: State,
 }
@@ -120,11 +162,14 @@ impl Entry {
         Entry {
             id: id.into(),
             op_id: op_id.into(),
+            category: None,
             at: now_secs(),
             duration_ms: None,
             program: String::new(),
             args: Vec::new(),
             cwd: None,
+            inputs: Vec::new(),
+            tail: Vec::new(),
             state,
         }
     }
@@ -140,6 +185,37 @@ impl Entry {
         self.duration_ms = Some(ms);
         self
     }
+
+    pub fn with_category(mut self, category: &str) -> Self {
+        self.category = Some(category.to_owned());
+        self
+    }
+
+    pub fn with_inputs(mut self, inputs: Vec<InputRecord>) -> Self {
+        self.inputs = inputs;
+        self
+    }
+
+    /// يحفظ ذيل الخرج بعد قصّه على الحدّين المعلَنين.
+    ///
+    /// القصّ هنا لا عند العرض: ما لا يُكتب لا يُسرَّب، ولا ينمو به الملف.
+    pub fn with_tail(mut self, lines: Vec<String>) -> Self {
+        let start = lines.len().saturating_sub(MAX_TAIL_LINES);
+        self.tail = lines[start..].iter().map(|l| clip_tail(l)).collect();
+        self
+    }
+}
+
+/// يقصّ سطرًا على حدّ محرفٍ كامل، فلا يُشطر حرفٌ عربي نصفين.
+fn clip_tail(line: &str) -> String {
+    if line.len() <= MAX_TAIL_LINE_BYTES {
+        return line.to_owned();
+    }
+    let mut end = MAX_TAIL_LINE_BYTES;
+    while end > 0 && !line.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{} …", &line[..end])
 }
 
 /// نافذة الذاكرة: أحدث القيود التي تُعرض بلا لمس القرص.
@@ -252,6 +328,93 @@ impl Journal {
         let path = self.path.as_ref()?;
         let read = read_all(path).ok()?;
         produced_in(&read.entries, id)
+    }
+
+    /// أحدث قيدٍ لتشغيلٍ بعينه، من النافذة ثم من الملف.
+    ///
+    /// يخدم «أعد العملية بالقيم السابقة»: الشاشة تعطي معرّفًا، والنواة تُخرج
+    /// المدخلات من سجلّها هي. لا مدخلات تعبر الحدّ في الاتجاه الآخر لتُستعاد.
+    pub fn entry(&self, id: &str) -> Option<Entry> {
+        {
+            let recent = self.recent.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(found) = recent.iter().rev().find(|e| e.id == id) {
+                return Some(found.clone());
+            }
+        }
+        let path = self.path.as_ref()?;
+        let read = read_all(path).ok()?;
+        read.entries.into_iter().rev().find(|e| e.id == id)
+    }
+
+    /// يحذف كل قيود تشغيلٍ واحد — من النافذة ومن الملف معًا.
+    ///
+    /// «قيدًا واحدًا» من زاوية المستخدم هو تشغيلٌ واحد، وهو في الملف ثلاثة
+    /// أسطر أو أربعة (‏planned ثم running ثم النتيجة). حذفُ سطرٍ منها كان
+    /// سيترك نصفَ تشغيلٍ معروضًا بحالةٍ لا تنتهي.
+    pub fn delete(&self, id: &str) -> Result<(), CoreError> {
+        let existed = {
+            let mut recent = self.recent.lock().unwrap_or_else(|e| e.into_inner());
+            let before = recent.len();
+            recent.retain(|e| e.id != id);
+            before != recent.len()
+        };
+        let on_disk = self.rewrite(|e| e.id != id)?;
+        if existed || on_disk > 0 {
+            Ok(())
+        } else {
+            Err(CoreError::JournalEntryNotFound)
+        }
+    }
+
+    /// يمسح السجلّ كله. الشاشة تسأل قبله؛ هذه الدالة تنفّذ ولا تسأل.
+    pub fn clear(&self) -> Result<(), CoreError> {
+        self.recent.lock().unwrap_or_else(|e| e.into_inner()).clear();
+        self.rewrite(|_| false)?;
+        Ok(())
+    }
+
+    /// يعيد كتابة الملف مُبقيًا ما يجتاز الشرط. يعيد عدد ما حُذف.
+    ///
+    /// في المكان وتحت `flock`، للسبب نفسه الذي يحكم `compact`: القفل قفلُ هذا
+    /// الـ inode، و`rename` كان سيتركنا نحرس inode مهجورًا.
+    fn rewrite(&self, keep: impl Fn(&Entry) -> bool) -> std::io::Result<usize> {
+        let Some(path) = &self.path else { return Ok(0) };
+        let _serialised = self.write_lock.lock().unwrap_or_else(|e| e.into_inner());
+
+        let mut file = match std::fs::OpenOptions::new().read(true).write(true).open(path) {
+            Ok(f) => f,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+            Err(e) => return Err(e),
+        };
+        let _lock = FileLock::acquire(&file)?;
+
+        file.seek(SeekFrom::Start(0))?;
+        let mut raw = Vec::new();
+        file.read_to_end(&mut raw)?;
+
+        let mut out = Vec::with_capacity(raw.len());
+        let mut removed = 0usize;
+        for line in raw.split(|b| *b == b'\n') {
+            if line.iter().all(|b| b.is_ascii_whitespace()) {
+                continue;
+            }
+            match serde_json::from_slice::<Entry>(line) {
+                Ok(entry) if keep(&entry) => {
+                    out.extend_from_slice(line);
+                    out.push(b'\n');
+                }
+                // القيد المطابق يُحذف، والسطر المعطوب يُحذف معه: إعادةُ الكتابة
+                // فرصةُ تنظيفٍ لا داعيَ لتفويتها.
+                Ok(_) => removed += 1,
+                Err(_) => {}
+            }
+        }
+
+        file.set_len(0)?;
+        file.seek(SeekFrom::Start(0))?;
+        file.write_all(&out)?;
+        file.flush()?;
+        Ok(removed)
     }
 
     fn append(&self, entry: &Entry) -> std::io::Result<()> {

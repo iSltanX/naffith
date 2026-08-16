@@ -245,6 +245,7 @@ fn plan_compress(
         "compress.folder.zip",
         &compress_inputs(source, destination, name),
     )
+    .map(|p| p.response)
     .expect("planning must succeed")
 }
 
@@ -550,8 +551,10 @@ async fn a_tool_that_exits_zero_without_writing_never_becomes_a_zero_byte_archiv
         cwd: None,
         explain: vec![],
         warnings: vec![],
-        artifact: Some(Artifact { temp: temp.clone(), final_path: final_path.clone() }),
+        artifact: Some(Artifact::file(temp.clone(), final_path.clone())),
         estimate: None,
+        stdout_to: None,
+        reveal_target: None,
     };
 
     let mut store = PlanStore::new();
@@ -1043,8 +1046,23 @@ fn the_plan_states_the_conflict_policy_before_anything_runs() {
 }
 
 /// السياسة المعلَنة ليست وصفًا: كل عملية تعلن `Refuse` مطالَبة بأن ترفض فعلًا.
-/// هذا الاختبار يمسح الفهرس كله، فعمليةٌ تُضاف غدًا وتعلن `Refuse` دون أن
-/// تنفّذها تسقط هنا لا على ملفات مستخدم.
+///
+/// يمسح الفهرس كلّه، فعمليةٌ تُضاف غدًا وتعلن `Refuse` دون أن تنفّذها تسقط هنا
+/// لا على ملفات مستخدم.
+///
+/// ## كيف تُبنى مدخلات عمليةٍ لا نعرفها
+///
+/// الاختبار لا يعرف أسماء حقول العملية ولا أنواع ملفاتها — ولا يجوز أن يعرف،
+/// وإلّا صار قائمةً ثانية تتقادم. فيُبنى النموذج من `InputSummary` نفسها:
+/// لكل نوعٍ قيمةٌ صالحة، وللملف القائم **عدّة مرشّحين** يُجرَّبون بالترتيب
+/// حتى ينجح التخطيط — أرشيف ZIP حقيقي، وأرشيف TAR.GZ حقيقي، وملف نصّي.
+/// عمليةٌ تطلب صيغةً لا يشبهها أيٌّ منهم تُتخطّى.
+///
+/// ## ولماذا حدٌّ أدنى للعدد
+///
+/// التخطّي ضروري (لا يمكن اصطناع مستودع Git لكل عملية)، وهو أيضًا الطريق
+/// الذي يصير به الاختبار أخضرَ بلا أن يفحص شيئًا. الحدّ الأدنى يجعل ذلك
+/// مستحيلًا: لو تخطّى الاختبار كل العمليات لسقط.
 #[test]
 fn every_operation_declaring_refusal_actually_refuses_a_taken_name() {
     let Some(s) = Scratch::new("declared") else { return };
@@ -1052,48 +1070,124 @@ fn every_operation_declaring_refusal_actually_refuses_a_taken_name() {
     std::fs::write(src.join("f"), b"x").unwrap();
     let dest = s.dir("وجهة");
 
+    // مرشّحو «ملف قائم»: أرشيفان حقيقيان وملف نصّي. تُبنى بأدوات النظام لا
+    // بايتاتٍ مكتوبة بيد، فما يقرؤه المخطِّط هو ما تنتجه الأدوات فعلًا.
+    let zip = s.path().join("عيّنة.zip");
+    std::process::Command::new("/usr/bin/ditto")
+        .args(["-c", "-k", "--sequesterRsrc"])
+        .arg(&src)
+        .arg(&zip)
+        .status()
+        .expect("ditto must build the sample archive");
+    let targz = s.path().join("عيّنة.tar.gz");
+    std::process::Command::new("/usr/bin/tar")
+        .arg("-czf")
+        .arg(&targz)
+        .arg("-C")
+        .arg(s.path())
+        .arg("مصدر")
+        .status()
+        .expect("tar must build the sample archive");
+    let text = s.path().join("عيّنة.txt");
+    std::fs::write(&text, b"line\n").unwrap();
+    let file_candidates = [zip, targz, text];
+
+    let mut exercised = 0usize;
+    let mut skipped: Vec<&str> = Vec::new();
+
     for op in naffith_core::registry::list(Policy::production()) {
         let spec = naffith_core::registry::find(op.id, Policy::production()).unwrap();
         if spec.conflict != Conflict::Refuse {
             continue;
         }
-        let mut store = PlanStore::new();
-        let session = store.register_session().unwrap();
 
-        let first = planner::plan(
-            &mut store,
-            &session,
-            Policy::production(),
-            op.id,
-            &compress_inputs(&src, &dest, "محجوز"),
-        )
-        .unwrap_or_else(|e| panic!("{} should plan on a clean destination: {e:?}", op.id));
+        let mut planned = None;
+        for candidate in &file_candidates {
+            let mut store = PlanStore::new();
+            let session = store.register_session().unwrap();
+            let built = synthetic_inputs(&op, &src, &dest, candidate, "محجوز");
+            if let Ok(p) = planner::plan(&mut store, &session, Policy::production(), op.id, &built)
+            {
+                planned = Some((p.response, built));
+                break;
+            }
+        }
+
+        let Some((first, built)) = planned else {
+            skipped.push(op.id);
+            continue;
+        };
+        let Some(produces) = first.produces.clone() else {
+            skipped.push(op.id);
+            continue;
+        };
+        exercised += 1;
 
         // احتلال الاسم النهائي بالضبط الذي أعلنته الخطة.
-        std::fs::write(first.produces.as_ref().unwrap(), "سبقك غيرك").unwrap();
+        std::fs::write(&produces, "سبقك غيرك").unwrap();
 
-        let again = planner::plan(
-            &mut store,
-            &session,
-            Policy::production(),
-            op.id,
-            &compress_inputs(&src, &dest, "محجوز"),
-        );
+        let mut store = PlanStore::new();
+        let session = store.register_session().unwrap();
+        let again = planner::plan(&mut store, &session, Policy::production(), op.id, &built);
         // المفتاح لا النوع: الخطأ قد يُلَفّ بنسبته إلى حقل، والمفتاح يبقى.
-        let key = again.as_ref().err().map(|e| e.key());
         assert_eq!(
-            key,
+            again.as_ref().err().map(|e| e.key()),
             Some("err.dest.exists"),
-            "{} declares Conflict::Refuse but planning over a taken name gave {:?}",
-            op.id,
-            again.map(|p| p.produces)
+            "{} declares Conflict::Refuse but planning over a taken name did not refuse",
+            op.id
         );
         // والأهم: الملف الموجود لم يُمَسّ.
-        assert_eq!(
-            std::fs::read(first.produces.as_ref().unwrap()).unwrap(),
-            "سبقك غيرك".as_bytes()
-        );
+        assert_eq!(std::fs::read(&produces).unwrap(), "سبقك غيرك".as_bytes());
+        std::fs::remove_file(&produces).ok();
     }
+
+    assert!(
+        exercised >= 6,
+        "only {exercised} operations were actually exercised (skipped: {skipped:?}) — \
+         a guard that skips everything is a guard that guards nothing"
+    );
+}
+
+/// يبني مدخلات عمليةٍ من وصفها وحده.
+///
+/// لا يعرف اسم حقلٍ ولا معرّف عملية: يقرأ `kind` المسطَّح من `InputSummary`
+/// ويعطي كل نوعٍ قيمةً صالحة. عمليةٌ تُضاف بنوع مدخلٍ جديد تسقط هنا صراحةً
+/// بدل أن تُبنى لها مدخلاتٌ ناقصة تُخفي ما يُختبر.
+fn synthetic_inputs(
+    op: &naffith_core::spec::OperationSummary,
+    dir: &Path,
+    destination: &Path,
+    file: &Path,
+    name: &str,
+) -> BTreeMap<String, RawValue> {
+    let mut out = BTreeMap::new();
+    for input in &op.inputs {
+        let value = match input.kind {
+            naffith_core::spec::InputKind::ExistingDir => RawValue::Path(dir.display().to_string()),
+            naffith_core::spec::InputKind::ExistingFile
+            | naffith_core::spec::InputKind::ExistingPath => {
+                RawValue::Path(file.display().to_string())
+            }
+            naffith_core::spec::InputKind::TargetDir => {
+                RawValue::Path(destination.display().to_string())
+            }
+            naffith_core::spec::InputKind::NewName { .. }
+            | naffith_core::spec::InputKind::NewDirName => RawValue::Text(name.to_owned()),
+            naffith_core::spec::InputKind::Text { .. } => RawValue::Text("عيّنة".to_owned()),
+            naffith_core::spec::InputKind::Choice { options } => {
+                RawValue::Text(options[0].value.to_owned())
+            }
+            naffith_core::spec::InputKind::Number { default, .. } => {
+                RawValue::Text(default.to_string())
+            }
+            naffith_core::spec::InputKind::Url => {
+                RawValue::Text("https://example.com/x".to_owned())
+            }
+            naffith_core::spec::InputKind::Flag => RawValue::Flag(false),
+        };
+        out.insert(input.id.to_owned(), value);
+    }
+    out
 }
 
 #[tokio::test]

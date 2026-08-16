@@ -12,19 +12,14 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  availabilityOf,
   emptyValues,
   extensionHint,
   fieldKeys,
-  findCard,
-  iconForCategory,
   isComplete,
   isDirectoryInput,
   isDirty,
   isFlagInput,
   isPathInput,
-  toCard,
-  toCards,
   toRawValues,
   type FormValues,
 } from './operations';
@@ -52,154 +47,20 @@ function op(
     description_key: `op.${id}.desc`,
     category,
     danger,
+    // حقولٌ لا يقرؤها هذا الملف: طبقةُ النموذج لا تعنيها الإتاحة ولا الترتيب
+    // ولا كلمات البحث. تُملأ بقيمٍ صالحة كي يبقى النوع كاملًا، ويحرسها
+    // `library.test.ts` حيث تُقرأ فعلًا.
+    conflict: 'no_artifact',
+    tool: 'owlctl',
+    availability: { state: 'available' },
+    sort_order: 10,
+    search_terms: ['owlctl'],
     inputs,
   };
 }
 
 /** أنواع المدخلات الستة التي تعرفها الواجهة، كما تعلنها `InputKind` في `ipc.ts`. */
 const KNOWN_KINDS = ['existing_dir', 'existing_file', 'target_dir', 'new_name', 'text', 'flag'];
-
-/**
- * فهرسٌ مخترع بالكامل.
- *
- * المعرّفات والفئات لا تطابق أيّ عملية في هذا البناء عمدًا، والترتيب هنا ليس
- * أبجديًّا كي يُمسَك أيّ فرزٍ يُضاف في الواجهة.
- */
-const INVENTED: OperationSummary[] = [
-  op('zeta.summon.owl', 'compress', 'creates', [input('source', 'existing_dir')]),
-  op('alpha.fold.paper', 'files', 'modifies', [input('target', 'target_dir')]),
-  op('mu.count.stars', 'system', 'safe', []),
-  op('beta.erase.map', 'files', 'destructive', [input('victim', 'existing_file')]),
-];
-
-describe('الفهرس يأتي من النواة', () => {
-  it('يعرض عملياتٍ لا وجود لها في هذا البناء', () => {
-    const cards = toCards(INVENTED);
-    expect(cards).toHaveLength(INVENTED.length);
-    expect(cards[0]).toEqual({
-      id: 'zeta.summon.owl',
-      titleKey: 'op.zeta.summon.owl.title',
-      descriptionKey: 'op.zeta.summon.owl.desc',
-      category: 'compress',
-      danger: 'creates',
-      icon: '#i-compress',
-      availability: { state: 'available' },
-    });
-  });
-
-  it('يحفظ ترتيب النواة ولا يفرز', () => {
-    // فرضُ ترتيبٍ هنا يجعل الواجهة تقرّر أولويةَ عرضٍ ليست لها، وينفصل عن نيّة
-    // الفهرس حين يُرتَّب في النواة يومًا.
-    expect(toCards(INVENTED).map((c) => c.id)).toEqual([
-      'zeta.summon.owl',
-      'alpha.fold.paper',
-      'mu.count.stars',
-      'beta.erase.map',
-    ]);
-  });
-
-  it('الفهرس الفارغ قائمةٌ فارغة لا حالةٌ خاصة', () => {
-    expect(toCards([])).toEqual([]);
-  });
-
-  it('البطاقة لا تحمل نصًّا بل مفاتيح نصوص', () => {
-    // النصّ كلّه في `i18n.ts`. بطاقةٌ تحمل نصًّا عربيًّا تعني نسخةً ثانية منه.
-    const card = toCard(op('nu.invented.thing', 'files', 'safe', []));
-    expect(card.titleKey).toBe('op.nu.invented.thing.title');
-    expect(card.descriptionKey).toBe('op.nu.invented.thing.desc');
-  });
-
-  it('يجد البطاقة بمعرّفها', () => {
-    const found = findCard(toCards(INVENTED), 'beta.erase.map');
-    expect(found?.danger).toBe('destructive');
-  });
-
-  it('لا يجد ما لم يعد في الفهرس', () => {
-    // العملية قد تختفي بين تشغيلين: شاشةٌ محفوظة على معرّفٍ قديم يجب أن تتلقّى
-    // `undefined` لا استثناءً.
-    expect(findCard(toCards(INVENTED), 'gone.forever')).toBeUndefined();
-    expect(findCard([], 'anything')).toBeUndefined();
-  });
-});
-
-describe('الأيقونة من الفئة', () => {
-  it('لكل فئة أيقونتها', () => {
-    expect(iconForCategory('files')).toBe('#i-file');
-    expect(iconForCategory('compress')).toBe('#i-compress');
-    expect(iconForCategory('system')).toBe('#i-system');
-    expect(iconForCategory('internal')).toBe('#i-admin');
-  });
-
-  it('الأيقونات متمايزة فلا تتشابه فئتان في القائمة', () => {
-    const icons = (['files', 'compress', 'system', 'internal'] as const).map(iconForCategory);
-    expect(new Set(icons).size).toBe(icons.length);
-  });
-
-  it('فئةٌ لا نعرفها تُعطى أيقونةً لا فراغًا', () => {
-    // النواة قد تُدرج فئةً أحدث من الواجهة. `<use href="">` يرسم لا شيء،
-    // والبطاقة بلا أيقونة تبدو عطبًا لا جديدًا.
-    const unseen = 'quantum' as unknown as OperationSummary['category'];
-    expect(iconForCategory(unseen)).toBe('#i-file');
-  });
-});
-
-describe('التوفّر', () => {
-  it('كل الأنواع المعروفة تُرسم', () => {
-    const all = op(
-      'omega.everything',
-      'files',
-      'safe',
-      KNOWN_KINDS.map((kind, i) => input(`in${i}`, kind)),
-    );
-    expect(availabilityOf(all)).toEqual({ state: 'available' });
-  });
-
-  it('عمليةٌ بلا مدخلات متاحة', () => {
-    expect(availabilityOf(op('mu.count.stars', 'system', 'safe', []))).toEqual({
-      state: 'available',
-    });
-  });
-
-  it('نوعٌ لا تعرفه الواجهة يُعطّل العملية ويسمّي السبب', () => {
-    // تطبيقٌ يشحن نواةً أحدث من واجهته يعرض العملية معطّلةً بسببٍ مفهوم، بدل أن
-    // يفتح لها شاشةً فارغة.
-    const future = op('psi.time.travel', 'files', 'safe', [
-      input('a', 'existing_dir'),
-      input('b', 'colour_picker'),
-    ]);
-    expect(availabilityOf(future)).toEqual({
-      state: 'unsupported',
-      unknownKinds: ['colour_picker'],
-    });
-  });
-
-  it('الأنواع المجهولة تُذكر مرّةً واحدة ومرتّبة', () => {
-    // الرسالة تُعرض للمستخدم فلا تتكرّر فيها كلمة ولا يتغيّر ترتيبها بين تشغيلين.
-    const messy = op('psi.mess', 'files', 'safe', [
-      input('a', 'zeta_kind'),
-      input('b', 'alpha_kind'),
-      input('c', 'zeta_kind'),
-      input('d', 'text'),
-    ]);
-    expect(availabilityOf(messy)).toEqual({
-      state: 'unsupported',
-      unknownKinds: ['alpha_kind', 'zeta_kind'],
-    });
-  });
-
-  it('مدخلٌ بلا نوع أصلًا يُعطّل لا يُتجاهَل', () => {
-    // قيمةٌ ناقصة من الحدّ لا تُفترض سليمة: التعطيل هو الاتجاه الآمن.
-    const broken: OperationSummary = op('psi.broken', 'files', 'safe', [
-      { id: 'a', required: true },
-    ]);
-    expect(availabilityOf(broken).state).toBe('unsupported');
-  });
-
-  it('التوفّر جزء من البطاقة لا حساب ثانٍ في الشاشة', () => {
-    const card = toCard(op('psi.one', 'files', 'safe', [input('a', 'nonsense')]));
-    expect(card.availability).toEqual({ state: 'unsupported', unknownKinds: ['nonsense'] });
-  });
-});
 
 describe('مفاتيح نصوص الحقل', () => {
   it('الأخصّ ثم العام', () => {

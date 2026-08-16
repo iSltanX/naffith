@@ -258,7 +258,19 @@ fn the_catalogue_crosses_the_bridge_with_the_fields_the_frontend_declares() {
     for op in ops {
         assert_eq!(
             keys(op),
-            set(&["id", "title_key", "description_key", "category", "danger", "inputs"]),
+            set(&[
+                "id",
+                "title_key",
+                "description_key",
+                "category",
+                "danger",
+                "conflict",
+                "tool",
+                "availability",
+                "sort_order",
+                "search_terms",
+                "inputs",
+            ]),
             "OperationSummary changed shape on the wire: {op}"
         );
         assert!(
@@ -306,13 +318,14 @@ fn the_catalogue_crosses_the_bridge_with_the_fields_the_frontend_declares() {
 //  ٢ · plan
 // ══════════════════════════════════════════════════════════════════════
 
-/// الحقول الخمسة عشر التي يعلنها `PlanResponse` في `ipc.ts`، بأسمائها.
+/// الحقول الستة عشر التي يعلنها `PlanResponse` في `ipc.ts`، بأسمائها.
 const PLAN_RESPONSE_FIELDS: &[&str] = &[
     "token",
     "plan_id",
     "op_id",
     "title_key",
     "description_key",
+    "category",
     "danger",
     "argv_display",
     "explain",

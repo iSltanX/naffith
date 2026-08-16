@@ -13,7 +13,9 @@
 //! المسارات وحلّ الأدوات كلها في Rust. و`execute` لا يقبل إلا رمز خطة صادرًا
 //! عن النواة نفسها.
 
+pub mod archive;
 pub mod atomic;
+pub mod categories;
 pub mod error;
 pub mod estimate;
 pub mod executor;
@@ -26,6 +28,8 @@ pub mod policy;
 pub mod registry;
 pub mod reveal;
 pub mod spec;
+#[cfg(test)]
+pub mod testkit;
 pub mod tools;
 pub mod value;
 
@@ -159,7 +163,12 @@ pub struct RunFinished {
 }
 
 // ════════════════════════════════════════════════════════════════════════
-//  حدّ IPC — ستة أوامر. لا سابع.
+//  حدّ IPC — تسعة أوامر. لا عاشر.
+//
+//  كانت ستة. أضافت مرحلةُ المكتبة ثلاثة، وكلٌّ منها قرارٌ لا سهو:
+//  `list_categories` كي تُرسم شاشة الفئات بأعدادٍ محسوبة في النواة لا مؤلّفة
+//  في الواجهة، و`journal_delete` و`journal_clear` كي يملك المستخدم أثرَه —
+//  ومعاملهما معرّف تشغيل أو لا شيء، لا مسار ملفٍ ولا سطرٌ فيه.
 //
 //  لاحظ ما لا يوجد هنا: لا أمر يقبل `program`، ولا `args`، ولا `cwd`، ولا
 //  سلسلة أمر، ولا **مسارًا** خارج مدخلات عملية موصوفة. اختبارات في
@@ -191,21 +200,36 @@ fn plan(
     op_id: String,
     inputs: BTreeMap<String, value::RawValue>,
 ) -> Result<PlanResponse> {
-    let response = {
+    let planned = {
         let mut store = recover(&state.plans);
         planner::plan(&mut store, &state.session, state.policy, &op_id, &inputs)?
     };
+    let planner::Planned { response, journal_inputs } = planned;
 
     // قيدٌ عند التخطيط: خطةٌ رُوجعت ثم تُركت أثرٌ يستحق أن يُرى في السجل.
     state.journal.record(
-        Entry::new(response.plan_id.clone(), response.op_id, journal::State::Planned).with_command(
-            response.argv_display.first().cloned().unwrap_or_default(),
-            response.argv_display.iter().skip(1).cloned().collect(),
-            response.working_directory.clone(),
-        ),
+        Entry::new(response.plan_id.clone(), response.op_id, journal::State::Planned)
+            .with_command(
+                response.argv_display.first().cloned().unwrap_or_default(),
+                response.argv_display.iter().skip(1).cloned().collect(),
+                response.working_directory.clone(),
+            )
+            .with_category(&category_name(response.category))
+            .with_inputs(journal_inputs),
     );
 
     Ok(response)
+}
+
+/// اسم القسم نصًّا، كما يُكتب في السجل ويُصفّى به.
+///
+/// من `Serialize` نفسها لا من خريطةٍ ثانية: قسمٌ يُضاف غدًا لا يحتاج سطرًا هنا،
+/// ولا يمكن أن يفترق اسمُه في السجلّ عن اسمه على السلك.
+fn category_name(category: spec::Category) -> String {
+    serde_json::to_value(category)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_owned))
+        .unwrap_or_default()
 }
 
 /// ينفّذ خطة محفوظة. المعامل الوحيد رمزٌ صدر عن النواة.
@@ -236,21 +260,45 @@ async fn execute(
     let args: Vec<String> = command.args.iter().map(|a| a.to_string_lossy().into_owned()).collect();
     let cwd = command.cwd.as_ref().map(|p| p.display().to_string());
 
-    state.journal.record(Entry::new(run_id.clone(), op_id, journal::State::Running).with_command(
-        program.clone(),
-        args.clone(),
-        cwd.clone(),
-    ));
+    // القسم والمدخلات يُخرجان من الفهرس والخطة المحفوظة، لا ممّا ترسله الواجهة:
+    // القيد أثرٌ لما نُفِّذ فعلًا، والمدخلات المحفوظة هي **المُتحقَّق منها** —
+    // المسار المحلول لا الرابط الرمزي الذي كُتب في الحقل.
+    let (category, journal_inputs) = match registry::find(op_id, state.policy) {
+        Ok(op) => (Some(category_name(op.category)), stored.inputs.journal_form(op)),
+        Err(_) => (None, Vec::new()),
+    };
+
+    let mut running = Entry::new(run_id.clone(), op_id, journal::State::Running)
+        .with_command(program.clone(), args.clone(), cwd.clone())
+        .with_inputs(journal_inputs.clone());
+    if let Some(c) = &category {
+        running = running.with_category(c);
+    }
+    state.journal.record(running);
 
     let (out_tx, mut out_rx) = mpsc::channel::<OutputLine>(256);
 
-    // بثّ الخرج إلى الواجهة.
+    // بثّ الخرج إلى الواجهة، مع الاحتفاظ بذيله للسجل.
+    //
+    // الذيل يُجمع هنا لا في `executor`: هذا الموضع يرى كل سطرٍ مرّةً واحدة
+    // بترتيبه، والمنفّذ يبثّ من مهمّتين متوازيتين. وحدّه في `journal.rs` —
+    // اثنا عشر سطرًا مقصوصة — لا يجعله نسخةً من الخرج بل موضعَ رسالة الخطأ.
+    let (tail_tx, tail_rx) = oneshot::channel::<Vec<String>>();
     let emit_app = app.clone();
     let emit_run = run_id.clone();
     tokio::spawn(async move {
+        let mut tail: std::collections::VecDeque<String> =
+            std::collections::VecDeque::with_capacity(journal::MAX_TAIL_LINES);
         while let Some(line) = out_rx.recv().await {
+            if let OutputLine::Stdout(s) | OutputLine::Stderr(s) = &line {
+                if tail.len() == journal::MAX_TAIL_LINES {
+                    tail.pop_front();
+                }
+                tail.push_back(s.clone());
+            }
             let _ = emit_app.emit("run://output", RunOutput { run_id: emit_run.clone(), line });
         }
+        let _ = tail_tx.send(tail.into_iter().collect());
     });
 
     let done_app = app.clone();
@@ -275,12 +323,21 @@ async fn execute(
         // بينما يُكتب السجل.
         drop(slot);
 
+        // مهمّة البثّ تُغلق قناتها بعد آخر سطر، فالذيل جاهزٌ هنا حتمًا. وفشل
+        // الاستقبال — لو ذُعرت تلك المهمّة — يكلّف الذيل وحده لا القيد كلّه.
+        let tail = tail_rx.await.unwrap_or_default();
+
         let state: State<'_, AppState> = done_app.state();
-        state.journal.record(
+        let mut finished =
             Entry::new(done_run.clone(), op_id, journal::State::from_outcome(&outcome))
                 .with_command(program, args, cwd)
-                .with_duration(started.elapsed().as_millis() as u64),
-        );
+                .with_duration(started.elapsed().as_millis() as u64)
+                .with_inputs(journal_inputs)
+                .with_tail(tail);
+        if let Some(c) = &category {
+            finished = finished.with_category(c);
+        }
+        state.journal.record(finished);
 
         let _ = done_app.emit("run://finished", RunFinished { run_id: done_run, outcome });
     });
@@ -297,10 +354,40 @@ fn cancel(state: State<'_, AppState>, run_id: String) -> Result<()> {
     Ok(())
 }
 
+/// الأقسام، وعددُ عمليات كلٍّ منها محسوبًا من الفهرس.
+///
+/// أمرٌ مستقلّ لا حقلٌ داخل `list_operations`: شاشة الفئات تُرسم قبل أن تُقرأ
+/// عملية واحدة، وحساب الأعداد في الواجهة كان يعني أن الشاشة الأولى تنتظر
+/// الفهرس كاملًا كي تعرض ثمانية عناوين.
+#[tauri::command]
+fn list_categories(state: State<'_, AppState>) -> Vec<categories::CategorySummary> {
+    registry::categories(state.policy)
+}
+
 /// آخر التشغيلات، للمراجعة.
 #[tauri::command]
 fn recent_runs(state: State<'_, AppState>) -> Vec<Entry> {
     state.journal.recent()
+}
+
+/// يحذف كل قيود تشغيلٍ واحد.
+///
+/// المعامل معرّف تشغيل — نفس ما تقبله `reveal` — لا مسار ملفٍ ولا سطرٌ في
+/// الملف: النواة تعرف أي أسطرٍ تخصّه، والواجهة لا تستطيع أن تطلب حذف غيرها.
+///
+/// ولا يمسّ هذا شيئًا على القرص خارج ملف السجلّ: التشغيل الذي حُذف قيدُه ما زال
+/// ناتجه في مكانه. حذفُ الأثر ليس حذف ما فعله.
+#[tauri::command]
+fn journal_delete(state: State<'_, AppState>, run_id: String) -> Result<()> {
+    state.journal.delete(&run_id)
+}
+
+/// يمسح السجلّ كله. الشاشة تسأل قبله؛ هذا الأمر ينفّذ ولا يسأل.
+///
+/// أمرٌ في الحدّ لا حذفٌ للملف من الواجهة: الواجهة لا تملك مسارًا أصلًا.
+#[tauri::command]
+fn journal_clear(state: State<'_, AppState>) -> Result<()> {
+    state.journal.clear()
 }
 
 /// يُبرز في Finder ما أنتجه تشغيلٌ ناجح.
@@ -325,7 +412,17 @@ fn reveal(state: State<'_, AppState>, run_id: String) -> Result<()> {
 /// فلا يمكن أن يفترق ما يُختبر عمّا يُسجَّل. والقائمة تبقى في هذا الملف وحده،
 /// فحرّاس `tests/security.rs` تقرأ الموضع نفسه الذي كانت تقرؤه.
 pub fn ipc_handler<R: tauri::Runtime>() -> impl Fn(tauri::ipc::Invoke<R>) -> bool + Send + Sync {
-    tauri::generate_handler![list_operations, plan, execute, cancel, recent_runs, reveal]
+    tauri::generate_handler![
+        list_operations,
+        list_categories,
+        plan,
+        execute,
+        cancel,
+        recent_runs,
+        journal_delete,
+        journal_clear,
+        reveal
+    ]
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -356,6 +453,8 @@ mod tests {
             warnings: vec![],
             artifact: None,
             estimate: None,
+            stdout_to: None,
+            reveal_target: None,
         }
     }
 

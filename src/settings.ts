@@ -22,8 +22,22 @@
  * والسبب يُعاد إلى المستدعي كي يُسجَّل لا كي يُسقط الشاشة.
  */
 
-/** إصدار مخطط الإعداد. يُرفع عند كل تغيير غير متوافق في شكل القيمة. */
-export const SETTINGS_SCHEMA_VERSION = 1;
+/**
+ * إصدار مخطط الإعداد. يُرفع عند كل تغيير غير متوافق في شكل القيمة.
+ *
+ * الإصدار ٢ أضاف المفضّلة وآخر قسمٍ مفتوح. والترقية من ١ ليست حذفًا: من أتمّ
+ * الترحيب في نسخةٍ أقدم يجب ألّا يراه مرّةً أخرى لأننا أضفنا حقلًا لا يعرفه.
+ */
+export const SETTINGS_SCHEMA_VERSION = 2;
+
+/**
+ * أقصى عدد مفضّلات تُحفظ.
+ *
+ * حدٌّ لا لأن الذاكرة تضيق، بل لأن `localStorage` قيمةٌ واحدة نكتبها كاملةً في
+ * كل تغيير — وقائمةٌ بلا حدّ تعني أن قيمةً تالفة أو مُعدَّلة بيد يمكن أن تكبر
+ * حتى تفشل الكتابة، فيضيع الإعداد كلّه لا المفضّلة وحدها.
+ */
+export const MAX_FAVOURITES = 40;
 
 /** مفتاح التخزين. يحمل اسم المنتج صراحةً كي لا يشتبه بغيره في نفس الأصل. */
 export const SETTINGS_STORAGE_KEY = 'naffith.settings';
@@ -37,10 +51,31 @@ export interface Settings {
    * يومًا أن نعرض ترحيبًا محدَّثًا لمن أتمّ القديم قبل تاريخ ما.
    */
   onboardingCompletedAt: string | null;
+  /**
+   * معرّفات العمليات المفضّلة، بلا ترتيبٍ ذي معنى.
+   *
+   * تُعرض بترتيب المكتبة لا بترتيب الإضافة (انظر `library.ts`)، فالترتيب هنا
+   * تفصيلُ تخزينٍ لا قرار عرض.
+   */
+  favourites: string[];
+  /**
+   * آخر قسمٍ فُتح، أو `null`.
+   *
+   * يُحفظ لأن المستخدم يعود إلى ما كان فيه: من يعمل في الضغط طوال اليوم لا
+   * يريد أن يبدأ كل مرّةٍ من شبكة الأقسام. **ولا يُفتح تلقائيًا** — الجذر يبقى
+   * شاشة الفئات — بل يُبرَز بوصفه «آخر ما فتحت»، فالقرار يبقى للمستخدم ولا
+   * يجد نفسه في شاشةٍ لم يطلبها.
+   */
+  lastCategoryId: string | null;
 }
 
 export function defaultSettings(): Settings {
-  return { schemaVersion: SETTINGS_SCHEMA_VERSION, onboardingCompletedAt: null };
+  return {
+    schemaVersion: SETTINGS_SCHEMA_VERSION,
+    onboardingCompletedAt: null,
+    favourites: [],
+    lastCategoryId: null,
+  };
 }
 
 /** سبب اللجوء إلى الإعداد الافتراضي. يُسجَّل ولا يُعرض للمستخدم. */
@@ -83,18 +118,47 @@ export function browserStorage(): SettingsStorage | null {
   }
 }
 
-/** يرقّي قيمة من إصدار أقدم. تُضاف حلقة لكل إصدار جديد. */
-function migrate(raw: Record<string, unknown>, from: number): Settings | null {
-  // لا إصدار أقدم من 1 بعد. الدالة موجودة كي تكون الترقية موضعًا واحدًا
-  // معروفًا حين تلزم، لا بحثًا في الشيفرة يوم يلزم.
-  if (from === SETTINGS_SCHEMA_VERSION) {
-    const at = raw['onboardingCompletedAt'];
-    return {
-      schemaVersion: SETTINGS_SCHEMA_VERSION,
-      onboardingCompletedAt: typeof at === 'string' && at !== '' ? at : null,
-    };
+/** قائمة معرّفات نظيفة من قيمةٍ مخزَّنة قد تكون أي شيء. */
+function readIdList(value: unknown, limit: number): string[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    if (typeof item !== 'string') continue;
+    const id = item.trim();
+    // المعرّفات في هذا المنتج نقاطٌ وحروفٌ لاتينية. أي شيءٍ آخر ليس معرّفًا،
+    // والقيمة المخزَّنة قابلةٌ للتعديل بيد.
+    if (id === '' || id.length > 120 || !/^[a-z0-9._-]+$/.test(id)) continue;
+    seen.add(id);
+    if (seen.size >= limit) break;
   }
-  return null;
+  return [...seen];
+}
+
+function readNullableId(value: unknown): string | null {
+  const [only] = readIdList([value], 1);
+  return only ?? null;
+}
+
+/**
+ * يرقّي قيمة من إصدار أقدم. تُضاف حلقة لكل إصدار جديد.
+ *
+ * الترقية من ١ إلى ٢ **تحتفظ بما كان** وتضيف الافتراضي لما استُجدّ. الاختصار
+ * — إعادة الافتراضي كاملًا — كان سيعرض شاشة الترحيب على كل من رقّى، وهي أول
+ * ما يراه من التحديث: رسالةٌ تقول له إن التطبيق نسيه.
+ */
+function migrate(raw: Record<string, unknown>, from: number): Settings | null {
+  if (from > SETTINGS_SCHEMA_VERSION || from < 1) return null;
+
+  const at = raw['onboardingCompletedAt'];
+  const onboardingCompletedAt = typeof at === 'string' && at !== '' ? at : null;
+
+  // الإصدار ١ لا يحمل الحقلين، فيقرآن غيابًا ويصيران افتراضيهما.
+  return {
+    schemaVersion: SETTINGS_SCHEMA_VERSION,
+    onboardingCompletedAt,
+    favourites: readIdList(raw['favourites'], MAX_FAVOURITES),
+    lastCategoryId: readNullableId(raw['lastCategoryId']),
+  };
 }
 
 /**
@@ -191,4 +255,28 @@ export function withOnboardingCompleted(settings: Settings, now: Date): Settings
 /** يعيد ضبط الترحيب كي يُعرض في التشغيل القادم — ومن الإعدادات، فورًا. */
 export function withOnboardingReset(settings: Settings): Settings {
   return { ...settings, onboardingCompletedAt: null };
+}
+
+/**
+ * يقلب حالة التفضيل لعملية.
+ *
+ * الحدّ يُفرض عند **الإضافة** لا عند القراءة: قراءةٌ تقصّ كانت ستُسقط مفضّلةً
+ * موجودة بلا أن يفعل المستخدم شيئًا، وهو فقدٌ صامت. والإضافة فوق الحدّ تُهمَل
+ * بلا خطأ — أربعون عمليةً مفضّلة ليست قائمةً مفضّلة أصلًا.
+ */
+export function withFavouriteToggled(settings: Settings, opId: string): Settings {
+  const has = settings.favourites.includes(opId);
+  if (!has && settings.favourites.length >= MAX_FAVOURITES) return settings;
+  return {
+    ...settings,
+    favourites: has
+      ? settings.favourites.filter((id) => id !== opId)
+      : [...settings.favourites, opId],
+  };
+}
+
+/** يحفظ آخر قسمٍ فُتح. لا يُفتح تلقائيًا — انظر تعليق `lastCategoryId`. */
+export function withLastCategory(settings: Settings, categoryId: string | null): Settings {
+  if (settings.lastCategoryId === categoryId) return settings;
+  return { ...settings, lastCategoryId: categoryId };
 }

@@ -23,12 +23,23 @@ export type RawValue =
 
 export type Danger = 'safe' | 'creates' | 'modifies' | 'destructive';
 
+/** خيار واحد في قائمة مغلقة. القيمة تدخل الأمر، والمفتاح يُترجَم. */
+export interface ChoiceOption {
+  value: string;
+  label_key: string;
+}
+
 export type InputKind =
   | { kind: 'existing_dir' }
   | { kind: 'existing_file' }
+  | { kind: 'existing_path' }
   | { kind: 'target_dir' }
   | { kind: 'new_name'; ext: string | null }
+  | { kind: 'new_dir_name' }
   | { kind: 'text'; max_len: number }
+  | { kind: 'choice'; options: ChoiceOption[] }
+  | { kind: 'number'; min: number; max: number; default: number }
+  | { kind: 'url' }
   | { kind: 'flag' };
 
 export interface InputSummary extends Record<string, unknown> {
@@ -36,13 +47,69 @@ export interface InputSummary extends Record<string, unknown> {
   required: boolean;
 }
 
+/**
+ * معرّفات الأقسام كما تعلنها النواة.
+ *
+ * مغلقة عمدًا: خريطة الأيقونات وحالات العرض تُبنى منها، و`tsc` يمسك القسم
+ * الذي يُضاف في Rust ولا يُذكر هنا — وهو بالضبط الشكل الذي يتقادم صامتًا.
+ */
+export type CategoryId =
+  | 'files'
+  | 'compress'
+  | 'images'
+  | 'text'
+  | 'disk'
+  | 'network'
+  | 'security'
+  | 'git'
+  | 'system'
+  | 'history'
+  | 'internal';
+
+/**
+ * حالة إتاحة العملية على **هذا الجهاز**.
+ *
+ * ليست حالةً في الفهرس — الفهرس يُدرج العملية دائمًا. هذه تجيب: «هل أداة هذه
+ * العملية موجودة هنا؟». `git` تأتي مع أدوات Xcode وقد تغيب.
+ */
+export type CoreAvailability =
+  | { state: 'available' }
+  | { state: 'tool_missing'; tool: string };
+
 export interface OperationSummary {
   id: string;
   title_key: string;
   description_key: string;
-  category: 'files' | 'compress' | 'system' | 'internal';
+  category: CategoryId;
   danger: Danger;
+  conflict: Conflict;
+  /** معرّف الأداة، كي يجدها البحث ويسمّيها سببُ التعطيل. */
+  tool: string;
+  availability: CoreAvailability;
+  sort_order: number;
+  search_terms: string[];
   inputs: InputSummary[];
+}
+
+/** من أين يأتي محتوى القسم. */
+export type CategoryKind = 'operations' | 'journal' | 'hidden';
+
+/**
+ * قسمٌ كما تعلنه النواة، بعدديه محسوبين من الفهرس لا مكتوبين بيد.
+ *
+ * عددان لا واحد: قسمٌ فيه ستّ عمليات تعمل منها أربع يقول ذلك صراحةً بدل أن
+ * يَعِد بستّ ثم يعرض اثنتين معطّلتين في الشاشة التي بعده.
+ */
+export interface CategorySummary {
+  id: CategoryId;
+  title_key: string;
+  description_key: string;
+  /** معرّفٌ في لوحة الرموز، جاء من النواة. */
+  icon: string;
+  sort_order: number;
+  kind: CategoryKind;
+  operation_count: number;
+  available_count: number;
 }
 
 // ── ما تستقبله ─────────────────────────────────────────────────────────
@@ -84,6 +151,8 @@ export interface PlanResponse {
   op_id: string;
   title_key: string;
   description_key: string;
+  /** القسم الذي تنتمي إليه العملية. يُقيَّد في السجل ويُصفّى به لاحقًا. */
+  category: CategoryId;
   danger: Danger;
   /** للعرض فقط. لا يمكن إعادة إرساله. */
   argv_display: string[];
@@ -141,9 +210,22 @@ export interface RunFinishedEvent extends Record<string, unknown> {
 
 export type JournalState = 'planned' | 'running' | 'succeeded' | 'failed' | 'cancelled';
 
+/**
+ * مدخلٌ واحد كما قُيِّد، لإعادة ملء النموذج.
+ *
+ * `value: null` تعني «حقلٌ كان، وقيمته لا تُكتب» لا «حقلٌ فارغ». زرّ «أعد
+ * بهذه القيم» يترك مثله للمستخدم بدل أن يملأه بفراغٍ ويبدو كأنه استعاد كل شيء.
+ */
+export interface JournalInput {
+  id: string;
+  value: string | null;
+}
+
 export interface JournalEntry {
   id: string;
   op_id: string;
+  /** القسم وقت التشغيل. يغيب عن القيود القديمة، فهو اختياري. */
+  category?: CategoryId | null;
   at: number;
   /**
    * زمن التنفيذ، في القيد النهائي وحده.
@@ -162,6 +244,10 @@ export interface JournalEntry {
   produced?: string | null;
   reason?: string;
   code?: number | null;
+  /** المدخلات بعد تنقيح السرّي. تغيب حين لا مدخلات لها. */
+  inputs?: JournalInput[];
+  /** آخر ما طبعته الأداة، محدودًا في النواة. في القيد النهائي وحده. */
+  tail?: string[];
 }
 
 /** خطأ من النواة: مفتاح ترجمة، والحقل المسؤول، وتفصيل اختياري. */
@@ -187,6 +273,9 @@ export function asCoreError(e: unknown): CoreErrorShape {
 
 export const listOperations = () => invoke<OperationSummary[]>('list_operations');
 
+/** الأقسام وأعدادها، محسوبةً في النواة من الفهرس نفسه. */
+export const listCategories = () => invoke<CategorySummary[]>('list_categories');
+
 export const plan = (opId: string, inputs: Record<string, RawValue>) =>
   invoke<PlanResponse>('plan', { opId, inputs });
 
@@ -196,6 +285,12 @@ export const execute = (token: string) => invoke<string>('execute', { token });
 export const cancel = (runId: string) => invoke<void>('cancel', { runId });
 
 export const recentRuns = () => invoke<JournalEntry[]>('recent_runs');
+
+/** يحذف كل قيود تشغيلٍ واحد. لا يمسّ ما أنتجه ذلك التشغيل على القرص. */
+export const journalDelete = (runId: string) => invoke<void>('journal_delete', { runId });
+
+/** يمسح السجلّ كله. الشاشة تسأل قبله. */
+export const journalClear = () => invoke<void>('journal_clear');
 
 /** يُظهر ناتج تشغيلٍ ناجح في Finder. لا يقبل مسارًا. */
 export const reveal = (runId: string) => invoke<void>('reveal', { runId });

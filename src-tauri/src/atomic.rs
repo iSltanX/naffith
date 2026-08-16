@@ -26,7 +26,7 @@
 
 use crate::error::{CoreError, Result};
 use crate::plans::random_suffix;
-use crate::spec::Artifact;
+use crate::spec::{Artifact, ArtifactKind};
 use std::ffi::{OsStr, OsString};
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
@@ -88,6 +88,7 @@ fn fit_within(stem: &OsStr, budget: usize) -> OsString {
 pub struct ArtifactGuard {
     temp: PathBuf,
     final_path: PathBuf,
+    kind: ArtifactKind,
     settled: bool,
 }
 
@@ -96,6 +97,7 @@ impl ArtifactGuard {
         Self {
             temp: artifact.temp.clone(),
             final_path: artifact.final_path.clone(),
+            kind: artifact.kind,
             settled: false,
         }
     }
@@ -123,18 +125,37 @@ impl ArtifactGuard {
     /// بعد تسوية الحارس (`settled`) كان سيخلّف `.naffith-*.part` في مجلد
     /// المستخدم بعد كل فشلٍ من هذا النوع — و`Drop` لا يمرّ عليه بعد التسوية.
     pub fn commit(mut self) -> Result<PathBuf> {
-        let produced = std::fs::metadata(&self.temp).map(|m| m.len() > 0).unwrap_or(false);
-        if !produced {
-            self.cleanup();
-            self.settled = true;
-            return Err(CoreError::PathMissing);
-        }
-        let promoted = promote(&self.temp, &self.final_path);
-        // في مسار الرابط الصلب يبقى المؤقّت بعد النجاح، وفي مسار النقل لا
-        // يبقى. حذفٌ غير مشروط يغطّي الحالتين، وفشله لا يعني شيئًا.
-        let _ = std::fs::remove_file(&self.temp);
         self.settled = true;
-        promoted.map(|()| self.final_path.clone())
+        match self.kind {
+            ArtifactKind::File => {
+                let produced = std::fs::metadata(&self.temp).map(|m| m.len() > 0).unwrap_or(false);
+                if !produced {
+                    self.cleanup();
+                    return Err(CoreError::PathMissing);
+                }
+                let promoted = promote(&self.temp, &self.final_path);
+                // في مسار الرابط الصلب يبقى المؤقّت بعد النجاح، وفي مسار النقل
+                // لا يبقى. حذفٌ غير مشروط يغطّي الحالتين، وفشله لا يعني شيئًا.
+                let _ = std::fs::remove_file(&self.temp);
+                promoted.map(|()| self.final_path.clone())
+            }
+            ArtifactKind::Dir => {
+                // «أُنتج شيء» للمجلد = مدخلةٌ واحدة على الأقل. أداةٌ خرجت بصفر
+                // ولم تكتب شيئًا تُنتج مجلدًا فارغًا، وترقيتُه تقول للمستخدم إن
+                // الاستخراج نجح ثم لا يجد فيه شيئًا.
+                let produced =
+                    std::fs::read_dir(&self.temp).map(|mut d| d.next().is_some()).unwrap_or(false);
+                if !produced {
+                    self.cleanup();
+                    return Err(CoreError::PathMissing);
+                }
+                let promoted = promote_dir(&self.temp, &self.final_path);
+                if promoted.is_err() {
+                    self.cleanup();
+                }
+                promoted.map(|()| self.final_path.clone())
+            }
+        }
     }
 
     /// إسقاط صريح عند الفشل أو الإلغاء.
@@ -144,8 +165,19 @@ impl ArtifactGuard {
     }
 
     fn cleanup(&self) {
-        if self.temp.exists() {
-            let _ = std::fs::remove_file(&self.temp);
+        match self.kind {
+            ArtifactKind::File => {
+                if self.temp.exists() {
+                    let _ = std::fs::remove_file(&self.temp);
+                }
+            }
+            // `remove_dir_all` لا تتبع الروابط الرمزية داخل الشجرة (تحذفها
+            // كروابط)، فتنظيفُ استخراجٍ نصفيّ لا يمكن أن يمتدّ خارج المؤقّت.
+            ArtifactKind::Dir => {
+                if self.temp.symlink_metadata().is_ok() {
+                    let _ = std::fs::remove_dir_all(&self.temp);
+                }
+            }
         }
     }
 }
@@ -189,6 +221,34 @@ fn promote(temp: &Path, final_path: &Path) -> Result<()> {
 /// `renamex_np` بـ `RENAME_EXCL` جُرِّبت أولًا لأنها تلغي النافذة بين الحجز
 /// والنقل، وسقطت: على exFAT ترجع `ENOTSUP` هي الأخرى، فلم تكن تحلّ الحالة
 /// التي وُجدت من أجلها.
+/// يرقّي مجلدًا مؤقّتًا إلى اسمه النهائي، ولا يستبدل شيئًا موجودًا.
+///
+/// `hard_link` لا تعمل على المجلدات على أي نظام ملفات، فلا مسار مفضّل هنا:
+/// الآلية الوحيدة هي **حجز الاسم ثم النقل فوق الحجز**، وهي نفس فكرة
+/// `promote_without_links`.
+///
+/// `create_dir` ذرّية وتفشل بـ `EEXIST` إن كان الاسم مأخوذًا — بملفٍ أو مجلدٍ
+/// أو رابطٍ معلَّق — فالحجز نفسه هو الفحص. ثم `rename(temp، final)` على يونكس
+/// تنجح حين تكون الوجهة **مجلدًا فارغًا**، وهو بالضبط ما أنشأناه قبل سطر.
+///
+/// وإن ملأه أحدٌ في تلك اللحظة فشل النقل بـ `ENOTEMPTY` — فشلٌ مغلق، ونحذف
+/// حجزنا كي لا يبقى مجلدٌ فارغ يحمل الاسم الذي اختاره المستخدم ويوحي بأن
+/// الاستخراج تمّ. والحذف `remove_dir` لا `remove_dir_all`: ما نحذفه حجزٌ فارغ،
+/// وإن لم يكن فارغًا فهو ليس حجزنا ولا يُمسّ.
+fn promote_dir(temp: &Path, final_path: &Path) -> Result<()> {
+    match std::fs::create_dir(final_path) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            return Err(CoreError::DestinationExists)
+        }
+        Err(e) => return Err(CoreError::Io(e)),
+    }
+    std::fs::rename(temp, final_path).map_err(|e| {
+        let _ = std::fs::remove_dir(final_path);
+        CoreError::Io(e)
+    })
+}
+
 fn promote_without_links(temp: &Path, final_path: &Path) -> Result<()> {
     match std::fs::OpenOptions::new().write(true).create_new(true).open(final_path) {
         Ok(_) => {}
@@ -211,7 +271,15 @@ mod tests {
 
     fn artifact(dir: &Path, name: &str) -> Artifact {
         let final_path = dir.join(name);
-        Artifact { temp: temp_path_for(&final_path).unwrap(), final_path }
+        Artifact::file(temp_path_for(&final_path).unwrap(), final_path)
+    }
+
+    /// ناتجٌ مجلد، ومؤقّته مُنشأ كما يُنشئه `plans::Preconditions::claim_temp`.
+    fn dir_artifact(dir: &Path, name: &str) -> Artifact {
+        let final_path = dir.join(name);
+        let temp = temp_path_for(&final_path).unwrap();
+        std::fs::create_dir(&temp).unwrap();
+        Artifact::dir(temp, final_path)
     }
 
     #[test]
@@ -390,6 +458,101 @@ mod tests {
             Err(CoreError::DestinationExists)
         ));
         assert!(!dir.path().join("nowhere").exists(), "nothing may be written through the link");
+    }
+
+    // ── الناتج المجلد ─────────────────────────────────────────────────
+
+    #[test]
+    fn a_directory_artifact_is_promoted_with_its_contents() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir_artifact(dir.path(), "المستخرَج");
+        std::fs::write(a.temp.join("ملف.txt"), b"payload").unwrap();
+        std::fs::create_dir(a.temp.join("داخل")).unwrap();
+
+        let out = ArtifactGuard::new(&a).commit().unwrap();
+
+        assert_eq!(out, a.final_path);
+        assert_eq!(std::fs::read(a.final_path.join("ملف.txt")).unwrap(), b"payload");
+        assert!(a.final_path.join("داخل").is_dir());
+        assert!(!a.temp.exists(), "the temporary directory must not survive a commit");
+    }
+
+    #[test]
+    fn an_empty_directory_artifact_is_not_promoted() {
+        // أداةٌ خرجت بصفر ولم تستخرج شيئًا. ترقيةُ مجلدٍ فارغ تقول «نجح» عن
+        // لا شيء، ويفتحه المستخدم فلا يجد فيه ما جاء من أجله.
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir_artifact(dir.path(), "فارغ");
+
+        let r = ArtifactGuard::new(&a).commit();
+
+        assert!(matches!(r, Err(CoreError::PathMissing)), "got {r:?}");
+        assert!(!a.final_path.exists());
+        assert!(!a.temp.exists(), "and the claimed placeholder must be cleaned up");
+    }
+
+    #[test]
+    fn an_existing_directory_at_the_final_name_is_never_replaced() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir_artifact(dir.path(), "موجود");
+        std::fs::write(a.temp.join("جديد.txt"), b"new").unwrap();
+        std::fs::create_dir(&a.final_path).unwrap();
+        std::fs::write(a.final_path.join("قديم.txt"), b"PRECIOUS").unwrap();
+
+        let r = ArtifactGuard::new(&a).commit();
+
+        assert!(matches!(r, Err(CoreError::DestinationExists)), "got {r:?}");
+        assert_eq!(std::fs::read(a.final_path.join("قديم.txt")).unwrap(), b"PRECIOUS");
+        assert!(!a.final_path.join("جديد.txt").exists(), "nothing may be merged in");
+        assert!(!a.temp.exists(), "and the temp must still be cleaned up");
+    }
+
+    #[test]
+    fn an_existing_file_at_the_final_name_also_blocks_a_directory_promotion() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir_artifact(dir.path(), "مأخوذ");
+        std::fs::write(a.temp.join("x"), b"x").unwrap();
+        std::fs::write(&a.final_path, b"A FILE IS HERE").unwrap();
+
+        assert!(matches!(ArtifactGuard::new(&a).commit(), Err(CoreError::DestinationExists)));
+        assert_eq!(std::fs::read(&a.final_path).unwrap(), b"A FILE IS HERE");
+    }
+
+    #[test]
+    fn dropping_a_directory_guard_removes_a_half_extracted_tree() {
+        // مسار الإلغاء: `ditto -x` أو `tar -x` قُتلت في المنتصف، فبقيت شجرةٌ
+        // ناقصة. لا يجوز أن تصل إلى الاسم النهائي ولا أن تبقى في الوجهة.
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir_artifact(dir.path(), "ناقص");
+        std::fs::create_dir_all(a.temp.join("أ/ب")).unwrap();
+        std::fs::write(a.temp.join("أ/ب/جزء"), b"half").unwrap();
+
+        {
+            let _guard = ArtifactGuard::new(&a);
+        }
+
+        assert!(!a.temp.exists(), "a half-extracted tree must not be left behind");
+        assert!(!a.final_path.exists());
+    }
+
+    #[test]
+    fn cleaning_a_directory_artifact_does_not_follow_a_symlink_out_of_it() {
+        // شجرةٌ مستخرَجة قد تحوي روابط رمزية. التنظيف يحذف الرابط لا هدفه.
+        let dir = tempfile::tempdir().unwrap();
+        let outside = dir.path().join("خارج.txt");
+        std::fs::write(&outside, b"PRECIOUS").unwrap();
+
+        let a = dir_artifact(dir.path(), "شجرة");
+        std::os::unix::fs::symlink(&outside, a.temp.join("رابط")).unwrap();
+
+        ArtifactGuard::new(&a).abort();
+
+        assert!(!a.temp.exists());
+        assert_eq!(
+            std::fs::read(&outside).unwrap(),
+            b"PRECIOUS",
+            "cleanup must never walk out through a link"
+        );
     }
 
     #[test]

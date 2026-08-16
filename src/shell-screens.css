@@ -84,6 +84,16 @@
 /* ── سجلّ التشغيل ────────────────────────────────────────────────── */
 .log { display: flex; flex-direction: column; gap: var(--space-12); }
 
+/* المرشّحات: صفٌّ مشترك (`.control-row` في `controls.css`) لا تخطيطٌ محلّي.
+   لم يكن لها هنا قاعدةٌ واحدة — ولا لضوابطها — فكانت الثلاثة تتكدّس عمودًا
+   بأعراضٍ مختلفة في طرف الشاشة (‏`docs/deferred-polish.md` §٨). وما تضيفه هذه
+   الشاشة فوق الصفّ المشترك خطٌّ يفصله عن القائمة تحته: المرشّحات أدواتُ عرضٍ
+   لا قيودٌ في السجل، والخطُّ يقول ذلك بلا صندوقٍ حولها. */
+.log__filters {
+  padding-block-end: var(--space-12);
+  border-block-end: var(--border-hairline) solid var(--border-subtle);
+}
+
 .log__status {
   display: flex;
   align-items: center;

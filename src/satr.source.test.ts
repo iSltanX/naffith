@@ -1,17 +1,32 @@
 // @vitest-environment node
 /**
- * الكتابة المائية: خافتةٌ ومقروءة معًا، لا واحدة منهما.
+ * لوحة «سَطْر»: تطوي عرضها حين لا محتوى، ويبقى شريطها مقروءًا.
  *
- * العقد على هذه الكتلة شرطان يشدّ كلٌّ منهما في جهة: أن تكون **كتابةً في
- * الخلفية** — بلا حدّ ولا بطاقة، بشفافيةٍ منخفضة ووزنٍ خفيف — وأن تكون
- * **تعليمةً تُقرأ**. سقط الثاني مرّة: كان السطران يأخذان `--text-secondary`،
- * وهي درجةٌ صحيحة على الأرضية وحدها لكنها تُضرب في ٠٫٦٥ قبل أن تصل إلى العين،
- * فتنزل إلى 3.20:1 في الوضع النهاري و3.96:1 في الليلي — دون حدّ AA (‏4.5)
- * لنصّ المتن في الوضعين معًا.
+ * ## العقد المحروس هنا
  *
- * ولذلك يحسب هذا الملف ما تراه العين لا ما يقوله الرمز: يقرأ قيمة الرمز من
- * نظام التصميم، ويمزجها بأرضيتها بنسبة الشفافية المعلنة، ثم يقيس التباين.
- * فرفعُ الشفافية أو خفضُ الحبر يسقط هنا قبل أن يصل إلى مستخدم.
+ * 1. **الطيّ حقيقيّ.** عرضُ اللوحة المطويّة قيمةٌ مطلقة صغيرة، والمتوسّعة نسبةٌ
+ *    من الصفّ في نطاق ‎30–35%‎. الفرق بينهما لا يقلّ عن الضِعف: طيٌّ يوفّر ‎20%‎ من
+ *    العرض ليس طيًّا بل تضييقًا، وهو ما وقع ثلاث مرّات قبل هذا التنفيذ.
+ * 2. **الانتقال من رموز الحركة.** مدّةٌ من النظام لا رقمٌ مكتوب، فتنهار إلى
+ *    ‎1ms‎ تحت `prefers-reduced-motion` بلا سطرٍ إضافي في الملف.
+ * 3. **الشريط مقروء.** نصوصه تبلغ حدّ AA على أرضية اللوحة في الوضعين، بلا
+ *    شفافيةٍ تخفض الحبر قبل أن يصل إلى العين.
+ *
+ * ## ما سقط من هذا الملف، ولماذا صار أشدّ لا أهون
+ *
+ * كان يحرس **كتابةً مائية**: شفافيةٌ ‎≤ 0.7‎ ووزنٌ خفيف وعنوانٌ ‎≥ 24px‎ يستحقّ حدّ
+ * النصّ الكبير (‏3:1) بدل حدّ المتن (‏4.5). وقد سقطت الكتابة المائية نفسها: هي
+ * كانت محتوًى بديلًا يشغل مكان الغائب، والعلاج ألّا يُحجز مكان.
+ *
+ * وما حلّ محلّه أضيق:
+ *
+ * - **حدّ ‎4.5‎ لكل نصوص الشريط** بلا استثناءٍ للنصّ الكبير: لم يبقَ فيه نصٌّ كبير.
+ * - **بلا شفافية**: كانت ‎0.65‎ تضرب الحبر قبل العين فيُقاس المزيج لا الرمز. صار
+ *   الشريط عنصر واجهةٍ بدرجاته كاملة، فالقياس على الرمز مباشرةً — وهو أعلى.
+ * - **الأرضية تُقرأ من قاعدة اللوحة** لا مكتوبةً هنا. كان الملف يقيس على
+ *   `--bg-canvas` بينما أرضية اللوحة `--bg-sunken` فعلًا، فيحرس تباينًا على سطحٍ
+ *   لا وجود له في الشاشة.
+ * - **والطيّ نفسه محروس** — وهو الشرط الذي لم يكن محروسًا أصلًا فسقط ثلاث مرّات.
  *
  * وبيئته `node` لأن الأنماط لا تُحمَّل في jsdom أصلًا: لا يوجد في شجرة الاختبار
  * لونٌ محسوب يُسأل عنه، فالمصدر هو المرجع الوحيد.
@@ -25,9 +40,8 @@ const TOKENS = readFileSync(
   'utf8',
 );
 
-/** حدّ AA لنصّ المتن، وحدّه للنصّ الكبير (‏≥ 24px بوزنٍ عادي أو أخفّ). */
+/** حدّ AA لنصّ المتن. لا شيء في هذه الكتلة يستحقّ استثناء النصّ الكبير. */
 const AA_BODY = 4.5;
-const AA_LARGE = 3;
 
 /** جسم قاعدةٍ واحدة بمحدّدها الحرفي. */
 function rule(css: string, selector: string): string {
@@ -77,14 +91,10 @@ function rgb(hex: string): Rgb {
   ];
 }
 
-/** ما تراه العين فعلًا: الحبر ممزوجًا بأرضيته بنسبة الشفافية. */
-function composite(ink: Rgb, ground: Rgb, alpha: number): Rgb {
-  return [
-    alpha * ink[0] + (1 - alpha) * ground[0],
-    alpha * ink[1] + (1 - alpha) * ground[1],
-    alpha * ink[2] + (1 - alpha) * ground[2],
-  ];
-}
+// كان هنا `composite`: تمزج الحبر بأرضيته بنسبة الشفافية، لأن الكتابة المائية
+// كانت تُضرب في ٠٫٦٥ قبل أن تصل إلى العين فيُقاس المزيج لا الرمز. وقد سقطت مع
+// الشفافية نفسها — انظر «بلا شفافيةٍ تخفض الحبر قبل العين» أدناه — فالقياس الآن
+// على الرمز مباشرةً، وهو أعلى ممّا كان.
 
 function luminance([r, g, b]: Rgb): number {
   const channel = (raw: number): number => {
@@ -113,58 +123,95 @@ const MODES: ReadonlyArray<readonly [string, Map<string, string>]> = [
   ['الليلي', DARK],
 ];
 
-const MARK = rule(APP, '.satr__watermark');
-const TITLE = rule(APP, '.satr__watermark-title');
-const LINE = rule(APP, '.satr__watermark-line');
+const PANES = rule(APP, '.op__panes');
+const PANEL = rule(APP, '.satr');
+const LIVE = rule(APP, '.satr--live');
+const RAIL = rule(APP, '.satr__rail');
+const NAME = rule(APP, '.satr__rail-name');
+const STATE = rule(APP, '.satr__rail-state');
 
-describe('الكتابة المائية تبقى خافتة', () => {
-  it('شفافيةٌ منخفضة من رمزٍ في النظام، لا رقمًا مكتوبًا هنا', () => {
-    const alpha = Number.parseFloat(resolve(LIGHT, tokenOf(MARK, 'opacity')));
-    expect(alpha).toBeGreaterThan(0);
-    // «كتابة مائية» شرطٌ بصري لا زينة: بلا خفوتٍ محسوس تصير الكتلة نصًّا
-    // ثالثًا ينافس النموذج على الانتباه.
-    expect(alpha).toBeLessThanOrEqual(0.7);
+/** رمز أرضية اللوحة، مقروءًا من قاعدتها لا مكتوبًا هنا. */
+const GROUND_TOKEN = tokenOf(PANEL, 'background');
+
+/** قيمة رمزٍ معرَّفٍ في جسم قاعدةٍ ما (‏`--satr-w-folded` وأختها). */
+function localVar(body: string, name: string): string {
+  const found = new RegExp(`${name}:\\s*([^;]+);`).exec(body);
+  expect(found?.[1], `${name} غير معرَّف`).toBeTruthy();
+  return (found?.[1] ?? '').trim();
+}
+
+describe('اللوحة تطوي عرضها', () => {
+  it('عرضُ المطويّة قيمةٌ مطلقة صغيرة من سلّم الهوية', () => {
+    // نسبةٌ للمطويّة تجعلها تكبر مع النافذة، فتعود المساحة المحجوزة من بابٍ
+    // آخر. والقيمة محسوبةٌ من رمزٍ في النظام لا رقمًا مكتوبًا.
+    const folded = localVar(PANES, '--satr-w-folded');
+    expect(folded).toContain('var(--sidebar-w-collapsed)');
+    expect(folded, 'عرضُ المطويّة يقرأ الصفّ أو النافذة').not.toMatch(/%|vw|vh/);
+    expect(PANEL).toContain('inline-size: var(--satr-w-folded)');
   });
 
-  it('وزنٌ خفيف في الأسطر الثلاثة', () => {
-    expect(TITLE).toContain('font-weight: var(--fw-light)');
-    expect(LINE).toContain('font-weight: var(--fw-light)');
+  it('عرضُ المتوسّعة في نطاق ‎30–35%‎ بسقفٍ مطلق', () => {
+    const live = localVar(PANES, '--satr-w-live');
+    const pct = /(\d+(?:\.\d+)?)%/.exec(live);
+    expect(pct?.[1], 'عرضُ المتوسّعة ليس نسبةً من الصفّ').toBeTruthy();
+    const value = Number.parseFloat(pct?.[1] ?? '0');
+    expect(value).toBeGreaterThanOrEqual(30);
+    expect(value).toBeLessThanOrEqual(35);
+    // سقفٌ يمنعها من التضخّم في نافذةٍ عريضة.
+    expect(live).toMatch(/\bmin\(/);
+    expect(LIVE).toContain('inline-size: var(--satr-w-live)');
+  });
+
+  it('الفرق بين الحالتين طيٌّ لا تضييق', () => {
+    // ‎96px‎ مقابل ‎34%‎ من ‎1180px‎ ≈ ‎401px‎: أربعة أضعاف. وحدُّ الضِعف يمنع أن
+    // يتحوّل «الطيّ» يومًا إلى قضم عشرين بكسلًا ويبقى الاسم قائمًا.
+    const collapsed = px(LIGHT, '--sidebar-w-collapsed') + px(LIGHT, '--space-40');
+    const NARROWEST_WINDOW = 900; // ما دونه تنزل اللوحة تحت النموذج
+    const livePct = Number.parseFloat((/(\d+(?:\.\d+)?)%/.exec(localVar(PANES, '--satr-w-live')) ??
+      ['', '0'])[1] as string);
+    expect(collapsed * 2).toBeLessThanOrEqual((NARROWEST_WINDOW * livePct) / 100);
+  });
+
+  it('الانتقال بمدّةٍ من رموز الحركة، فيُطاع تقليلُ الحركة', () => {
+    // رقمٌ مكتوب هنا يفلت من انهيار المدد إلى ‎1ms‎ في `tokens.css`، فتبقى
+    // حركةٌ لمن طلب ألّا تكون.
+    expect(PANEL).toMatch(/transition:\s*inline-size var\(--duration-[\w-]+\)/);
+    expect(PANEL).not.toMatch(/transition:[^;]*\d+ms/);
+  });
+});
+
+describe('الشريط المطويّ يبقى مقروءًا', () => {
+  it('يقيس على أرضية اللوحة نفسها', () => {
+    // حارسٌ على الاختبار: كان يقيس على `--bg-canvas` مكتوبًا هنا بينما أرضية
+    // اللوحة `--bg-sunken`، فكان يحرس تباينًا على سطحٍ لا وجود له في الشاشة.
+    expect(GROUND_TOKEN, 'أرضية اللوحة ليست رمزًا من النظام').toMatch(/^--bg-/);
+  });
+
+  it('بلا شفافيةٍ تخفض الحبر قبل العين', () => {
+    // الشفافية كانت لازمةً لكتابةٍ مائية تحتلّ نصف الشاشة. وشريطٌ بعرض ‎96px‎
+    // عنصرُ واجهة: يأخذ درجته من النظام كاملة، ويُقاس عليها مباشرةً.
+    expect(RAIL).not.toMatch(/opacity:/);
   });
 
   it('بلا لونٍ خام: كل قيمة رمزٌ من النظام', () => {
-    for (const body of [MARK, TITLE, LINE]) {
+    for (const body of [RAIL, NAME, STATE]) {
       expect(body).not.toMatch(/#[0-9a-fA-F]{3,8}/);
       expect(body).not.toMatch(/\brgba?\(/);
     }
   });
-});
-
-describe('الكتابة المائية تبقى مقروءة', () => {
-  const alpha = Number.parseFloat(resolve(LIGHT, tokenOf(MARK, 'opacity')));
 
   for (const [mode, vars] of MODES) {
-    const ground = rgb(resolve(vars, '--bg-canvas'));
-    const ink = (body: string): Rgb =>
-      composite(rgb(resolve(vars, tokenOf(body, 'color'))), ground, alpha);
+    const ground = rgb(resolve(vars, GROUND_TOKEN));
+    const ink = (body: string): Rgb => rgb(resolve(vars, tokenOf(body, 'color')));
 
-    it(`السطران يبلغان حدّ AA في الوضع ${mode}`, () => {
-      // ما يُقاس هو المزيج لا قيمة الرمز: الشفافية على الكتلة تسبق العين.
-      expect(contrast(ink(LINE), ground)).toBeGreaterThanOrEqual(AA_BODY);
+    it(`الاسم والحالة يبلغان حدّ AA في الوضع ${mode}`, () => {
+      // حدٌّ واحد للاثنين: لا نصّ كبير في الشريط يستحقّ استثناء ‎3:1‎.
+      expect(contrast(ink(NAME), ground)).toBeGreaterThanOrEqual(AA_BODY);
+      expect(contrast(ink(STATE), ground)).toBeGreaterThanOrEqual(AA_BODY);
     });
 
-    it(`العنوان يبلغ حدّ النصّ الكبير في الوضع ${mode}`, () => {
-      expect(contrast(ink(TITLE), ground)).toBeGreaterThanOrEqual(AA_LARGE);
-    });
-
-    it(`العنوان أظهر من السطرين في الوضع ${mode}`, () => {
-      // الفرق مقاسٌ وخطّ لا درجةَ حبر: لا درجة في النظام أقوى ممّا يأخذه
-      // السطران بعد أن صعدا إليها. فالشرط ألّا يكون العنوان أخفت منهما، وأن
-      // يبقى مقاسه أكبر — وعند 28px يكفيه حدّ 3:1 بينما يلزم السطرين 4.5.
-      expect(contrast(ink(TITLE), ground)).toBeGreaterThanOrEqual(contrast(ink(LINE), ground));
-      expect(px(vars, tokenOf(TITLE, 'font-size'))).toBeGreaterThan(
-        px(vars, tokenOf(LINE, 'font-size')),
-      );
-      expect(px(vars, tokenOf(TITLE, 'font-size'))).toBeGreaterThanOrEqual(24);
+    it(`الاسم أظهر من الحالة في الوضع ${mode}`, () => {
+      expect(contrast(ink(NAME), ground)).toBeGreaterThanOrEqual(contrast(ink(STATE), ground));
     });
   }
 });

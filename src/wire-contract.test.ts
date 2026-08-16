@@ -408,16 +408,6 @@ function tsMayBeAbsent(shape: TsShape, field: string): boolean {
   });
 }
 
-/** الحرفيّات النصّية المعلَنة لحقلٍ داخل شكل (اتحادٌ مضمَّن لا مُسمّى). */
-function tsFieldLiterals(shapeName: string, field: string): string[] {
-  const declarations = tsShape(shapeName)
-    .members.flatMap((m) => objectFields(m))
-    .filter((f) => f.name === field);
-  expect(declarations.length, `لم يُعثر على الحقل ${field} في ${shapeName}`).toBeGreaterThan(0);
-  return declarations.flatMap((f) =>
-    [...f.type.matchAll(/'([a-z0-9_]+)'/g)].map((m) => m[1] as string),
-  );
-}
 
 function tsStringUnion(name: string): string[] {
   return [...tsUnionBody(name).matchAll(/'([a-z0-9_]+)'/g)].map((m) => m[1] as string);
@@ -489,7 +479,13 @@ describe('محلّلات العقد نفسها', () => {
     // حارسٌ على الحارس: لو كفّ المحلّل عن رؤية `skip_serializing_if` أو عن فتح
     // ‏`flatten` لصار فحص الاختيارية كلّه يقارن قوائم فارغة فيمرّ دائمًا.
     const entry = structWireFields('Entry');
-    expect(entry.skipped, 'لم يُرصد ما يحذفه serde في Entry').toEqual(['duration_ms', 'cwd']);
+    expect(entry.skipped, 'لم يُرصد ما يحذفه serde في Entry').toEqual([
+      'category',
+      'duration_ms',
+      'cwd',
+      'inputs',
+      'tail',
+    ]);
     expect(sorted(entry.conditional)).toEqual(['code', 'produced', 'reason']);
 
     expect(structWireFields('PlanResponse').skipped, 'PlanResponse لا تحذف حقلًا').toEqual([]);
@@ -546,8 +542,11 @@ describe('متغيّرات كل enum يعبر الحدّ', () => {
     { rust: 'TokenRole', label: 'TokenRole', ts: () => tsStringUnion('TokenRole') },
     {
       rust: 'Category',
-      label: 'Category → OperationSummary.category',
-      ts: () => tsFieldLiterals('OperationSummary', 'category'),
+      label: 'Category → CategoryId',
+      // صار للأقسام نوعٌ مسمّى في `ipc.ts` بعد أن صار للقسم كيانٌ في النواة:
+      // `CategorySummary` و`OperationSummary` و`JournalEntry` كلها تشير إليه،
+      // فوصفُه في موضعٍ واحد أصدق من تكراره في ثلاثة.
+      ts: () => tsStringUnion('CategoryId'),
     },
     {
       rust: 'State',
@@ -583,7 +582,7 @@ describe('متغيّرات كل enum يعبر الحدّ', () => {
     carrier: string[];
   }> = [
     { rust: 'Outcome', ts: 'Outcome', tag: 'status', count: 5, carrier: [] },
-    { rust: 'InputKind', ts: 'InputKind', tag: 'kind', count: 6, carrier: [] },
+    { rust: 'InputKind', ts: 'InputKind', tag: 'kind', count: 11, carrier: [] },
     { rust: 'RawValue', ts: 'RawValue', tag: 'kind', count: 3, carrier: [] },
     { rust: 'OutputLine', ts: 'RunOutputEvent', tag: 'stream', count: 3, carrier: ['run_id'] },
   ];
@@ -644,7 +643,7 @@ const UNDECLARED: Record<string, string[]> = {
   // تكرّر حقوله هنا. تكرارها كان سيعني وصفين لشيء واحد داخل `ipc.ts` نفسه.
   //
   // وهذا الاستثناء الوحيد الباقي: كل ما عداه يُطابَق حقلًا حقلًا.
-  InputSummary: ['ext', 'kind', 'max_len'],
+  InputSummary: ['ext', 'kind', 'max_len', 'options', 'min', 'max', 'default'],
 };
 
 /**
@@ -720,14 +719,17 @@ describe('حقول كل بنية تعبر الحدّ', () => {
     // هنا أن لكل بنيةٍ تحمل حقولًا قابلة للغياب حقولٌ مرصودة ومعلَنة معًا.
     const entry = structWireFields('Entry');
     expect(sorted([...entry.skipped, ...entry.conditional])).toEqual([
+      'category',
       'code',
       'cwd',
       'duration_ms',
+      'inputs',
       'produced',
       'reason',
+      'tail',
     ]);
     const shape = tsShape('JournalEntry');
-    for (const f of ['duration_ms', 'cwd', 'produced', 'reason', 'code']) {
+    for (const f of ['duration_ms', 'cwd', 'produced', 'reason', 'code', 'category', 'inputs', 'tail']) {
       expect(tsShapeFields('JournalEntry'), `JournalEntry لا تسمّي ${f}`).toContain(f);
       expect(tsMayBeAbsent(shape, f), `${f} معلَنة إلزامية في JournalEntry`).toBe(true);
     }

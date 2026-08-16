@@ -18,7 +18,10 @@
 
 export type Screen =
   | { name: 'onboarding' }
+  /** شاشة الفئات: جذر المكتبة. */
   | { name: 'operations-list' }
+  /** قسمٌ مفتوح، وعملياته معروضة. */
+  | { name: 'category-view'; categoryId: string }
   | { name: 'operation-view'; opId: string }
   | { name: 'run-log' }
   | { name: 'settings' };
@@ -42,10 +45,13 @@ export type ExitCost =
 export type NavEvent =
   /** «ابدأ الآن». */
   | { type: 'onboarding.finished' }
+  | { type: 'category.selected'; categoryId: string }
   | { type: 'operation.selected'; opId: string }
   | { type: 'log.opened' }
   | { type: 'settings.opened' }
   | { type: 'back' }
+  /** الرجوع إلى جذر المكتبة مهما بعُدت الشاشة. */
+  | { type: 'library.opened' }
   /** إعادة عرض الترحيب من الإعدادات. */
   | { type: 'onboarding.replay' };
 
@@ -66,14 +72,29 @@ export function initialScreen(showOnboarding: boolean): Screen {
   return showOnboarding ? { name: 'onboarding' } : { name: 'operations-list' };
 }
 
-/** إلى أين يعود «رجوع» من كل شاشة. `null` يعني «لا شيء خلفها». */
-function backTarget(from: Screen): Screen | null {
+/**
+ * إلى أين يعود «رجوع» من كل شاشة. `null` يعني «لا شيء خلفها».
+ *
+ * ## لماذا العودة من شاشة العملية تحتاج سياقًا
+ *
+ * المسار المقصود هو: الفئات ← القسم ← العملية ← رجوع. لكن العملية تُفتح من
+ * موضعين آخرين كذلك — من نتائج البحث، ومن «المستخدَمة حديثًا» — وكلاهما في
+ * شاشة الفئات لا في قسم. فعودةٌ ثابتة إلى القسم كانت ستُنزل من جاء من البحث
+ * في شاشةٍ لم يرها، وعودةٌ ثابتة إلى الفئات كانت تُخرج من دخل من قسمٍ منه.
+ *
+ * `origin` هو الجواب: الشاشة التي فُتحت العملية منها، تُمرَّر من `App` الذي
+ * يعرفها. وهي دائمًا الفئات أو قسمٌ فيها، فلا يمكن أن تصير سلسلةً تنمو.
+ */
+function backTarget(from: Screen, origin: Screen | null): Screen | null {
   switch (from.name) {
     case 'operation-view':
+      // الرجوع إلى ما جاء منه، أو إلى الجذر إن لم يُعرف — لا إلى العدم.
+      return origin && origin.name !== 'operation-view' ? origin : { name: 'operations-list' };
+    case 'category-view':
     case 'run-log':
     case 'settings':
       return { name: 'operations-list' };
-    // قائمة العمليات هي الجذر، والترحيب يُغادَر بـ«ابدأ الآن» لا بالرجوع.
+    // شاشة الفئات هي الجذر، والترحيب يُغادَر بـ«ابدأ الآن» لا بالرجوع.
     case 'operations-list':
     case 'onboarding':
       return null;
@@ -81,7 +102,7 @@ function backTarget(from: Screen): Screen | null {
 }
 
 /** الوجهة المطلوبة لحدثٍ ما، بصرف النظر عن كلفة المغادرة. */
-function destination(current: Screen, event: NavEvent): Screen | null {
+function destination(current: Screen, event: NavEvent, origin: Screen | null): Screen | null {
   // الترحيب مغلق: «ابدأ الآن» وحده يُغادره. حدثٌ آخر يُخرج منه إلى داخل التطبيق
   // قبل إتمامه يترك الإعداد «لم يُتمّ»، فيعود الترحيب في التشغيل القادم بلا سبب
   // يفهمه المستخدم. الحارس هنا لا في الشاشات كي لا يُنسى في واحدةٍ منها.
@@ -91,8 +112,12 @@ function destination(current: Screen, event: NavEvent): Screen | null {
     case 'onboarding.finished':
       // الترحيب وحده يُنهى. الحدث نفسه من شاشة أخرى لا معنى له.
       return current.name === 'onboarding' ? { name: 'operations-list' } : null;
+    case 'category.selected':
+      return { name: 'category-view', categoryId: event.categoryId };
     case 'operation.selected':
       return { name: 'operation-view', opId: event.opId };
+    case 'library.opened':
+      return { name: 'operations-list' };
     case 'log.opened':
       return { name: 'run-log' };
     case 'settings.opened':
@@ -100,7 +125,7 @@ function destination(current: Screen, event: NavEvent): Screen | null {
     case 'onboarding.replay':
       return { name: 'onboarding' };
     case 'back':
-      return backTarget(current);
+      return backTarget(current, origin);
   }
 }
 
@@ -110,8 +135,13 @@ function destination(current: Screen, event: NavEvent): Screen | null {
  * `exitCost` كلفة مغادرة `current` لا كلفة الوصول. الشاشة التي لا تملك حالة
  * تمرّر `'free'` دائمًا.
  */
-export function navigate(current: Screen, event: NavEvent, exitCost: ExitCost = 'free'): NavResult {
-  const next = destination(current, event);
+export function navigate(
+  current: Screen,
+  event: NavEvent,
+  exitCost: ExitCost = 'free',
+  origin: Screen | null = null,
+): NavResult {
+  const next = destination(current, event, origin);
   if (!next) return { kind: 'ignore' };
 
   // الانتقال إلى نفس الشاشة نفسها ليس انتقالًا، ولا يستحق سؤالًا عن فقد حالة
@@ -132,5 +162,24 @@ export function confirmNavigation(pending: Screen): NavResult {
 export function sameScreen(a: Screen, b: Screen): boolean {
   if (a.name !== b.name) return false;
   if (a.name === 'operation-view' && b.name === 'operation-view') return a.opId === b.opId;
+  if (a.name === 'category-view' && b.name === 'category-view') {
+    return a.categoryId === b.categoryId;
+  }
   return true;
+}
+
+/**
+ * هويّة الشاشة نصًّا.
+ *
+ * الشاشة كائنٌ يُبنى من جديد في كل انتقال، فمقارنتُه بمرجعه تعلن تبدّلًا حيث
+ * لا تبدّل. والمعرّف داخلٌ فيه لأن الانتقال من قسمٍ إلى آخر انتقالُ شاشةٍ كامل
+ * وإن بقي الاسم واحدًا.
+ *
+ * هنا لا في `app.tsx`: موضع التمرير والبؤرة كلاهما يُفهرَس بهذا المفتاح، وقد
+ * كان محسوبًا في موضعين — فشاشةٌ تُضاف تُنسى في أحدهما.
+ */
+export function screenKey(screen: Screen): string {
+  if (screen.name === 'operation-view') return `${screen.name}:${screen.opId}`;
+  if (screen.name === 'category-view') return `${screen.name}:${screen.categoryId}`;
+  return screen.name;
 }

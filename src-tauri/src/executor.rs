@@ -95,10 +95,39 @@ pub async fn run(
     // ذلك الذعر وإسقاط المستقبل.
     let guard = command.artifact.as_ref().map(ArtifactGuard::new);
 
+    // توجيه الخرج القياسي إلى ملف الناتج، لأدواتٍ لا تعرف `-o`.
+    //
+    // الفتح هنا لا في `plans`: الملف محجوزٌ حصريًا قبل الوصول إلى هذه الدالة،
+    // فهذا فتحٌ لما نملكه. و`custom_flags(O_NOFOLLOW)` رغم ذلك، لأن بين الحجز
+    // والفتح لحظةً — والحارس الذي لا يكلّف شيئًا يُوضع.
+    let redirect = match &command.stdout_to {
+        None => None,
+        Some(path) => {
+            use std::os::unix::fs::OpenOptionsExt;
+            match std::fs::OpenOptions::new()
+                .write(true)
+                .truncate(true)
+                .custom_flags(libc::O_NOFOLLOW)
+                .open(path)
+            {
+                Ok(f) => Some(f),
+                Err(_) => {
+                    if let Some(g) = guard {
+                        g.abort();
+                    }
+                    return Outcome::Error { key: "err.redirect" };
+                }
+            }
+        }
+    };
+
     let mut cmd = tokio::process::Command::new(&command.program);
     cmd.args(&command.args)
         .stdin(Stdio::null())
-        .stdout(Stdio::piped())
+        .stdout(match redirect {
+            Some(f) => Stdio::from(f),
+            None => Stdio::piped(),
+        })
         .stderr(Stdio::piped())
         .kill_on_drop(true);
 
@@ -217,7 +246,12 @@ pub async fn run(
 
     // نجاح: الآن فقط يُرقّى الناتج إلى اسمه النهائي.
     match guard {
-        None => Outcome::Success { produced: None },
+        // بلا ناتجٍ مؤقّت، يبقى ما أعلنته العملية موضعًا يستحقّ الفتح: مجلدٌ
+        // نُقل إليه، أو مستودعٌ أُنشئ، أو شجرةٌ مُسحت. كان `None` دائمًا، فكان
+        // زرّ الإظهار يفشل بعد تشغيلٍ نجح.
+        None => Outcome::Success {
+            produced: command.reveal_target.as_ref().map(|p| p.display().to_string()),
+        },
         Some(g) => match g.commit() {
             Ok(path) => Outcome::Success { produced: Some(path.display().to_string()) },
             Err(crate::error::CoreError::DestinationExists) => {
@@ -395,6 +429,8 @@ mod tests {
             warnings: vec![],
             artifact: None,
             estimate: None,
+            stdout_to: None,
+            reveal_target: None,
         }
     }
 
@@ -439,6 +475,8 @@ mod tests {
             warnings: vec![],
             artifact: None,
             estimate: None,
+            stdout_to: None,
+            reveal_target: None,
         };
         let (outcome, _) = collect(cmd).await;
         assert!(matches!(outcome, Outcome::Failed { code: Some(1) }), "got {outcome:?}");
@@ -454,6 +492,8 @@ mod tests {
             warnings: vec![],
             artifact: None,
             estimate: None,
+            stdout_to: None,
+            reveal_target: None,
         };
         let (outcome, _) = collect(cmd).await;
         assert!(matches!(outcome, Outcome::Error { key: "err.spawn" }));
@@ -473,8 +513,10 @@ mod tests {
             cwd: None,
             explain: vec![],
             warnings: vec![],
-            artifact: Some(Artifact { temp: temp.clone(), final_path: final_path.clone() }),
+            artifact: Some(Artifact::file(temp.clone(), final_path.clone())),
             estimate: None,
+            stdout_to: None,
+            reveal_target: None,
         };
 
         let (tx, _rx) = mpsc::channel(8);
@@ -503,8 +545,10 @@ mod tests {
             cwd: None,
             explain: vec![],
             warnings: vec![],
-            artifact: Some(Artifact { temp: temp.clone(), final_path: final_path.clone() }),
+            artifact: Some(Artifact::file(temp.clone(), final_path.clone())),
             estimate: None,
+            stdout_to: None,
+            reveal_target: None,
         };
         let (outcome, _) = collect(cmd).await;
 
@@ -526,8 +570,10 @@ mod tests {
             cwd: None,
             explain: vec![],
             warnings: vec![],
-            artifact: Some(Artifact { temp: temp.clone(), final_path: final_path.clone() }),
+            artifact: Some(Artifact::file(temp.clone(), final_path.clone())),
             estimate: None,
+            stdout_to: None,
+            reveal_target: None,
         };
         let (outcome, _) = collect(cmd).await;
 
@@ -563,6 +609,8 @@ mod tests {
             warnings: vec![],
             artifact: None,
             estimate: None,
+            stdout_to: None,
+            reveal_target: None,
         };
         let (outcome, lines) = collect(cmd).await;
         assert!(outcome.is_success(), "got {outcome:?}");
@@ -590,6 +638,8 @@ mod tests {
             warnings: vec![],
             artifact: None,
             estimate: None,
+            stdout_to: None,
+            reveal_target: None,
         };
         let (_, lines) = collect(cmd).await;
         assert_eq!(lines.len(), 10);
@@ -608,6 +658,8 @@ mod tests {
             warnings: vec![],
             artifact: None,
             estimate: None,
+            stdout_to: None,
+            reveal_target: None,
         }
     }
 
@@ -625,7 +677,7 @@ mod tests {
              printf 'بعد-١\\nبعد-٢\\n' >&2; exit 0",
             temp.display()
         ));
-        cmd.artifact = Some(Artifact { temp: temp.clone(), final_path: final_path.clone() });
+        cmd.artifact = Some(Artifact::file(temp.clone(), final_path.clone()));
 
         let (outcome, lines) = collect(cmd).await;
         assert!(
@@ -666,6 +718,8 @@ mod tests {
             warnings: vec![],
             artifact: None,
             estimate: None,
+            stdout_to: None,
+            reveal_target: None,
         };
         let (outcome, lines) = collect(cmd).await;
         assert!(outcome.is_success(), "got {outcome:?}");
@@ -776,6 +830,8 @@ mod tests {
             warnings: vec![],
             artifact: None,
             estimate: None,
+            stdout_to: None,
+            reveal_target: None,
         };
         let (outcome, lines) = collect(cmd).await;
         assert!(outcome.is_success());

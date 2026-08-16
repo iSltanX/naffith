@@ -23,7 +23,9 @@ pub const SPEC: OperationSpec = OperationSpec {
     visibility: Visibility::Internal,
     tool: tools::ECHO,
     conflict: Conflict::NoArtifact,
-    inputs: &[InputSpec { id: "message", kind: InputKind::Text { max_len: 512 }, required: true }],
+    inputs: &[InputSpec::new("message", InputKind::Text { max_len: 512 })],
+    sort_order: 10,
+    search_terms: &["echo", "internal"],
     plan,
 };
 
@@ -43,5 +45,7 @@ fn plan(inputs: &Inputs) -> Result<PlannedCommand> {
         warnings: vec![],
         artifact: None,
         estimate: None,
+        stdout_to: None,
+        reveal_target: None,
     })
 }

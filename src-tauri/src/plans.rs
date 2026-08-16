@@ -14,7 +14,7 @@
 //! * **محدود العدد** لكل جلسة وإجمالًا، فلا يمكن إغراق الذاكرة بخطط.
 
 use crate::error::{CoreError, Result, StaleReason};
-use crate::spec::PlannedCommand;
+use crate::spec::{ArtifactKind, PlannedCommand};
 use crate::value::Inputs;
 use rand::RngCore;
 use serde::Serialize;
@@ -126,7 +126,7 @@ struct Preconditions {
     /// المسار النهائي الذي يجب أن يبقى **غير موجود** حتى لحظة التشغيل.
     final_path_must_be_absent: Option<PathBuf>,
     /// المسار المؤقّت الذي ستكتب إليه الأداة فعلًا. لا يُفحص بل **يُحجز**.
-    temp_to_claim: Option<PathBuf>,
+    temp_to_claim: Option<(PathBuf, ArtifactKind)>,
     /// المجلد الذي سيُكتب فيه الناتج. يُعاد فحص كتابته لا قراءة صلاحياته.
     destination_must_be_writable: Option<PathBuf>,
     /// الأداة التي حُلّت عند التخطيط. اختفاؤها بين اللحظتين حالة واقعية.
@@ -147,7 +147,7 @@ impl Preconditions {
         Ok(Preconditions {
             inputs: captured,
             final_path_must_be_absent: artifact.map(|a| a.final_path.clone()),
-            temp_to_claim: artifact.map(|a| a.temp.clone()),
+            temp_to_claim: artifact.map(|a| (a.temp.clone(), a.kind)),
             destination_must_be_writable: artifact
                 .and_then(|a| a.final_path.parent())
                 .map(Path::to_path_buf),
@@ -175,23 +175,36 @@ impl Preconditions {
     /// كان سيوهم بحماية لا يقدّمها هنا — الخصم في هذا السيناريو عمليةٌ تعمل
     /// بنفس المستخدم أصلًا.
     ///
-    /// وسبب البيات `FinalPathAppeared` مستعار: المعنى واحد — «موضعٌ حجزته
-    /// الخطة صار مشغولًا، فأعد التخطيط» — وإضافةُ بيانٍ خاص به تقع في
-    /// `error.rs` لا هنا.
+    /// والسبب `TempPathTaken` لا `FinalPathAppeared`: الموضعان مختلفان — هذا
+    /// اسمٌ داخلي يخترعه `atomic::temp_path_for`، وذاك الاسم الذي كتبه
+    /// المستخدم. إعارةُ السبب كانت تقول له إن ملفًا ظهر باسم أرشيفه، فيفتح
+    /// المجلد ولا يجد شيئًا.
     ///
     /// **أثرٌ يجب أن يقابله `atomic::ArtifactGuard::commit`**: بعد الحجز يصير
     /// المؤقّت موجودًا دائمًا، فشرط «لم يُنتج شيء» لم يعد وجودَ الملف بل
     /// كونَه غير فارغ. `commit` تفحص `exists()` وحدها، فترقية أرشيف بحجم صفر
     /// صارت ممكنة نظريًا؛ الفحص هناك يجب أن يصير على الحجم.
+    /// و**المجلد يُحجز بـ`create_dir`**، وهي ذرّية بنفس المعنى وتفشل بـ
+    /// `EEXIST` على أي شيء يشغل الاسم. أداةُ الاستخراج تكتب داخله فتجده جاهزًا،
+    /// و`ArtifactGuard` تقيس «أُنتج شيء» بوجود مدخلةٍ فيه لا بوجوده هو.
     fn claim_temp(&self) -> Result<()> {
         use std::os::unix::fs::OpenOptionsExt;
-        let Some(temp) = &self.temp_to_claim else { return Ok(()) };
-        match std::fs::OpenOptions::new().write(true).create_new(true).mode(0o666).open(temp) {
-            Ok(_) => Ok(()),
+        let Some((temp, kind)) = &self.temp_to_claim else { return Ok(()) };
+        let claimed = match kind {
+            ArtifactKind::File => std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o666)
+                .open(temp)
+                .map(|_| ()),
+            ArtifactKind::Dir => std::fs::create_dir(temp),
+        };
+        match claimed {
+            Ok(()) => Ok(()),
             // `create_new` يفشل على الرابط الرمزي كما يفشل على الملف، ولا
-            // يتبعه — وهذا هو المقصود بالضبط.
+            // يتبعه — وهذا هو المقصود بالضبط. و`create_dir` كذلك.
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-                Err(CoreError::PlanStale { detail: StaleReason::FinalPathAppeared })
+                Err(CoreError::PlanStale { detail: StaleReason::TempPathTaken })
             }
             Err(e) => Err(CoreError::Io(e)),
         }
@@ -434,6 +447,8 @@ mod tests {
             warnings: vec![],
             artifact: None,
             estimate: None,
+            stdout_to: None,
+            reveal_target: None,
         }
     }
 
@@ -699,7 +714,7 @@ mod tests {
         Preconditions {
             inputs: vec![],
             final_path_must_be_absent: Some(final_path),
-            temp_to_claim: Some(temp),
+            temp_to_claim: Some((temp, ArtifactKind::File)),
             destination_must_be_writable: None,
             program: PathBuf::from("/bin/echo"),
         }
@@ -715,7 +730,7 @@ mod tests {
         std::fs::write(&victim, b"PRECIOUS USER DATA").unwrap();
 
         let pre = artifact_preconditions(dir.path(), "نسخة.zip");
-        std::os::unix::fs::symlink(&victim, pre.temp_to_claim.as_ref().unwrap()).unwrap();
+        std::os::unix::fs::symlink(&victim, &pre.temp_to_claim.as_ref().unwrap().0).unwrap();
 
         let r = pre.verify();
         assert!(matches!(r, Err(CoreError::PlanStale { .. })), "got {r:?}");
@@ -730,7 +745,7 @@ mod tests {
     fn a_regular_file_squatting_the_temporary_path_stops_the_run() {
         let dir = tempfile::tempdir().unwrap();
         let pre = artifact_preconditions(dir.path(), "نسخة.zip");
-        std::fs::write(pre.temp_to_claim.as_ref().unwrap(), b"squatter").unwrap();
+        std::fs::write(&pre.temp_to_claim.as_ref().unwrap().0, b"squatter").unwrap();
 
         assert!(matches!(pre.verify(), Err(CoreError::PlanStale { .. })));
     }
@@ -741,7 +756,7 @@ mod tests {
         // بعد تحقّق ناجح يصير الاسم ملكًا لنا، وتحقّقٌ ثانٍ يفشل.
         let dir = tempfile::tempdir().unwrap();
         let pre = artifact_preconditions(dir.path(), "نسخة.zip");
-        let temp = pre.temp_to_claim.clone().unwrap();
+        let temp = pre.temp_to_claim.clone().unwrap().0;
 
         pre.verify().expect("a clean temp path must verify");
         assert!(temp.exists(), "the temp path must be claimed, not merely inspected");
@@ -775,11 +790,14 @@ mod tests {
         let temp = crate::atomic::temp_path_for(&final_path).unwrap();
 
         let mut command = dummy_command();
-        command.artifact = Some(Artifact { temp: temp.clone(), final_path });
+        command.artifact = Some(Artifact::file(temp.clone(), final_path));
         let (t, _) = store.insert(&s, "x", Inputs::default(), command).unwrap();
 
         let stored = store.take(&t, &s).unwrap();
-        assert_eq!(stored.preconditions.temp_to_claim.as_deref(), Some(temp.as_path()));
+        assert_eq!(
+            stored.preconditions.temp_to_claim.as_ref().map(|(p, _)| p.as_path()),
+            Some(temp.as_path())
+        );
     }
 
     // ── البصمة: هويّة لا محتوى ────────────────────────────────────────

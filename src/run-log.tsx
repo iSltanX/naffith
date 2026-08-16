@@ -21,11 +21,18 @@
  * النواة تحتفظ اليوم بمئتي قيد في الذاكرة، لكن هذا رقمُها هي وقد يتغيّر. سقفُ
  * العرض هنا يحمي التخطيط من قائمةٍ بآلاف الصفوف بصرف النظر عمّا يصل، والقائمة
  * تُمرَّر داخل صندوقها فلا يخرج «رجوع» من المرأى.
+ *
+ * ## والحذف: ما يمحوه وما لا يمحوه
+ *
+ * «حذف القيد» يمحو **الأثر** لا **الأثرَ على القرص**: أرشيفٌ أُنشئ يبقى في
+ * مكانه بعد أن يُحذف سطرُه من السجل. هذا مكتوبٌ في نصّ التأكيد لا هنا وحده،
+ * لأن الخلط بينهما يجعل المستخدم يظنّ أنه ينظّف قرصه وهو ينظّف تاريخه.
  */
-import { useEffect, useId, useRef, useState } from 'react';
-import { recentRuns } from './ipc';
-import type { JournalEntry } from './ipc';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { journalClear, journalDelete, recentRuns, reveal as revealRun } from './ipc';
+import type { CategoryId, JournalEntry } from './ipc';
 import { t } from './i18n';
+import Select from './select';
 import './shell-screens.css';
 
 /** أقصى ما يُرسم من قيود. انظر تعليق الرأس. */
@@ -98,21 +105,76 @@ function whenOf(atSeconds: number): { text: string; iso: string } | null {
   return { text: WHEN.format(date), iso: date.toISOString() };
 }
 
+// ── التصفية ────────────────────────────────────────────────────────────
+
+export type StateFilter = 'all' | 'succeeded' | 'failed' | 'cancelled' | 'planned' | 'running';
+export type PeriodFilter = 'all' | 'today' | 'week' | 'month';
+
+const PERIOD_SECONDS: Record<Exclude<PeriodFilter, 'all'>, number> = {
+  today: 24 * 60 * 60,
+  week: 7 * 24 * 60 * 60,
+  month: 30 * 24 * 60 * 60,
+};
+
+export interface Filters {
+  category: 'all' | CategoryId;
+  state: StateFilter;
+  period: PeriodFilter;
+}
+
+export const NO_FILTERS: Filters = { category: 'all', state: 'all', period: 'all' };
+
+/**
+ * يصفّي القيود. دالّةٌ نقيّة مُصدَّرة كي تُختبر بلا رسم.
+ *
+ * `nowSeconds` مُمرَّر لا مقروءٌ من الساعة: اختبارُ «آخر أسبوع» بساعةٍ حقيقية
+ * يمرّ اليوم ويسقط بعد أسبوع، وهو أسوأ أنواع الاختبارات.
+ *
+ * والقيد الذي لا يحمل قسمًا — كُتب قبل أن تُقيَّد الأقسام — يُعرض تحت «كل
+ * الأقسام» ويُسقَط من أي تصفيةٍ بقسمٍ بعينه. البديل — عرضه في كل قسم — كان
+ * سيجعل التصفية تكذب.
+ */
+export function applyFilters(
+  entries: JournalEntry[],
+  filters: Filters,
+  nowSeconds: number,
+): JournalEntry[] {
+  return entries.filter((e) => {
+    if (filters.category !== 'all' && e.category !== filters.category) return false;
+    if (filters.state !== 'all' && e.state !== filters.state) return false;
+    if (filters.period !== 'all') {
+      const window = PERIOD_SECONDS[filters.period];
+      if (!Number.isFinite(e.at) || nowSeconds - e.at > window) return false;
+    }
+    return true;
+  });
+}
+
 type Load =
   | { status: 'loading' }
   | { status: 'loaded'; entries: JournalEntry[] }
   | { status: 'failed' };
 
-export default function RunLog(props: { onBack: () => void }): JSX.Element {
-  const { onBack } = props;
+interface Props {
+  onBack: () => void;
+  /** يملأ نموذج العملية بقيم قيدٍ سابق ثم ينتقل إليه. لا ينفّذ. */
+  onRerun: (entry: JournalEntry) => void;
+  /** يُخطر المنسّق أن السجل تغيّر، فيعيد قراءة «المستخدَمة حديثًا». */
+  onChanged: () => void;
+}
+
+export default function RunLog(props: Props): JSX.Element {
+  const { onBack, onRerun, onChanged } = props;
 
   const uid = useId();
   const headingId = `${uid}-heading`;
   const heading = useRef<HTMLHeadingElement>(null);
 
   const [load, setLoad] = useState<Load>({ status: 'loading' });
-  /** يزداد عند «إعادة المحاولة» فيعيد إطلاق أثر القراءة. */
+  /** يزداد عند «إعادة المحاولة» وبعد كل حذف، فيعيد إطلاق أثر القراءة. */
   const [attempt, setAttempt] = useState(0);
+  const [filters, setFilters] = useState<Filters>(NO_FILTERS);
+  const [confirmingClear, setConfirmingClear] = useState(false);
 
   useEffect(() => {
     heading.current?.focus();
@@ -139,10 +201,46 @@ export default function RunLog(props: { onBack: () => void }): JSX.Element {
     };
   }, [attempt]);
 
+  const reload = useCallback(() => {
+    setAttempt((n) => n + 1);
+    onChanged();
+  }, [onChanged]);
+
+  const onDelete = useCallback(
+    (runId: string) => {
+      // الفشل لا يُعرض حوارًا: أسوأ ما يقع أن يبقى الصفّ، وإعادة القراءة تُظهر
+      // ذلك بنفسها. حوارُ خطأٍ على فعلٍ ثانوي يقاطع أكثر مما يفيد.
+      journalDelete(runId).finally(reload);
+    },
+    [reload],
+  );
+
+  const onClearAll = useCallback(() => {
+    setConfirmingClear(false);
+    journalClear().finally(reload);
+  }, [reload]);
+
   // الأحدث أولًا: النواة تُلحق القيود، فآخر ما وقع آخر المصفوفة — وأولُ ما
-  // يُسأل عنه. والقصّ بعد العكس كي يُقصّ الأقدم لا الأحدث.
-  const shown =
-    load.status === 'loaded' ? [...load.entries].reverse().slice(0, MAX_SHOWN) : [];
+  // يُسأل عنه. والتصفية قبل القصّ كي يُقصّ من المُصفّى لا من الكلّ.
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const all = load.status === 'loaded' ? load.entries : [];
+  const shown = useMemo(
+    () => applyFilters([...all].reverse(), filters, nowSeconds).slice(0, MAX_SHOWN),
+    // `nowSeconds` عمدًا خارج الاعتماديات: إعادةُ الحساب مع كل ثانية تعيد رسم
+    // القائمة كلها بلا سبب، والفرق بين ثانيةٍ وأخرى لا يغيّر «آخر أسبوع».
+    [all, filters],
+  );
+
+  /** الأقسام التي يذكرها السجلّ فعلًا — لا كل أقسام المكتبة. */
+  const categoriesPresent = useMemo(() => {
+    const seen = new Set<CategoryId>();
+    for (const e of all) if (e.category) seen.add(e.category);
+    return [...seen];
+  }, [all]);
+
+  const filtered = filters !== NO_FILTERS && (
+    filters.category !== 'all' || filters.state !== 'all' || filters.period !== 'all'
+  );
 
   return (
     <section className="screen log" aria-labelledby={headingId}>
@@ -156,7 +254,72 @@ export default function RunLog(props: { onBack: () => void }): JSX.Element {
         <h2 id={headingId} className="t-page-title screen__title" tabIndex={-1} ref={heading}>
           {t('log.title')}
         </h2>
+        {all.length > 0 && (
+          <button
+            type="button"
+            className="btn btn--quiet btn--sm log__clear"
+            onClick={() => setConfirmingClear(true)}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <use href="#i-delete" />
+            </svg>
+            {t('log.clear')}
+          </button>
+        )}
       </header>
+
+      {/* ── المرشّحات ───────────────────────────────────────────────
+          `control-row` صنفٌ مشترك من `controls.css` لا تخطيطٌ خاصّ بهذه الشاشة:
+          أي شاشةٍ تصفّ ضوابط متجاورة تأخذ الصفّ نفسه بفجوته ومقاساته والتفافه،
+          فلا تُكتب ثلاثة صفوفٍ متشابهة في ثلاثة ملفّات. */}
+      {all.length > 0 && (
+        <div className="control-row log__filters" role="group" aria-label={t('log.filters')}>
+          <Select
+            label={t('log.filter.state')}
+            value={filters.state}
+            onChange={(v) => setFilters((f) => ({ ...f, state: v as StateFilter }))}
+            options={[
+              { value: 'all', label: t('log.filter.any') },
+              { value: 'succeeded', label: t('log.state.succeeded') },
+              { value: 'failed', label: t('log.state.failed') },
+              { value: 'cancelled', label: t('log.state.cancelled') },
+              { value: 'planned', label: t('log.state.planned') },
+              { value: 'running', label: t('log.state.running') },
+            ]}
+          />
+          {categoriesPresent.length > 1 && (
+            <Select
+              label={t('log.filter.category')}
+              value={filters.category}
+              onChange={(v) => setFilters((f) => ({ ...f, category: v as Filters['category'] }))}
+              options={[
+                { value: 'all', label: t('log.filter.any') },
+                ...categoriesPresent.map((id) => ({ value: id, label: t(`cat.${id}.title`) })),
+              ]}
+            />
+          )}
+          <Select
+            label={t('log.filter.period')}
+            value={filters.period}
+            onChange={(v) => setFilters((f) => ({ ...f, period: v as PeriodFilter }))}
+            options={[
+              { value: 'all', label: t('log.filter.any') },
+              { value: 'today', label: t('log.filter.today') },
+              { value: 'week', label: t('log.filter.week') },
+              { value: 'month', label: t('log.filter.month') },
+            ]}
+          />
+          {filtered && (
+            <button
+              type="button"
+              className="btn btn--ghost btn--sm"
+              onClick={() => setFilters(NO_FILTERS)}
+            >
+              {t('log.filter.reset')}
+            </button>
+          )}
+        </div>
+      )}
 
       {/* منطقة الحالة حيّة: القراءة غير متزامنة، وما يظهر بعدها (فراغٌ أو
           تعذّرٌ) تغيّرٌ يستحقّ أن يُنطق لا أن يُرى وحده. */}
@@ -164,7 +327,7 @@ export default function RunLog(props: { onBack: () => void }): JSX.Element {
         {load.status === 'loading' && <span className="spinner" aria-hidden="true" />}
 
         {load.status === 'loaded' && shown.length === 0 && (
-          <p className="t-body-sec">{t('log.empty')}</p>
+          <p className="t-body-sec">{filtered ? t('log.empty.filtered') : t('log.empty')}</p>
         )}
 
         {load.status === 'failed' && (
@@ -192,15 +355,32 @@ export default function RunLog(props: { onBack: () => void }): JSX.Element {
             // المفتاح ليس `entry.id` وحده: قيود التشغيل الواحد تتشارك المعرّف
             // (‏planned ثم running ثم النتيجة)، فمفتاحٌ به وحده يتكرّر ويُربك
             // المطابقة. المركّب يميّز الصفّ داخل القائمة المقصوصة.
-            <Entry key={`${entry.id}:${entry.state}:${i}`} entry={entry} />
+            <Entry
+              key={`${entry.id}:${entry.state}:${i}`}
+              entry={entry}
+              onRerun={onRerun}
+              onDelete={onDelete}
+            />
           ))}
         </ol>
+      )}
+
+      {confirmingClear && (
+        <ConfirmClear onCancel={() => setConfirmingClear(false)} onConfirm={onClearAll} />
       )}
     </section>
   );
 }
 
-function Entry({ entry }: { entry: JournalEntry }): JSX.Element {
+function Entry({
+  entry,
+  onRerun,
+  onDelete,
+}: {
+  entry: JournalEntry;
+  onRerun: (entry: JournalEntry) => void;
+  onDelete: (runId: string) => void;
+}): JSX.Element {
   // نصٌّ لا `JournalState`: قيمةٌ لا تعرفها هذه النسخة يجب أن تمرّ لا أن تختفي.
   const state: string = entry.state;
   const when = whenOf(entry.at);
@@ -210,6 +390,17 @@ function Entry({ entry }: { entry: JournalEntry }): JSX.Element {
   const titleKey = `op.${entry.op_id}.title`;
   const title = t(titleKey);
   const named = title !== titleKey;
+
+  // «أعد بهذه القيم» لا يظهر إلا حين يكون له معنى: قيدٌ بلا مدخلات محفوظة —
+  // كُتب قبل أن تُقيَّد المدخلات، أو لعمليةٍ بلا حقول — لا شيء يُعاد به.
+  const canRerun = (entry.inputs?.length ?? 0) > 0;
+  const produced = typeof entry.produced === 'string' && entry.produced !== '';
+
+  const onReveal = useCallback(() => {
+    // الفشل صامت: أسوأ ما يقع أن الناتج نُقل أو حُذف بعد التشغيل، وهي حالةٌ
+    // يفهمها المستخدم من Finder نفسه أسرع مما يفهمها من حوارٍ هنا.
+    revealRun(entry.id).catch(() => {});
+  }, [entry.id]);
 
   return (
     <li className={`entry entry--${state}`}>
@@ -222,6 +413,10 @@ function Entry({ entry }: { entry: JournalEntry }): JSX.Element {
         </span>
 
         {named && <p className="t-card-title entry__title">{title}</p>}
+
+        {entry.category && (
+          <span className="chip chip--neutral entry__cat">{t(`cat.${entry.category}.title`)}</span>
+        )}
 
         {when && (
           <time className="t-caption entry__time" dateTime={when.iso}>
@@ -251,6 +446,18 @@ function Entry({ entry }: { entry: JournalEntry }): JSX.Element {
         </div>
       </div>
 
+      {/* آخر ما طبعته الأداة. النواة تحفظ اثني عشر سطرًا مقصوصة لا الخرج كلّه —
+          انظر `MAX_TAIL_LINES`. ومراجعةُ فشلٍ بلا سطرٍ واحد ممّا قالته الأداة
+          ليست مراجعة: يبقى «رمز الخروج ‎1‎» ولا شيء غيره. */}
+      {(entry.tail?.length ?? 0) > 0 && (
+        <details className="entry__tail">
+          <summary className="t-caption">{t('log.tail')}</summary>
+          <pre className="entry__tail-body" dir="ltr">
+            {entry.tail?.join('\n')}
+          </pre>
+        </details>
+      )}
+
       {/* المعرّف يُعرض دائمًا وإن عُرض العنوان فوقه: العنوان نصٌّ قد يتغيّر
           بتغيّر الصياغة، والمعرّف هو ما يربط الصفّ بالنواة وبالسجل على القرص.
           ولاتينيّته تحتاج عزلًا وإلا التصقت نقطته بالعربية حوله. */}
@@ -258,10 +465,102 @@ function Entry({ entry }: { entry: JournalEntry }): JSX.Element {
         <bdi dir="ltr" className="entry__op">
           {entry.op_id}
         </bdi>
-        {typeof entry.duration_ms === 'number' && (
-          <bdi>{durationText(entry.duration_ms)}</bdi>
+        {typeof entry.duration_ms === 'number' && <bdi>{durationText(entry.duration_ms)}</bdi>}
+        {typeof entry.code === 'number' && (
+          <bdi>
+            {t('state.failed.code')} <span className="num">{entry.code}</span>
+          </bdi>
         )}
       </p>
+
+      <div className="entry__actions">
+        {canRerun && (
+          <button type="button" className="btn btn--quiet btn--sm" onClick={() => onRerun(entry)}>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <use href="#i-execute" />
+            </svg>
+            {t('log.rerun')}
+          </button>
+        )}
+        {produced && (
+          <button type="button" className="btn btn--quiet btn--sm" onClick={onReveal}>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <use href="#i-folder-open" />
+            </svg>
+            {t('action.reveal')}
+          </button>
+        )}
+        <button
+          type="button"
+          className="btn btn--ghost btn--sm entry__delete"
+          onClick={() => onDelete(entry.id)}
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <use href="#i-delete" />
+          </svg>
+          {t('log.delete')}
+        </button>
+      </div>
     </li>
+  );
+}
+
+/**
+ * تأكيد مسح السجلّ كلّه.
+ *
+ * حوارٌ مقاطع لا زرٌّ مباشر: الفعل لا يُتراجَع عنه. و«الإلغاء» هو الفعل
+ * الافتراضي — يأخذ التركيز — لأن الخطأ في اتجاه الإبقاء غير مكلف.
+ *
+ * ونصُّه يفرّق صراحةً بين الأثر وما أنتجه: من يمسح سجلّه لا يمسح ملفاته.
+ */
+function ConfirmClear({ onCancel, onConfirm }: { onCancel: () => void; onConfirm: () => void }) {
+  const cancel = useRef<HTMLButtonElement>(null);
+  const uid = useId();
+
+  useEffect(() => {
+    const opener = document.activeElement;
+    cancel.current?.focus();
+    return () => {
+      if (opener instanceof HTMLElement && opener.isConnected) opener.focus();
+    };
+  }, []);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onCancel();
+      }
+    }
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [onCancel]);
+
+  return (
+    <div className="scrim" role="presentation" onClick={onCancel}>
+      <div
+        className="dialog card"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby={`${uid}-t`}
+        aria-describedby={`${uid}-b`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 id={`${uid}-t`} className="t-section-title dialog__title">
+          {t('log.clear.title')}
+        </h2>
+        <p id={`${uid}-b`} className="t-body-sec dialog__body">
+          {t('log.clear.body')}
+        </p>
+        <div className="dialog__actions">
+          <button ref={cancel} type="button" className="btn btn--primary" onClick={onCancel}>
+            {t('log.clear.cancel')}
+          </button>
+          <button type="button" className="btn btn--quiet" onClick={onConfirm}>
+            {t('log.clear.confirm')}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

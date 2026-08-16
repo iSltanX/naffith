@@ -16,6 +16,7 @@
 import { useEffect, useState } from 'react';
 import type { PlanResponse, TokenRole } from './ipc';
 import { t } from './i18n';
+import RunStream, { type StreamLine, type StreamPhase } from './run-stream';
 import { shellCommand, tokenNotes } from './shell-quote';
 
 const ROLE_CLASS: Record<TokenRole, string> = {
@@ -41,13 +42,44 @@ const ROLE_LABEL: Record<TokenRole, string> = {
  */
 const IDLE_FADE_MS = 160;
 
-export default function Satr({ plan }: { plan: PlanResponse | null }) {
+/**
+ * اللوحة: مطويّةٌ حتى يوجد أمر، ثم تتوسّع إلى لوحةٍ جانبية حقيقية.
+ *
+ * ## العطل البنيوي الذي عولج هنا
+ *
+ * كانت اللوحة تحجز عمودها كاملًا في كل حال: عرضٌ ثابت وارتفاعٌ بارتفاع النافذة،
+ * وفيه — قبل اكتمال الحقول — اسمٌ وثلاثة أسطر. أي أن ثلث الشاشة كان محجوزًا
+ * لمحتوًى لا يوجد. وضبطُ ألوانه لا يغيّر ذلك: مساحةٌ محجوزةٌ لغائب تُقرأ عطلًا
+ * أو نقصًا، ولو كانت بلون التطبيق تمامًا.
+ *
+ * والعرضُ الآن دالّةُ المحتوى لا دالّةُ النافذة:
+ *
+ * | الحالة | العرض | ما يُعرض |
+ * |---|---|---|
+ * | لا خطة | ‏96px‎ ثابتة | الاسم والحالة، لا أكثر |
+ * | خطة حاضرة | ‏34% بسقف ‎464px‎ | الأمر، ثم الوسائط، ثم الملاحظات |
+ *
+ * والشرط `plan !== null` وحده — لا اسم عملية ولا عدد حقول — فالسلوك واحد في كل
+ * عملية، الحاضرة اليوم والمضافة غدًا.
+ */
+export default function Satr({
+  plan,
+  stream = [],
+  phase = 'idle',
+  status,
+}: {
+  plan: PlanResponse | null;
+  /** ما بثّته النواة من خرج الأداة في التشغيل الحالي. */
+  stream?: readonly StreamLine[];
+  phase?: StreamPhase;
+  status?: string | undefined;
+}) {
   /**
-   * هل الكتابة المائية محمولة؟
+   * هل الشريط المطويّ محمول؟
    *
    * لا يكفي `!plan`: نزعُ العنصر لحظةَ وصول الخطة يقطع الخبوّ قبل أن يبدأ.
-   * فتبقى محمولةً بشفافية صفر طوالَ الانتقال ثم تُنزع — ولو وصلت الشاشة ومعها
-   * خطة من البداية لم تُحمل أصلًا، فلا وميض في أول رسم.
+   * فيبقى محمولًا بشفافية صفر طوالَ الانتقال ثم يُنزع — ولو وصلت الشاشة ومعها
+   * خطة من البداية لم يُحمل أصلًا، فلا وميض في أول رسم.
    */
   const [idleShown, setIdleShown] = useState(plan === null);
 
@@ -62,44 +94,72 @@ export default function Satr({ plan }: { plan: PlanResponse | null }) {
   }, [plan, idleShown]);
 
   return (
-    <section className="satr" aria-labelledby="satr-heading">
-      <div className="satr__head">
-        <h2 id="satr-heading" className="t-section-title">
-          {t('app.satr')}
-        </h2>
-        {plan && <p className="t-caption satr__subtitle">{t('satr.subtitle')}</p>}
-      </div>
+    <section
+      className={`satr${plan ? ' satr--live' : ''}`}
+      aria-labelledby="satr-heading"
+    >
+      {/* العنوان في الحالتين، وبمعرّفٍ واحد: هو ما يسمّي المنطقة لقارئ الشاشة،
+          فلا يجوز أن يغيب في إحداهما ويحمل `aria-labelledby` مرجعًا معلَّقًا. */}
+      {plan ? (
+        <>
+          <div className="satr__head">
+            <h2 id="satr-heading" className="t-card-title satr__name">
+              {t('app.satr')}
+            </h2>
+            <p className="t-caption satr__subtitle">{t('satr.subtitle')}</p>
+          </div>
+          <div className="satr__stage">
+            <Preview plan={plan} />
+            {/* مجرى التشغيل بعد الأمر ووسائطه وقبل الملاحظات: الأمرُ ما
+                سيُنفَّذ، والمجرى ما قالته الأداة وهي تُنفَّذ، والملاحظات سياسةٌ
+                ثابتة لا تتبدّل بتشغيل. فالترتيب زمنيّ: خطّة، فتنفيذ، فسياسة. */}
+            <RunStream lines={stream} phase={phase} status={status} />
+            <Notes />
+          </div>
+        </>
+      ) : null}
 
-      {/* مسرحٌ واحد للحالتين. ارتفاعه الأدنى يمنع العمود من الانكماش إلى سطرين
-          ثم القفز إلى مئات البكسلات حين تصل الخطة — والقفزة تجرّ معها عمود
-          «نَفِّذ» المجاور، فتبدو الشاشة كأنها انفجرت لأن المستخدم أكمل حقلًا. */}
-      <div className="satr__stage">
-        {idleShown && <Watermark leaving={plan !== null} />}
-        {plan && <Preview plan={plan} />}
-      </div>
+      {idleShown && <Rail leaving={plan !== null} labelled={plan === null} />}
     </section>
   );
 }
 
 /**
- * الكتابة المائية: ما يُنتظر، مكتوبًا في الفراغ نفسه.
+ * الشريط المطويّ: الاسم والحالة، لا أكثر.
  *
- * بلا حدّ ولا بطاقة ولا أرضية خاصة — صندوقٌ منقّط كان يعلن «هنا عنصر فارغ»،
- * وهذه الرسالة ليست عنصرًا بل حالة المساحة. والعنوان أوضح قليلًا من السطرين
- * تحته (لونٌ ومقاس، لا شفافية أعلى) كي تُقرأ الكتلة كعنوانٍ وشرحه لا كثلاثة
- * أسطر متساوية.
+ * ثلاث صياغات سبقته وسقطت كلّها لسببٍ واحد — أنها كانت **محتوًى بديلًا** يشغل
+ * مساحةَ المحتوى الغائب: صندوقٌ منقّط، ثم كتابةٌ مائية موسَّطة بعنوان ‎28px‎، ثم
+ * كتلةٌ صغيرة من ثلاثة أسطر في أعلى عمودٍ كامل. الثلاثة تختلف في الحجم وتتّفق
+ * في الخطأ: عمودٌ محجوز لما لا يوجد.
  *
- * **ليست `aria-hidden`.** هي التعليمة الوحيدة المعروضة في هذه المساحة، وإخفاؤها
- * عن قارئ الشاشة يترك من يقرأ بالصوت أمام منطقةٍ صامتة بلا سبب. وليست
- * `aria-live` كذلك: النصّ موجود منذ أول رسم ولا يتبدّل، فإعلانه مقاطعةٌ لا خبر.
- * نصٌّ ساكن في ترتيب المستند: يُقرأ حين يبلغه المستخدم، ولا يقفز إليه.
+ * وهذا ليس محتوًى بديلًا بل **حالةُ اللوحة نفسها**: شريطٌ بعرض ‎96px‎ يقول ما هي
+ * وأنها تنتظر. لا تعليمات فيه — التعليمة مكانها النموذج المجاور، وشريطٌ بهذا
+ * العرض لا يحمل جملة أصلًا.
+ *
+ * ‏`labelled` تحمل العنوان `h2` وقتَ الطيّ وحده: عند التوسّع يحمله رأس اللوحة،
+ * ووجودُ معرّفٍ واحد في عنصرين معًا — ولو للحظة الخبوّ — يجعل `aria-labelledby`
+ * يشير إلى أوّلهما في المستند لا إلى ما يراه المستخدم.
+ *
+ * **ليس `aria-hidden`.** هو ما تقوله هذه المنطقة كلّها، وإخفاؤه يترك من يقرأ
+ * بالصوت أمام منطقةٍ صامتة بلا سبب. وليس `aria-live`: النصّ ساكن منذ أول رسم،
+ * فإعلانه مقاطعةٌ لا خبر.
  */
-function Watermark({ leaving }: { leaving: boolean }) {
+function Rail({ leaving, labelled }: { leaving: boolean; labelled: boolean }) {
   return (
-    <div className={`satr__watermark${leaving ? ' satr__watermark--leaving' : ''}`}>
-      <p className="satr__watermark-title">{t('satr.idle.title')}</p>
-      <p className="satr__watermark-line">{t('satr.idle.line1')}</p>
-      <p className="satr__watermark-line">{t('satr.idle.line2')}</p>
+    <div className={`satr__rail${leaving ? ' satr__rail--leaving' : ''}`}>
+      {/* خطٌّ فيه عقدة: سَطْرٌ لم يُكتب بعد. */}
+      <span className="satr__rail-glyph" aria-hidden="true">
+        <svg viewBox="0 0 24 24">
+          <use href="#i-git-commit" />
+        </svg>
+      </span>
+      <h2
+        id={labelled ? 'satr-heading' : undefined}
+        className="t-label satr__rail-name"
+      >
+        {t('app.satr')}
+      </h2>
+      <p className="t-caption satr__rail-state">{t('satr.idle.title')}</p>
     </div>
   );
 }
@@ -148,7 +208,12 @@ function Preview({ plan }: { plan: PlanResponse }) {
         </div>
       </div>
 
-      {/* الوسائط مفصولة: هنا لا يمكن أن تُقرأ مسافةٌ داخل اسمٍ فاصلًا. */}
+      {/* الوسائط مفصولة: هنا لا يمكن أن تُقرأ مسافةٌ داخل اسمٍ فاصلًا.
+          والشرح مطويّ في كلٍّ منها. كانت السبعة تُفتح معًا، فتصير اللوحة جدارًا
+          من فقراتٍ عربية يعلو ألفَ بكسل — والأمر، وهو ما جاء المستخدم لأجله،
+          يبقى في أعلاها سطرين. الآن الصفوف قائمةٌ تُمسح بالبصر (رقم، رمز، دور)
+          ويُفتح منها ما يُسأل عنه. */}
+      <h3 className="t-label satr__section">{t('satr.args.heading')}</h3>
       <ol className="args" aria-label="وسائط الأمر، كلٌّ على حدة">
         {plan.explain.map((tok, i) => {
           const notes = tokenNotes(tok.token);
@@ -158,34 +223,90 @@ function Preview({ plan }: { plan: PlanResponse }) {
               : i === lastIndex
                 ? 'explain.role.temp'
                 : tok.key;
-          return (
-            <li className="arg" key={i}>
+          const line = (
+            // الرقم والرمز والدور في صفٍّ واحد، والشرح تحته.
+            //
+            // كان الدور شقيقًا لكتلة الشرح كلّها، فكان يحاذي رأس صفٍّ يعلو
+            // ثلاثة أسطر — وسمٌ صغير معلّق بعيدًا عن الرمز الذي يسمّيه. وفي
+            // لوحةٍ أضيق صار ذلك يزاحم الرمز على العرض. موضعُه الصحيح طرفُ
+            // سطر الرمز: هما معًا «هذا الوسيط، وهذا نوعه».
+            <>
               <span className="arg__index lat" aria-hidden="true">
                 {i === 0 ? '·' : i}
               </span>
-              <div className="arg__main">
-                <code className={`arg__token ${ROLE_CLASS[tok.role]}`}>{tok.token}</code>
-                {label && <p className="t-caption arg__note">{t(label)}</p>}
-                {notes.length > 0 && (
-                  <p className="t-caption arg__flagged">
-                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                      <use href="#i-info" />
-                    </svg>
-                    {notes.join(' · ')}
-                  </p>
-                )}
-              </div>
+              <code className={`arg__token ${ROLE_CLASS[tok.role]}`}>{tok.token}</code>
               <span className="arg__role t-caption">{t(ROLE_LABEL[tok.role])}</span>
+            </>
+          );
+
+          // رمزٌ بلا شرحٍ ولا ملاحظة لا يُلفّ في `details`: قرصُ فتحٍ لا يفتح
+          // شيئًا يَعِد بما ليس هناك.
+          if (!label && notes.length === 0) {
+            return (
+              <li key={i}>
+                <div className="arg">
+                  <div className="arg__line">{line}</div>
+                </div>
+              </li>
+            );
+          }
+
+          return (
+            <li key={i}>
+              {/* ‏`details` أصليّ لا زرٌّ وحالة: يعطي المفتاح والدور
+                  و`aria-expanded` مجانًا، ويُفتح حين يبحث المتصفّح في الصفحة.
+                  و`open` حين توجد ملاحظة: الملاحظة تنبيهٌ على محرفٍ مريب في
+                  الاسم، وتنبيهٌ مطويّ تنبيهٌ لم يقع. */}
+              <details className="arg" open={notes.length > 0}>
+                <summary className="arg__line">
+                  {line}
+                  <svg className="arg__caret" viewBox="0 0 24 24" aria-hidden="true">
+                    <use href="#i-chevron-down" />
+                  </svg>
+                </summary>
+                <div className="arg__main">
+                  {label && <p className="t-caption arg__note">{t(label)}</p>}
+                  {notes.length > 0 && (
+                    <p className="t-caption arg__flagged">
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <use href="#i-info" />
+                      </svg>
+                      {notes.join(' · ')}
+                    </p>
+                  )}
+                </div>
+              </details>
             </li>
           );
         })}
       </ol>
 
-      <div className="satr__notes">
+    </>
+  );
+}
+
+/**
+ * سياسة التطبيق: قسمٌ مطويّ كلّه.
+ *
+ * ثلاث فقرات لا تتبدّل بين تخطيطٍ وآخر — تُقرأ مرّةً ويُرجَع إليها عند السؤال.
+ * ومكانها آخر اللوحة لأن ترتيب اللوحة زمنيّ: أمرٌ سيُنفَّذ، فما قالته الأداة وهي
+ * تُنفَّذ، فسياسةٌ ثابتة تحكم الاثنين. وفصلُها عن `Preview` هو ما يجعل هذا
+ * الترتيب ممكنًا: كانت داخله، فكان كل ما يُضاف بعده يقع بعد السياسة.
+ */
+function Notes() {
+  return (
+    <details className="satr__notes">
+      <summary className="t-label satr__section satr__section--fold">
+        {t('satr.notes.heading')}
+        <svg className="arg__caret" viewBox="0 0 24 24" aria-hidden="true">
+          <use href="#i-chevron-down" />
+        </svg>
+      </summary>
+      <div className="satr__notes-body">
         <p className="t-body-sec">{t('satr.no_shell')}</p>
         <p className="t-body-sec">{t('satr.promotion')}</p>
         <p className="t-caption satr__fineprint">{t('satr.copy_note')}</p>
       </div>
-    </>
+    </details>
   );
 }

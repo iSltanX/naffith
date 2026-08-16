@@ -53,25 +53,216 @@ fn is_executable(meta: &std::fs::Metadata) -> bool {
 /// كونها أقل شهرة لا يجعلها أقل صحّة — ودور «سَطْر» أن يشرح، لا أن يجاري الشائع.
 pub const DITTO: Tool = Tool::new("ditto", "/usr/bin/ditto");
 
-/// إظهار ملف في Finder.
+/// فتح مسار في Finder.
 ///
-/// ليست عمليةً في الفهرس ولا تُخطَّط: لا تكتب شيئًا ولا تلمس ملفًا، وكل ما
-/// تفعله فتحُ نافذة على مسارٍ **أخرجته النواة بنفسها** من سجلّها. الواجهة لا
-/// تستطيع تمرير مسار إليها. انظر `reveal.rs`.
+/// لها دوران، والفرق بينهما هو **من أين يأتي المسار**:
+///
+/// 1. **`reveal.rs`** — إظهار ناتج تشغيلٍ ناجح. المسار تُخرجه النواة من سجلّها
+///    هي، والواجهة تمرّر معرّف تشغيل لا مسارًا. هذا ليس عمليةً في الفهرس ولا
+///    يُخطَّط.
+/// 2. **`ops::files_open`** — عمليةٌ في الفهرس يختار المستخدم مجلدها. المسار
+///    هنا يأتي من الواجهة، فيمرّ بـ`paths.rs` كاملًا كأي مدخلٍ آخر: مطلقٌ،
+///    محلول الروابط، داخل الجذور المسموحة، وخارج المواضع المحميّة.
+///
+/// كان هذا التعليق يقول إنها «ليست عمليةً في الفهرس» على إطلاقه، وصار نصفَ
+/// صدقٍ يوم أُضيفت `files.open`. والفرق الذي يستحقّ أن يُقال ليس «هل هي في
+/// الفهرس؟» بل «هل يستطيع أحدٌ أن يطلب فتح موضعٍ لم يُفحص؟» — والجواب لا، في
+/// الطريقين معًا.
 pub const OPEN: Tool = Tool::new("open", "/usr/bin/open");
 
 /// للاختبار الداخلي للسلسلة فقط. لا تدخل فهرس الإنتاج.
 pub const ECHO: Tool = Tool::new("echo", "/bin/echo");
 
+// ── الملفات والمجلدات ───────────────────────────────────────────────────
+
+/// النقل وإعادة التسمية. تُستعمل دائمًا مع `-n` كي لا تدهس وجهةً قائمة.
+pub const MV: Tool = Tool::new("mv", "/bin/mv");
+
+/// إنشاء المجلدات. `-p` تجعل الوسائط الوسيطة تُنشأ بلا خطأ.
+pub const MKDIR: Tool = Tool::new("mkdir", "/bin/mkdir");
+
+/// المسح المُرشَّح للشجرة: الكبير، والقديم، والمكرّر بالاسم. قراءةٌ محضة.
+pub const FIND: Tool = Tool::new("find", "/usr/bin/find");
+
+/// قياس المساحة المشغولة. الأداة نفسها التي يعتمد عليها كل تحليل قرص على يونكس.
+pub const DU: Tool = Tool::new("du", "/usr/bin/du");
+
+/// المساحة الحرة لكل نظام ملفات مركَّب.
+pub const DF: Tool = Tool::new("df", "/bin/df");
+
+/// عرض الصلاحيات وقوائم التحكّم والسمات الممتدّة. `-l` تكشف ACL، و`-@` السمات.
+pub const LS: Tool = Tool::new("ls", "/bin/ls");
+
+/// دمج الملفات. تكتب إلى `stdout` وحده، فيُوجَّه إلى ناتج العملية في النواة.
+pub const CAT: Tool = Tool::new("cat", "/bin/cat");
+
+/// تقسيم ملف كبير إلى أجزاء داخل مجلد.
+pub const SPLIT: Tool = Tool::new("split", "/usr/bin/split");
+
+// ── الأرشفة ─────────────────────────────────────────────────────────────
+
+/// فحص أرشيف ZIP وقراءة فهرسه واختبار سلامته. لا تُستعمل للاستخراج: `ditto -x`
+/// أوثق على أرشيفات macOS لأنها تفهم `__MACOSX`.
+pub const UNZIP: Tool = Tool::new("unzip", "/usr/bin/unzip");
+
+/// أرشيفات TAR بكل ضغوطها. على macOS هي `bsdtar`، وترفض المسارات المطلقة
+/// و`..` عند الاستخراج افتراضيًا — وهو الحارس الأول ضدّ Zip Slip، والثاني
+/// فحصُ الاحتواء بعد الاستخراج في `reveal`/`ops`.
+pub const TAR: Tool = Tool::new("tar", "/usr/bin/tar");
+
+// ── الصور ───────────────────────────────────────────────────────────────
+
+/// معالجة الصور الأصلية في macOS: تحويل الصيغة، وتغيير الأبعاد، والتدوير.
+/// جزءٌ من النظام، ولا تحتاج تثبيتًا ولا تستدعي شبكة.
+pub const SIPS: Tool = Tool::new("sips", "/usr/bin/sips");
+
+/// توليد المصغّرات عبر QuickLook — نفس المعاينة التي يراها المستخدم في Finder.
+pub const QLMANAGE: Tool = Tool::new("qlmanage", "/usr/bin/qlmanage");
+
+// ── النصوص ──────────────────────────────────────────────────────────────
+
+/// تحويل صيغ المستندات وترميزها. تدعم `-output` فتكتب إلى ملف مباشرة.
+pub const TEXTUTIL: Tool = Tool::new("textutil", "/usr/bin/textutil");
+
+/// مقارنة ملفين نصيين. `-u` تنتج فرقًا موحّدًا يقرؤه البشر والأدوات معًا.
+pub const DIFF: Tool = Tool::new("diff", "/usr/bin/diff");
+
+/// البحث داخل الملفات. يُستعمل للبحث وحده — الاستبدال داخل الملفات مؤجَّل،
+/// لأنه تعديلٌ في مكانه لا يمرّ بالترقية الذرّية التي يقوم عليها هذا المنتج.
+pub const GREP: Tool = Tool::new("grep", "/usr/bin/grep");
+
+/// عدّ الأسطر والكلمات والبايتات.
+pub const WC: Tool = Tool::new("wc", "/usr/bin/wc");
+
+// ── البصمات ─────────────────────────────────────────────────────────────
+
+/// بصمة SHA-256. تُستعمل لبصمة ملف ولمقارنة ملفين معًا.
+pub const SHASUM: Tool = Tool::new("shasum", "/usr/bin/shasum");
+
+// ── الشبكة ──────────────────────────────────────────────────────────────
+
+pub const PING: Tool = Tool::new("ping", "/sbin/ping");
+pub const DIG: Tool = Tool::new("dig", "/usr/bin/dig");
+pub const CURL: Tool = Tool::new("curl", "/usr/bin/curl");
+
+/// المنافذ المحلية المستمعة. تعمل بلا صلاحيات مدير وتعرض ما يخصّ المستخدم.
+pub const LSOF: Tool = Tool::new("lsof", "/usr/sbin/lsof");
+
+// ── Git ─────────────────────────────────────────────────────────────────
+
+/// تأتي مع أدوات سطر الأوامر في Xcode، وقد تغيب على نظامٍ لم تُثبَّت فيه.
+/// وهذا بالضبط ما يجعل `Availability` سؤالًا يُطرح لحظة قراءة الفهرس.
+pub const GIT: Tool = Tool::new("git", "/usr/bin/git");
+
+// ── النظام ──────────────────────────────────────────────────────────────
+
+pub const PS: Tool = Tool::new("ps", "/bin/ps");
+pub const SW_VERS: Tool = Tool::new("sw_vers", "/usr/bin/sw_vers");
+pub const UPTIME: Tool = Tool::new("uptime", "/usr/bin/uptime");
+pub const SYSTEM_PROFILER: Tool = Tool::new("system_profiler", "/usr/sbin/system_profiler");
+pub const DISKUTIL: Tool = Tool::new("diskutil", "/usr/sbin/diskutil");
+
+/// تفريغ ذاكرة DNS المؤقتة.
+///
+/// `dscacheutil -flushcache` وحدها، بلا `killall -HUP mDNSResponder`: الثانية
+/// تحتاج صلاحيات مدير، وهذا المنتج لا يطلبها ولا يعرض على المستخدم أن يمنحها.
+/// الأثر أضعف — تبقى ذاكرة mDNSResponder — والشرح يقول ذلك بدل أن يعِد بأكثر
+/// مما يفعل.
+pub const DSCACHEUTIL: Tool = Tool::new("dscacheutil", "/usr/bin/dscacheutil");
+
+// ── الأمان ──────────────────────────────────────────────────────────────
+
+/// قراءة السمات الممتدّة وكتابتها. يُستعمل هنا للقراءة وحدها.
+pub const XATTR: Tool = Tool::new("xattr", "/usr/bin/xattr");
+
+/// فحص توقيع التطبيقات.
+pub const CODESIGN: Tool = Tool::new("codesign", "/usr/bin/codesign");
+
+/// تقييم سياسة Gatekeeper على ملفٍ أو تطبيق.
+pub const SPCTL: Tool = Tool::new("spctl", "/usr/sbin/spctl");
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// كل أداةٍ يعلنها المنتج. الاختبارات تمرّ على هذه القائمة لا على ذاكرة
+    /// من كتبها، فأداةٌ تُضاف بلا مسارٍ مطلق تسقط هنا لا في يد مستخدم.
+    const DECLARED: &[Tool] = &[
+        DITTO,
+        OPEN,
+        ECHO,
+        MV,
+        MKDIR,
+        FIND,
+        DU,
+        DF,
+        LS,
+        CAT,
+        SPLIT,
+        UNZIP,
+        TAR,
+        SIPS,
+        QLMANAGE,
+        TEXTUTIL,
+        DIFF,
+        GREP,
+        WC,
+        SHASUM,
+        PING,
+        DIG,
+        CURL,
+        LSOF,
+        GIT,
+        PS,
+        SW_VERS,
+        UPTIME,
+        SYSTEM_PROFILER,
+        DISKUTIL,
+        DSCACHEUTIL,
+        XATTR,
+        CODESIGN,
+        SPCTL,
+    ];
 
     #[test]
     fn system_tools_resolve_to_absolute_paths() {
         assert_eq!(DITTO.resolve().unwrap(), Path::new("/usr/bin/ditto"));
         assert_eq!(OPEN.resolve().unwrap(), Path::new("/usr/bin/open"));
         assert_eq!(ECHO.resolve().unwrap(), Path::new("/bin/echo"));
+    }
+
+    #[test]
+    fn every_declared_tool_id_is_unique() {
+        let mut seen = std::collections::HashSet::new();
+        for t in DECLARED {
+            assert!(seen.insert(t.id), "duplicate tool id: {}", t.id);
+        }
+    }
+
+    #[test]
+    fn every_declared_tool_path_is_unique() {
+        // أداتان بنفس المسار ومعرّفين مختلفين تعنيان أن سببَ تعطيلٍ يسمّي
+        // الأداة الخطأ على الشاشة.
+        let mut seen = std::collections::HashSet::new();
+        for t in DECLARED {
+            assert!(seen.insert(t.absolute), "duplicate tool path: {}", t.absolute);
+        }
+    }
+
+    #[test]
+    fn every_declared_tool_lives_in_a_system_location() {
+        // لا `/usr/local` ولا `/opt/homebrew`: أداةٌ يستطيع المستخدم استبدالها
+        // بلا صلاحيات مدير ليست أداة نظام، ومنتجٌ يشغّل أوامر على ملفات المستخدم
+        // لا يجوز أن يستدعي واحدةً منها.
+        const SYSTEM_ROOTS: &[&str] = &["/bin/", "/sbin/", "/usr/bin/", "/usr/sbin/"];
+        for t in DECLARED {
+            assert!(
+                SYSTEM_ROOTS.iter().any(|root| t.absolute.starts_with(root)),
+                "tool {} sits outside the system locations: {}",
+                t.id,
+                t.absolute
+            );
+        }
     }
 
     #[test]
@@ -89,12 +280,39 @@ mod tests {
     #[test]
     fn no_tool_is_resolved_through_path() {
         // لو اعتمدنا PATH لكان "echo" وحده كافيًا. هذا الاختبار يثبّت القاعدة.
-        for t in [DITTO, OPEN, ECHO] {
+        for t in DECLARED {
             assert!(
                 Path::new(t.absolute).is_absolute(),
                 "tool {} must be declared by absolute path",
                 t.id
             );
+        }
+    }
+
+    #[test]
+    fn no_declared_tool_is_a_shell() {
+        // الأطروحة كلها في هذا السطر: لا يوجد في الفهرس أداةٌ تفسّر نصًّا.
+        // أداةٌ كهذه كانت ستعيد للواجهة القدرة التي نُزعت منها عمدًا.
+        const SHELLS: &[&str] =
+            &["sh", "bash", "zsh", "csh", "tcsh", "ksh", "dash", "fish", "env", "xargs", "eval"];
+        for t in DECLARED {
+            let name = Path::new(t.absolute).file_name().unwrap().to_string_lossy().into_owned();
+            assert!(!SHELLS.contains(&name.as_str()), "tool {} is an interpreter", t.id);
+        }
+    }
+
+    #[test]
+    fn tools_that_this_machine_lacks_are_reported_not_guessed() {
+        // ليس كل جهازٍ يحمل كل أداة — `git` تأتي مع أدوات Xcode. الاختبار لا
+        // يطالب بوجودها، بل يطالب بأن يكون الجواب صريحًا في الحالين.
+        for t in DECLARED {
+            match t.resolve() {
+                Ok(p) => assert!(p.is_absolute()),
+                Err(CoreError::ToolMissing { id }) | Err(CoreError::ToolNotExecutable { id }) => {
+                    assert_eq!(id, t.id, "a missing tool must name itself")
+                }
+                Err(e) => panic!("unexpected error for {}: {e:?}", t.id),
+            }
         }
     }
 }

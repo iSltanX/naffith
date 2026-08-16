@@ -52,6 +52,7 @@ fn argv_for(op_id: &str, pairs: &[(&str, RawValue)]) -> Vec<String> {
     let mut store = PlanStore::new();
     let session = store.register_session().unwrap();
     let plan = planner::plan(&mut store, &session, Policy::dev(), op_id, &inputs(pairs))
+        .map(|p| p.response)
         .unwrap_or_else(|e| panic!("planning {op_id} failed: {e}"));
     plan.argv_display
 }
@@ -122,7 +123,8 @@ fn the_explanation_covers_the_command_and_is_generated_with_it() {
         "internal.echo",
         &inputs(&[("message", RawValue::Text("مرحبا".into()))]),
     )
-    .unwrap();
+    .unwrap()
+    .response;
 
     // سَطْر ونَفِّذ ناتجا نفس الاستدعاء: كل رمز في الشرح يقابل شيئًا في الأمر.
     let joined: Vec<&str> = plan.explain.iter().map(|t| t.token.as_str()).collect();
@@ -152,7 +154,8 @@ fn planning_creates_no_artifact() {
         "internal.echo",
         &inputs(&[("message", RawValue::Text("x".into()))]),
     )
-    .unwrap();
+    .unwrap()
+    .response;
     assert!(plan.produces.is_none(), "echo produces nothing");
 }
 
@@ -173,7 +176,8 @@ fn compress_builds_the_expected_ditto_argv() {
         "compress.folder.zip",
         &compress_inputs(&src, &dst, "نسخة اليوم"),
     )
-    .unwrap();
+    .unwrap()
+    .response;
 
     // الرايات مثبّتة حرفيًا: تغييرها قرار منتج يُحدَّث معه هذا الاختبار.
     assert_eq!(
@@ -209,7 +213,8 @@ fn the_last_argument_is_the_temporary_name_not_the_final_one() {
         "compress.folder.zip",
         &compress_inputs(&src, &dst, "ناتج"),
     )
-    .unwrap();
+    .unwrap()
+    .response;
 
     let last = plan.argv_display.last().unwrap();
     assert_ne!(Some(last.as_str()), plan.produces.as_deref());
@@ -236,7 +241,8 @@ fn the_argv_shown_to_the_user_is_the_argv_the_core_stored_for_execution() {
         "compress.folder.zip",
         &compress_inputs(&src, &dst, "تقرير; نهائي"),
     )
-    .unwrap();
+    .unwrap()
+    .response;
     let shown = plan.argv_display.clone();
 
     let stored = store.take(&PlanToken::from(plan.token.as_str().to_owned()), &session).unwrap();
@@ -263,7 +269,8 @@ fn the_explanation_tokens_are_the_argv_token_for_token() {
         "compress.folder.zip",
         &compress_inputs(&src, &dst, "ناتج"),
     )
-    .unwrap();
+    .unwrap()
+    .response;
 
     let explained: Vec<String> = plan.explain.iter().map(|t| t.token.clone()).collect();
     assert_eq!(explained, plan.argv_display, "سَطْر must not invent or drop a token");
@@ -293,7 +300,8 @@ fn arabic_and_spaced_paths_stay_single_arguments() {
         "compress.folder.zip",
         &compress_inputs(&src, &dst, "نسخة ٢٠٢٦"),
     )
-    .unwrap();
+    .unwrap()
+    .response;
 
     assert_eq!(plan.argv_display.len(), 7, "spaces must not split an argument");
     assert_eq!(Path::new(&plan.argv_display[5]), src.as_path());
@@ -315,7 +323,8 @@ fn a_single_quote_in_a_name_never_splits_or_escapes_an_argument() {
         "compress.folder.zip",
         &compress_inputs(&src, &dst, "don't $(touch) `me`; rm -rf"),
     )
-    .unwrap();
+    .unwrap()
+    .response;
 
     assert_eq!(plan.argv_display.len(), 7);
     assert_eq!(Path::new(&plan.argv_display[5]), src.as_path());
@@ -341,7 +350,8 @@ fn the_zip_extension_is_added_exactly_once() {
             "compress.folder.zip",
             &compress_inputs(&src, &dst, given),
         )
-        .unwrap();
+        .unwrap()
+        .response;
         assert_eq!(
             Path::new(&plan.produces.unwrap()).file_name().unwrap().to_str().unwrap(),
             expected,
@@ -365,7 +375,8 @@ fn the_plan_declares_creates_and_does_not_create_anything() {
         "compress.folder.zip",
         &compress_inputs(&src, &dst, "ناتج"),
     )
-    .unwrap();
+    .unwrap()
+    .response;
 
     assert_eq!(plan.danger, naffith_core::spec::Danger::Creates);
     assert!(!Path::new(&plan.produces.unwrap()).exists(), "planning must not produce the archive");
