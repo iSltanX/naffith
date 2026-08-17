@@ -17,7 +17,7 @@
  * عملية، وتُنسى فتظهر عمليةٌ بلا أيقونة. الفئة مغلقة ومعلَنة في النواة، فالخريطة
  * منها ثابتة الحجم مهما بلغ عدد العمليات.
  */
-import type { InputSummary, OperationSummary, RawValue } from './ipc';
+import type { ChoiceOption, InputSummary, OperationSummary, RawValue } from './ipc';
 
 
 /**
@@ -57,34 +57,89 @@ export function fieldKeys(opId: string, inputId: string) {
  */
 export type FormValues = Record<string, string>;
 
-/** نموذج فارغ لعملية: كل مدخلاتها المعلَنة بقيمة فارغة. */
+/** نموذج ابتدائي لعملية: الأرقام تبدأ بالقيمة الافتراضية التي أعلنتها النواة. */
 export function emptyValues(op: OperationSummary): FormValues {
-  return Object.fromEntries(op.inputs.map((i) => [i.id, '']));
+  return Object.fromEntries(
+    op.inputs.map((input) => {
+      const number = numberSpec(input);
+      return [input.id, number ? String(number.default) : ''];
+    }),
+  );
 }
 
-function kindOf(input: InputSummary): string {
+/** النوع المسطّح كما يسلسله Rust بجانب `id` و`required`. */
+export function inputKind(input: InputSummary): string {
   return String((input as InputSummary & { kind?: unknown }).kind);
 }
 
 /** هل هذا المدخل مسار؟ يحدّد زرّ الاختيار واتجاه النصّ LTR. */
 export function isPathInput(input: InputSummary): boolean {
-  const kind = kindOf(input);
-  return kind === 'existing_dir' || kind === 'existing_file' || kind === 'target_dir';
+  const kind = inputKind(input);
+  return (
+    kind === 'existing_dir' ||
+    kind === 'existing_file' ||
+    kind === 'existing_path' ||
+    kind === 'target_dir'
+  );
 }
 
 /** هل يُختار بحوار مجلد؟ الملف القائم لا يُختار بحوار المجلدات. */
 export function isDirectoryInput(input: InputSummary): boolean {
-  const kind = kindOf(input);
+  const kind = inputKind(input);
   return kind === 'existing_dir' || kind === 'target_dir';
 }
 
 export function isFlagInput(input: InputSummary): boolean {
-  return kindOf(input) === 'flag';
+  return inputKind(input) === 'flag';
+}
+
+export function isChoiceInput(input: InputSummary): boolean {
+  return inputKind(input) === 'choice';
+}
+
+export function choiceOptions(input: InputSummary): ChoiceOption[] {
+  if (!isChoiceInput(input)) return [];
+  const options = (input as InputSummary & { options?: unknown }).options;
+  if (!Array.isArray(options)) return [];
+  return options.filter(
+    (option): option is ChoiceOption =>
+      typeof option === 'object' &&
+      option !== null &&
+      typeof (option as Partial<ChoiceOption>).value === 'string' &&
+      typeof (option as Partial<ChoiceOption>).label_key === 'string',
+  );
+}
+
+export interface NumberSpec {
+  min: number;
+  max: number;
+  default: number;
+}
+
+export function isNumberInput(input: InputSummary): boolean {
+  return inputKind(input) === 'number';
+}
+
+export function numberSpec(input: InputSummary): NumberSpec | null {
+  if (!isNumberInput(input)) return null;
+  const candidate = input as InputSummary & Partial<NumberSpec>;
+  if (
+    typeof candidate.min !== 'number' ||
+    typeof candidate.max !== 'number' ||
+    typeof candidate.default !== 'number'
+  ) {
+    return null;
+  }
+  return { min: candidate.min, max: candidate.max, default: candidate.default };
+}
+
+export function isUrlInput(input: InputSummary): boolean {
+  return inputKind(input) === 'url';
 }
 
 /** لاحقة تُعرض بجانب حقل الاسم (‏.zip)، أو `null`. تأتي من المواصفة لا من نصّ. */
 export function extensionHint(input: InputSummary): string | null {
-  if (kindOf(input) !== 'new_name') return null;
+  if (inputKind(input) !== 'new_name') return null;
   const ext = (input as InputSummary & { ext?: unknown }).ext;
   return typeof ext === 'string' && ext !== '' ? `.${ext.replace(/^\./, '')}` : null;
 }

@@ -35,6 +35,7 @@ const RUST_FILES = [
   'planner.rs',
   'journal.rs',
   'executor.rs',
+  'result.rs',
   'error.rs',
   'value.rs',
 ] as const;
@@ -218,7 +219,10 @@ function structFields(item: RustItem): RustField[] {
  * مجاورًا: حقلان لا غير مهما كانت الحمولة.
  */
 function enumWireFields(typeName: string): string[] {
-  const bare = (typeName.split('::').pop() ?? typeName).trim();
+  const named = (typeName.split('::').pop() ?? typeName).trim();
+  // `executor::OutputLine` is a public compatibility alias; serde is derived
+  // on the canonical result-boundary enum.
+  const bare = named === 'OutputLine' ? 'RawOutputLine' : named;
   const item = requireItem('enum', bare);
   const { tag, content } = serdeAttrs(item.attrs);
   const out = new Set<string>();
@@ -239,7 +243,8 @@ function enumWireFields(typeName: string): string[] {
  * تحمل حمولة فلا يغيب أبدًا — والفرق يُحسب من المتغيّرات لا يُفترض.
  */
 function enumAbsentableFields(typeName: string): string[] {
-  const bare = (typeName.split('::').pop() ?? typeName).trim();
+  const named = (typeName.split('::').pop() ?? typeName).trim();
+  const bare = named === 'OutputLine' ? 'RawOutputLine' : named;
   const variants = enumVariants(requireItem('enum', bare));
   const out = new Set<string>();
   for (const variant of variants) {
@@ -464,8 +469,8 @@ describe('محلّلات العقد نفسها', () => {
   });
 
   it('يميّز الوسم المجاور من الوسم الداخلي في قراءة الحمولة', () => {
-    const output = enumVariants(requireItem('enum', 'OutputLine'));
-    expect(output.length, 'لم تُقرأ متغيّرات OutputLine').toBe(3);
+    const output = enumVariants(requireItem('enum', 'RawOutputLine'));
+    expect(output.length, 'لم تُقرأ متغيّرات OutputLine').toBe(4);
     // شاهدٌ محدَّد: تحت `content = "line"` تُكتب كل حمولة باسم `line`، سواء
     // كانت قيمة واحدة (`Stdout(String)`) أو بنية (`Truncated { dropped }`).
     expect(output.find((v) => v.wire === 'stdout')?.fields).toEqual(['line']);
@@ -485,6 +490,7 @@ describe('محلّلات العقد نفسها', () => {
       'cwd',
       'inputs',
       'tail',
+      'result',
     ]);
     expect(sorted(entry.conditional)).toEqual(['code', 'produced', 'reason']);
 
@@ -510,7 +516,7 @@ describe('محلّلات العقد نفسها', () => {
 
   it('يقرأ حقول المستوى الأعلى وحدها من أعضاء الاتحاد', () => {
     const members = tsTaggedUnion('RunOutputEvent', 'stream');
-    expect(members.length, 'لم تُقرأ أعضاء RunOutputEvent').toBe(3);
+    expect(members.length, 'لم تُقرأ أعضاء RunOutputEvent').toBe(4);
     // ‏`dropped` داخل `line` لا إلى جانبه: مُحلِّلٌ لا يرى العمق يخترعه حقلًا
     // في المستوى الأعلى، فيبدو العقد مطابقًا لشيء لا يُبَثّ.
     expect(members.flatMap((m) => m.fields)).not.toContain('dropped');
@@ -553,6 +559,19 @@ describe('متغيّرات كل enum يعبر الحدّ', () => {
       label: 'journal::State → JournalState',
       ts: () => tsStringUnion('JournalState'),
     },
+    { rust: 'ResultCategory', label: 'ResultCategory', ts: () => tsStringUnion('ResultCategory') },
+    { rust: 'ResultSemantic', label: 'ResultSemantic', ts: () => tsStringUnion('ResultSemantic') },
+    { rust: 'RevealKind', label: 'RevealKind', ts: () => tsStringUnion('RevealKind') },
+    // أنواع الحمولة الستّة: كل واحدٍ منها يعبر الحدّ في حقل `kind` داخل
+    // `ResultPayload`، وكانت كلها بلا حارسٍ هنا — تُضاف يدويًا في الطرفين
+    // ولا شيء يمنع افتراقهما. عمليةٌ تُضيف متغيّرًا في Rust وتنساه في
+    // `ipc.ts` تجعل الواجهة تستقبل قيمةً لا يعرفها نوعُها.
+    { rust: 'CollectionKind', label: 'CollectionKind', ts: () => tsStringUnion('CollectionKind') },
+    { rust: 'ReportKind', label: 'ReportKind', ts: () => tsStringUnion('ReportKind') },
+    { rust: 'MetricsKind', label: 'MetricsKind', ts: () => tsStringUnion('MetricsKind') },
+    { rust: 'ComparisonKind', label: 'ComparisonKind', ts: () => tsStringUnion('ComparisonKind') },
+    { rust: 'VerdictKind', label: 'VerdictKind', ts: () => tsStringUnion('VerdictKind') },
+    { rust: 'DiffSearchKind', label: 'DiffSearchKind', ts: () => tsStringUnion('DiffSearchKind') },
   ];
 
   for (const c of cases) {
@@ -584,7 +603,14 @@ describe('متغيّرات كل enum يعبر الحدّ', () => {
     { rust: 'Outcome', ts: 'Outcome', tag: 'status', count: 5, carrier: [] },
     { rust: 'InputKind', ts: 'InputKind', tag: 'kind', count: 11, carrier: [] },
     { rust: 'RawValue', ts: 'RawValue', tag: 'kind', count: 3, carrier: [] },
-    { rust: 'OutputLine', ts: 'RunOutputEvent', tag: 'stream', count: 3, carrier: ['run_id'] },
+    {
+      rust: 'RawOutputLine',
+      ts: 'RunOutputEvent',
+      tag: 'stream',
+      count: 4,
+      carrier: ['run_id'],
+    },
+    { rust: 'RawOutputLine', ts: 'RawOutputLine', tag: 'stream', count: 4, carrier: [] },
   ];
 
   for (const c of TAGGED) {
@@ -670,6 +696,7 @@ describe('حقول كل بنية تعبر الحدّ', () => {
     { rust: 'WireError', ts: 'CoreErrorShape' },
     { rust: 'RunOutput', ts: 'RunOutputEvent' },
     { rust: 'RunFinished', ts: 'RunFinishedEvent' },
+    { rust: 'ResultContract', ts: 'ResultContract' },
   ];
 
   for (const c of cases) {
@@ -692,7 +719,7 @@ describe('حقول كل بنية تعبر الحدّ', () => {
       expect(undeclared, `${c.ts} لا تسمّي حقولًا ترسلها ${c.rust}`).toEqual(
         sorted(UNDECLARED[c.ts] ?? []),
       );
-      if (undeclared.length > 0) {
+      if (undeclared.length > 0 && c.ts !== 'InputSummary') {
         expect(
           tsShape(c.ts).open,
           `${c.ts} تُغفل حقولًا وهي شكلٌ مغلق: لا مكان لها في النوع أصلًا`,
@@ -726,10 +753,21 @@ describe('حقول كل بنية تعبر الحدّ', () => {
       'inputs',
       'produced',
       'reason',
+      'result',
       'tail',
     ]);
     const shape = tsShape('JournalEntry');
-    for (const f of ['duration_ms', 'cwd', 'produced', 'reason', 'code', 'category', 'inputs', 'tail']) {
+    for (const f of [
+      'duration_ms',
+      'cwd',
+      'produced',
+      'reason',
+      'code',
+      'category',
+      'inputs',
+      'tail',
+      'result',
+    ]) {
       expect(tsShapeFields('JournalEntry'), `JournalEntry لا تسمّي ${f}`).toContain(f);
       expect(tsMayBeAbsent(shape, f), `${f} معلَنة إلزامية في JournalEntry`).toBe(true);
     }

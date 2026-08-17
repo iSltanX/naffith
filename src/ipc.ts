@@ -42,10 +42,11 @@ export type InputKind =
   | { kind: 'url' }
   | { kind: 'flag' };
 
-export interface InputSummary extends Record<string, unknown> {
+/** مدخلٌ مسمّى كما يسلسله Rust: اتحادٌ موسوم لا سجلٌ مفتوح. */
+export type InputSummary = InputKind & {
   id: string;
   required: boolean;
-}
+};
 
 /**
  * معرّفات الأقسام كما تعلنها النواة.
@@ -63,6 +64,7 @@ export type CategoryId =
   | 'security'
   | 'git'
   | 'system'
+  | 'developer'
   | 'history'
   | 'internal';
 
@@ -178,6 +180,224 @@ export type Outcome =
   | { status: 'cancelled' }
   | { status: 'error'; key: string };
 
+/** Stable ResultView family selected by Rust for every production operation. */
+export type ResultCategory =
+  | 'artifact'
+  | 'acknowledgement'
+  | 'collection'
+  | 'properties_report'
+  | 'metrics'
+  | 'digest'
+  | 'comparison'
+  | 'verdict'
+  | 'diff_search'
+  | 'diagnostic'
+  | 'raw_output';
+
+/** Domain answer classified from the operation and exit status in Rust. */
+export type ResultSemantic =
+  | 'completed'
+  | 'matches'
+  | 'no_matches'
+  | 'differences'
+  | 'no_differences'
+  | 'accepted'
+  | 'rejected'
+  | 'signed'
+  | 'unsigned'
+  | 'failed'
+  | 'cancelled';
+
+export type RevealKind = 'file' | 'directory';
+
+/** A bounded, already-classified raw line; the frontend never parses its text. */
+export type RawOutputLine =
+  | { stream: 'stdout'; line: string }
+  | { stream: 'stderr'; line: string }
+  | { stream: 'omitted'; line: { dropped: number } }
+  | { stream: 'truncated'; line: { dropped: number } };
+
+export type ResultStream = 'stdout' | 'stderr';
+
+/** A line whose stream has already been separated from terminal notices. */
+export interface StructuredLine {
+  value: string;
+  stream: ResultStream;
+}
+
+/** Why a structured payload contains only a bounded subset of its source. */
+export interface OutputNotice {
+  kind: 'omitted' | 'truncated';
+  dropped: number;
+}
+
+export type CollectionKind =
+  | 'file_matches'
+  | 'directory_sizes'
+  | 'archive_entries'
+  | 'filesystem_usage'
+  | 'storage_devices'
+  | 'dns_records'
+  | 'listening_ports'
+  | 'git_status'
+  | 'merged_branches'
+  | 'processes'
+  | 'git_log'
+  | 'git_blame'
+  | 'file_content'
+  | 'directory_entries'
+  | 'process_matches';
+
+export type ReportKind =
+  | 'image'
+  | 'http_headers'
+  | 'permissions'
+  | 'extended_attributes'
+  | 'system_version'
+  | 'system_profile'
+  | 'git_version'
+  | 'file_type'
+  | 'architecture';
+
+export type MetricsKind = 'network_latency' | 'system_uptime';
+export type ComparisonKind = 'sha256' | 'git_diff' | 'bytes';
+export type VerdictKind = 'archive_integrity' | 'gatekeeper' | 'code_signature' | 'code_integrity';
+export type DiffSearchKind = 'diff' | 'search';
+
+export interface CollectionRow {
+  cells: string[];
+  stream: ResultStream;
+}
+
+export interface ResultProperty {
+  label_key: string;
+  value: string;
+  stream: ResultStream;
+}
+
+export interface ResultMetric {
+  label_key: string;
+  value: string;
+  unit?: string;
+  stream: ResultStream;
+}
+
+/**
+ * Exact flattened `ResultContract` wire shape.
+ *
+ * The repeated common fields keep this a useful discriminated union: checking
+ * `type` proves whether `path`/`output` or `lines` is present.
+ */
+export type ResultContract =
+  | {
+      category: 'artifact';
+      semantic: ResultSemantic;
+      reveal?: RevealKind;
+      type: 'artifact';
+      path: string;
+      /** اسم الناتج، مشتقٌّ من المسار في Rust. */
+      name: string;
+      /** المجلد الحاوي، مشتقٌّ من المسار في Rust. */
+      parent: string;
+      /** الحجم بالبايت حين تقيسه النواة؛ يغيب حين يتعذّر. */
+      size_bytes?: number;
+      /** عدد ما يحويه مجلدُ الناتج مباشرةً؛ يغيب للملف. */
+      entries?: number;
+      output?: RawOutputLine[];
+    }
+  | {
+      category: 'acknowledgement';
+      semantic: ResultSemantic;
+      reveal?: RevealKind;
+      type: 'acknowledgement';
+      message_key: string;
+      details: StructuredLine[];
+      notices: OutputNotice[];
+    }
+  | {
+      category: 'collection';
+      semantic: ResultSemantic;
+      reveal?: RevealKind;
+      type: 'collection';
+      kind: CollectionKind;
+      columns: string[];
+      rows: CollectionRow[];
+      notices: OutputNotice[];
+    }
+  | {
+      category: 'properties_report';
+      semantic: ResultSemantic;
+      reveal?: RevealKind;
+      type: 'properties_report';
+      kind: ReportKind;
+      properties: ResultProperty[];
+      notices: OutputNotice[];
+    }
+  | {
+      category: 'metrics';
+      semantic: ResultSemantic;
+      reveal?: RevealKind;
+      type: 'metrics';
+      kind: MetricsKind;
+      metrics: ResultMetric[];
+      notices: OutputNotice[];
+    }
+  | {
+      category: 'digest';
+      semantic: ResultSemantic;
+      reveal?: RevealKind;
+      type: 'digest';
+      algorithm: 'sha256';
+      value: string | null;
+      details: StructuredLine[];
+      notices: OutputNotice[];
+    }
+  | {
+      category: 'comparison';
+      semantic: ResultSemantic;
+      reveal?: RevealKind;
+      type: 'comparison';
+      kind: ComparisonKind;
+      reference: string | null;
+      comparison: string | null;
+      equal: boolean | null;
+      details: StructuredLine[];
+      notices: OutputNotice[];
+    }
+  | {
+      category: 'verdict';
+      semantic: ResultSemantic;
+      reveal?: RevealKind;
+      type: 'verdict';
+      kind: VerdictKind;
+      value: ResultSemantic;
+      details: StructuredLine[];
+      notices: OutputNotice[];
+    }
+  | {
+      category: 'diff_search';
+      semantic: ResultSemantic;
+      reveal?: RevealKind;
+      type: 'diff_search';
+      kind: DiffSearchKind;
+      items: StructuredLine[];
+      notices: OutputNotice[];
+    }
+  | {
+      category: 'diagnostic';
+      semantic: ResultSemantic;
+      reveal?: RevealKind;
+      type: 'diagnostic';
+      lines: RawOutputLine[];
+    }
+  | {
+      category: 'raw_output';
+      semantic: ResultSemantic;
+      reveal?: RevealKind;
+      type: 'raw_output';
+      lines: RawOutputLine[];
+    };
+
 /**
  * سطر خرج واحد كما يبثّه `run://output`.
  *
@@ -190,10 +410,12 @@ export type Outcome =
 export type RunOutputEvent =
   | { run_id: string; stream: 'stdout'; line: string }
   | { run_id: string; stream: 'stderr'; line: string }
+  | { run_id: string; stream: 'omitted'; line: { dropped: number } }
   | { run_id: string; stream: 'truncated'; line: { dropped: number } };
 
 export interface RunFinishedEvent extends Record<string, unknown> {
   run_id: string;
+  result: ResultContract;
   status: Outcome['status'];
   produced?: string | null;
   code?: number | null;
@@ -248,6 +470,8 @@ export interface JournalEntry {
   inputs?: JournalInput[];
   /** آخر ما طبعته الأداة، محدودًا في النواة. في القيد النهائي وحده. */
   tail?: string[];
+  /** النتيجة المهيكلة. تغيب عن القيود القديمة وعن planned/running. */
+  result?: ResultContract;
 }
 
 /** خطأ من النواة: مفتاح ترجمة، والحقل المسؤول، وتفصيل اختياري. */
@@ -314,5 +538,16 @@ export const onRunFinished = (fn: (e: RunFinishedEvent) => void): Promise<Unlist
  */
 export async function pickDirectory(): Promise<string | null> {
   const chosen = await openDialog({ directory: true, multiple: false });
+  return typeof chosen === 'string' ? chosen : null;
+}
+
+/**
+ * يفتح حوار macOS لاختيار ملف قائم.
+ *
+ * مثل اختيار المجلد تمامًا، هذه راحة إدخال فقط: المسار لا يكتسب ثقةً من
+ * الحوار، ويُعاد التحقّق منه في Rust وفق نوع الحقل وسياسة الجذور المحمية.
+ */
+export async function pickFile(): Promise<string | null> {
+  const chosen = await openDialog({ directory: false, multiple: false });
   return typeof chosen === 'string' ? chosen : null;
 }
