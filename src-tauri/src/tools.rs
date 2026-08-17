@@ -193,6 +193,15 @@ pub const SYSTEM_PROFILER: Tool = Tool::new("system_profiler", "/usr/sbin/system
 pub const NPM: Tool = Tool::new("npm", "/usr/bin/env");
 pub const TAURI_CLI: Tool = Tool::new("tauri", "/usr/bin/env");
 
+/// أداة Cargo — نفس منطق `NPM`/`TAURI_CLI` أعلاه، بمرساةٍ مختلفة.
+///
+/// ‏`cargo` ملفٌّ تنفيذي أصيل (‏Mach-O)، لا شِبَنغ `env` — فلا صلة لها بـ
+/// `/usr/bin/env` كما كانت `npm`. لكنها تحتاج المصرّف والرابط (‏`cc`،
+/// `xcrun`) لأي بناءٍ حقيقي، وهذا مُثبَتٌ تجريبيًا: `cargo check` تفشل بلا
+/// `/usr/bin/cc` بالضبط. فهو المرساة الصادقة هنا: «هل هذا الجهاز يملك أصلًا
+/// ما يلزم لبناء Rust؟» — سؤالٌ عن الجهاز، منفصلٌ عن مسار `cargo` نفسه الذي
+/// يختاره المستخدم في الإعداد (`cargo_path`، مثل `node_path`).
+pub const CARGO: Tool = Tool::new("cargo", "/usr/bin/cc");
 pub const DISKUTIL: Tool = Tool::new("diskutil", "/usr/sbin/diskutil");
 
 /// تفريغ ذاكرة DNS المؤقتة.

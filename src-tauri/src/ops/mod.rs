@@ -14,6 +14,13 @@ pub mod compress_ditto;
 pub mod internal_echo;
 
 // ── أدوات المطوّرين ─────────────────────────────────────────────────────
+pub mod dev_cargo_build_release;
+pub mod dev_cargo_check;
+pub mod dev_cargo_clean;
+pub mod dev_cargo_clippy;
+pub mod dev_cargo_fmt;
+pub mod dev_cargo_fmt_check;
+pub mod dev_cargo_test;
 pub mod dev_common;
 pub mod dev_npm_dev;
 pub mod dev_npm_install;

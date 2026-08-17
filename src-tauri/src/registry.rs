@@ -87,6 +87,13 @@ static ALL: &[&OperationSpec] = &[
     &ops::dev_npm_dev::SPEC,
     &ops::dev_tauri_dev::SPEC,
     &ops::dev_tauri_build::SPEC,
+    &ops::dev_cargo_test::SPEC,
+    &ops::dev_cargo_check::SPEC,
+    &ops::dev_cargo_clippy::SPEC,
+    &ops::dev_cargo_fmt_check::SPEC,
+    &ops::dev_cargo_fmt::SPEC,
+    &ops::dev_cargo_build_release::SPEC,
+    &ops::dev_cargo_clean::SPEC,
     // ── داخليّة ─────────────────────────────────────────────────────────
     &ops::internal_echo::SPEC,
 ];
