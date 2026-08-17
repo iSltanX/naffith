@@ -74,13 +74,14 @@ pub const ID: &str = "system.report";
 /// يعرضهما كان سيجعل الشاشة تسأل سؤالًا جوابه معروف.
 const DETAIL_LEVEL: &str = "mini";
 
-/// الأقسام المعروضة. أربعةٌ تجيب الأسئلة التي تُطرح فعلًا، لا كل ما تعرفه
+/// الأقسام المعروضة. خمسةٌ تجيب الأسئلة التي تُطرح فعلًا، لا كل ما تعرفه
 /// الأداة: قائمةٌ من عشرين نوعًا تصير بحثًا داخل قائمةٍ لا اختيارًا منها.
 const DETAILS: &[ChoiceOption] = &[
     ChoiceOption::new("SPHardwareDataType", "choice.report.hardware"),
     ChoiceOption::new("SPSoftwareDataType", "choice.report.software"),
     ChoiceOption::new("SPStorageDataType", "choice.report.storage"),
     ChoiceOption::new("SPDisplaysDataType", "choice.report.displays"),
+    ChoiceOption::new("SPUSBDataType", "choice.report.usb"),
 ];
 
 pub const SPEC: OperationSpec = OperationSpec {
@@ -215,9 +216,13 @@ mod tests {
     fn a_section_the_specification_does_not_declare_is_refused() {
         // القائمة مغلقة: الأداة نفسها تقبل نوعًا مجهولًا وتطبع فراغًا وتنجح،
         // فالرفض هنا هو ما يحوّل خطأً صامتًا إلى رسالةٍ على الحقل.
-        for bogus in
-            ["SPUSBDataType", "SPApplicationsDataType", "sphardwaredatatype", "-detailLevel", ""]
-        {
+        for bogus in [
+            "SPNetworkDataType",
+            "SPApplicationsDataType",
+            "sphardwaredatatype",
+            "-detailLevel",
+            "",
+        ] {
             assert_eq!(
                 refusal(plan_with(bogus)),
                 ("err.input.type", Some("detail")),

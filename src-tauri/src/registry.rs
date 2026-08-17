@@ -31,6 +31,8 @@ static ALL: &[&OperationSpec] = &[
     &ops::files_find_name::SPEC,
     &ops::files_tree_size::SPEC,
     &ops::files_open::SPEC,
+    &ops::files_list::SPEC,
+    &ops::files_identify::SPEC,
     // ── الضغط وفكّ الضغط ────────────────────────────────────────────────
     &ops::compress_ditto::SPEC,
     &ops::compress_zip_list::SPEC,
@@ -54,6 +56,7 @@ static ALL: &[&OperationSpec] = &[
     &ops::disk_free::SPEC,
     &ops::disk_hash::SPEC,
     &ops::disk_compare::SPEC,
+    &ops::disk_compare_bytes::SPEC,
     &ops::disk_list::SPEC,
     // ── الشبكة والاتصال ─────────────────────────────────────────────────
     &ops::net_ping::SPEC,
@@ -66,6 +69,7 @@ static ALL: &[&OperationSpec] = &[
     &ops::security_xattr::SPEC,
     &ops::security_gatekeeper::SPEC,
     &ops::security_codesign::SPEC,
+    &ops::security_codesign_verify::SPEC,
     // ── Git ومستودعات الشفرة ────────────────────────────────────────────
     &ops::git_init::SPEC,
     &ops::git_status::SPEC,
@@ -82,6 +86,7 @@ static ALL: &[&OperationSpec] = &[
     // ── النظام والصيانة الدورية ─────────────────────────────────────────
     &ops::system_processes::SPEC,
     &ops::system_info::SPEC,
+    &ops::system_architecture::SPEC,
     &ops::system_uptime::SPEC,
     &ops::system_dns_flush::SPEC,
     &ops::system_report::SPEC,

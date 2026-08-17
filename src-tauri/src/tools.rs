@@ -107,6 +107,9 @@ pub const DF: Tool = Tool::new("df", "/bin/df");
 /// عرض الصلاحيات وقوائم التحكّم والسمات الممتدّة. `-l` تكشف ACL، و`-@` السمات.
 pub const LS: Tool = Tool::new("ls", "/bin/ls");
 
+/// تعرّف نوع ملفٍّ من محتواه (magic bytes)، لا من امتداد اسمه.
+pub const FILE: Tool = Tool::new("file", "/usr/bin/file");
+
 /// دمج الملفات. تكتب إلى `stdout` وحده، فيُوجَّه إلى ناتج العملية في النواة.
 pub const CAT: Tool = Tool::new("cat", "/bin/cat");
 
@@ -141,6 +144,10 @@ pub const TEXTUTIL: Tool = Tool::new("textutil", "/usr/bin/textutil");
 /// مقارنة ملفين نصيين. `-u` تنتج فرقًا موحّدًا يقرؤه البشر والأدوات معًا.
 pub const DIFF: Tool = Tool::new("diff", "/usr/bin/diff");
 
+/// مقارنة ملفين بايتًا بايت. تتوقّف عند أول اختلاف — أسرع من بصمةٍ كاملة،
+/// وأضيق منها: تحتاج الملفين حاضرين معًا، لا بصمةً منشورة من مكانٍ آخر.
+pub const CMP: Tool = Tool::new("cmp", "/usr/bin/cmp");
+
 /// البحث داخل الملفات. يُستعمل للبحث وحده — الاستبدال داخل الملفات مؤجَّل،
 /// لأنه تعديلٌ في مكانه لا يمرّ بالترقية الذرّية التي يقوم عليها هذا المنتج.
 pub const GREP: Tool = Tool::new("grep", "/usr/bin/grep");
@@ -174,6 +181,9 @@ pub const PS: Tool = Tool::new("ps", "/bin/ps");
 pub const SW_VERS: Tool = Tool::new("sw_vers", "/usr/bin/sw_vers");
 pub const UPTIME: Tool = Tool::new("uptime", "/usr/bin/uptime");
 pub const SYSTEM_PROFILER: Tool = Tool::new("system_profiler", "/usr/sbin/system_profiler");
+/// معمارية المعالج (‏`arm64`، `x86_64`) — سؤالٌ عن الجهاز، لا عن نسخة macOS
+/// التي تجيب عنها `sw_vers`.
+pub const UNAME: Tool = Tool::new("uname", "/usr/bin/uname");
 
 /// أداتا Node.js وTauri CLI — استثناءٌ عن قاعدة هذا الملف.
 ///
@@ -239,6 +249,7 @@ mod tests {
         DU,
         DF,
         LS,
+        FILE,
         CAT,
         SPLIT,
         UNZIP,
@@ -247,6 +258,7 @@ mod tests {
         QLMANAGE,
         TEXTUTIL,
         DIFF,
+        CMP,
         GREP,
         WC,
         SHASUM,
@@ -259,6 +271,7 @@ mod tests {
         SW_VERS,
         UPTIME,
         SYSTEM_PROFILER,
+        UNAME,
         DISKUTIL,
         DSCACHEUTIL,
         XATTR,

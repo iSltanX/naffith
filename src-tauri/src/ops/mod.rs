@@ -35,6 +35,8 @@ pub mod files_copy;
 pub mod files_find_large;
 pub mod files_find_name;
 pub mod files_find_stale;
+pub mod files_identify;
+pub mod files_list;
 pub mod files_mkdir;
 pub mod files_move;
 pub mod files_open;
@@ -63,6 +65,7 @@ pub mod text_split;
 
 // ── الأقراص ومساحة التخزين ──────────────────────────────────────────────
 pub mod disk_compare;
+pub mod disk_compare_bytes;
 pub mod disk_free;
 pub mod disk_hash;
 pub mod disk_list;
@@ -76,6 +79,7 @@ pub mod net_ports;
 
 // ── الأمان والصلاحيات ───────────────────────────────────────────────────
 pub mod security_codesign;
+pub mod security_codesign_verify;
 pub mod security_gatekeeper;
 pub mod security_permissions;
 pub mod security_xattr;
@@ -95,6 +99,7 @@ pub mod git_status;
 pub mod git_version;
 
 // ── النظام والصيانة الدورية ─────────────────────────────────────────────
+pub mod system_architecture;
 pub mod system_dns_flush;
 pub mod system_info;
 pub mod system_processes;
