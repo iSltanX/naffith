@@ -73,6 +73,12 @@ static ALL: &[&OperationSpec] = &[
     &ops::git_diff::SPEC,
     &ops::git_branches::SPEC,
     &ops::git_archive::SPEC,
+    &ops::git_log::SPEC,
+    &ops::git_diff_commits::SPEC,
+    &ops::git_show_file::SPEC,
+    &ops::git_blame::SPEC,
+    &ops::git_grep::SPEC,
+    &ops::git_version::SPEC,
     // ── النظام والصيانة الدورية ─────────────────────────────────────────
     &ops::system_processes::SPEC,
     &ops::system_info::SPEC,

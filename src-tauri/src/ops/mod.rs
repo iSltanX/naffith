@@ -82,11 +82,17 @@ pub mod security_xattr;
 
 // ── Git ومستودعات الشفرة ────────────────────────────────────────────────
 pub mod git_archive;
+pub mod git_blame;
 pub mod git_branches;
 pub mod git_commit;
 pub mod git_diff;
+pub mod git_diff_commits;
+pub mod git_grep;
 pub mod git_init;
+pub mod git_log;
+pub mod git_show_file;
 pub mod git_status;
+pub mod git_version;
 
 // ── النظام والصيانة الدورية ─────────────────────────────────────────────
 pub mod system_dns_flush;
