@@ -40,6 +40,7 @@ pub struct Argv {
     warnings: Vec<&'static str>,
     estimate: Option<SizeEstimate>,
     reveal_target: Option<PathBuf>,
+    extra_path: Vec<PathBuf>,
     failure: Option<CoreError>,
 }
 
@@ -61,6 +62,7 @@ impl Argv {
                     warnings: Vec::new(),
                     estimate: None,
                     reveal_target: None,
+                    extra_path: Vec::new(),
                     failure: None,
                 }
             }
@@ -72,6 +74,45 @@ impl Argv {
                 warnings: Vec::new(),
                 estimate: None,
                 reveal_target: None,
+                extra_path: Vec::new(),
+                failure: Some(e),
+            },
+        }
+    }
+
+    /// يبدأ أمرًا بأداةٍ مسارها **لم يُعرف وقت البناء** — اختاره المستخدم، أو
+    /// اشتُقّ من اختياره — بعد أن مرّ بسياسة المسارات في `plan()` بالفعل.
+    ///
+    /// نظير `tool()` تمامًا في كل شيء إلا مصدر المسار: `Tool` ثابتٌ في
+    /// الشيفرة (‏`/usr/bin/ditto`)، وهذا مسارٌ في `Inputs` بعد أن صار مطلقًا
+    /// ومحلولًا. الفحص نفسه (‏`resolve_executable`) يقع على الاثنين، فلا
+    /// يمكن لأداةٍ من أيّ مصدرٍ أن تُنفَّذ بلا تحقّق.
+    pub fn resolved_tool(id: &'static str, program: &Path, explain_key: &'static str) -> Self {
+        match crate::tools::resolve_executable(id, program) {
+            Ok(program) => {
+                let explain = vec![ExplainToken::new(program.display().to_string(), explain_key)
+                    .with_role(TokenRole::Tool)];
+                Self {
+                    program,
+                    args: Vec::new(),
+                    explain,
+                    cwd: None,
+                    warnings: Vec::new(),
+                    estimate: None,
+                    reveal_target: None,
+                    extra_path: Vec::new(),
+                    failure: None,
+                }
+            }
+            Err(e) => Self {
+                program: program.to_path_buf(),
+                args: Vec::new(),
+                explain: Vec::new(),
+                cwd: None,
+                warnings: Vec::new(),
+                estimate: None,
+                reveal_target: None,
+                extra_path: Vec::new(),
                 failure: Some(e),
             },
         }
@@ -195,6 +236,22 @@ impl Argv {
         self
     }
 
+    /// ‏`PATH` الذي يُمنح للطفل وحده، فوق البيئة الممسوحة. انظر توثيق
+    /// `PlannedCommand::extra_path` — القرار الأمني هناك، وهذا موضع تفعيله.
+    ///
+    /// كل دليلٍ هنا يُرفض إن لم يكن مطلقًا: دليلٌ نسبي في `PATH` يعني «الدليل
+    /// الحالي وقت التشغيل»، وهذا بالضبط ما تمنعه بقيّة هذا الملف من كل مسارٍ
+    /// آخر.
+    pub fn with_extra_path(mut self, dirs: Vec<PathBuf>) -> Self {
+        for d in &dirs {
+            if !d.is_absolute() {
+                return self.fail(CoreError::PathNotAbsolute);
+            }
+        }
+        self.extra_path = dirs;
+        self
+    }
+
     pub fn warn(mut self, key: &'static str) -> Self {
         if !self.warnings.contains(&key) {
             self.warnings.push(key);
@@ -277,6 +334,7 @@ impl Argv {
             stdout_to,
             // ناتجٌ مؤقّت يجيب عن «أين أنظر؟» بنفسه، فلا يُقبل جوابان.
             reveal_target: if artifact_declared { None } else { self.reveal_target },
+            extra_path: self.extra_path,
         })
     }
 }

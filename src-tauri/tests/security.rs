@@ -909,5 +909,6 @@ fn dummy() -> naffith_core::spec::PlannedCommand {
         estimate: None,
         stdout_to: None,
         reveal_target: None,
+        extra_path: Vec::new(),
     }
 }

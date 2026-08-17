@@ -449,6 +449,7 @@ mod tests {
             estimate: None,
             stdout_to: None,
             reveal_target: None,
+            extra_path: Vec::new(),
         }
     }
 

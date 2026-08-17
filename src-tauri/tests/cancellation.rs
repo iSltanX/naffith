@@ -30,6 +30,7 @@ fn command(program: &str, args: &[&str], artifact: Option<Artifact>) -> PlannedC
         estimate: None,
         stdout_to: None,
         reveal_target: None,
+        extra_path: Vec::new(),
     }
 }
 

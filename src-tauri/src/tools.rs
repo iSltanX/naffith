@@ -24,16 +24,30 @@ impl Tool {
     /// يُستدعى عند كل تخطيط لا مرة واحدة عند الإقلاع: الغياب بين الإقلاع
     /// والتنفيذ حالة واقعية (تحديث نظام، قرص مفصول).
     pub fn resolve(&self) -> Result<PathBuf> {
-        let p = Path::new(self.absolute);
-        let meta = std::fs::metadata(p).map_err(|_| CoreError::ToolMissing { id: self.id })?;
-        if !meta.is_file() {
-            return Err(CoreError::ToolNotExecutable { id: self.id });
-        }
-        if !is_executable(&meta) {
-            return Err(CoreError::ToolNotExecutable { id: self.id });
-        }
-        Ok(p.to_path_buf())
+        resolve_executable(self.id, Path::new(self.absolute))
     }
+}
+
+/// الفحص الذي يجريه `Tool::resolve` نفسه، معزولًا لمسارٍ لا يُعرَف وقت
+/// البناء.
+///
+/// أدوات Node — `npm`، و`node_modules/.bin/tauri` — مساراتها ليست ثابتةً في
+/// النظام كـ`ditto`: يختارها المستخدم (أو تُشتقّ من اختياره) وقت التشغيل.
+/// الثابت الذي لا يتغيّر هو **الفحص**، لا المسار — فالتحقّق واحدٌ يُستدعى
+/// من الحالتين، بدل نسخةٍ ثانية قد تفترق عن الأولى يومًا.
+///
+/// **هذا وحده لا يكفي أمانًا لمسارٍ من المستخدم**: يثبت أن الملف تنفيذيّ، لا
+/// أنه الأداة التي يظنّها المستخدم. الاستدعاء يمرّ أولًا بسياسة المسارات
+/// (‏`ExistingFile`)، فهذا تحقّقٌ إضافي فوقها لا بديلٌ عنها.
+pub fn resolve_executable(id: &'static str, p: &Path) -> Result<PathBuf> {
+    let meta = std::fs::metadata(p).map_err(|_| CoreError::ToolMissing { id })?;
+    if !meta.is_file() {
+        return Err(CoreError::ToolNotExecutable { id });
+    }
+    if !is_executable(&meta) {
+        return Err(CoreError::ToolNotExecutable { id });
+    }
+    Ok(p.to_path_buf())
 }
 
 fn is_executable(meta: &std::fs::Metadata) -> bool {
@@ -160,6 +174,25 @@ pub const PS: Tool = Tool::new("ps", "/bin/ps");
 pub const SW_VERS: Tool = Tool::new("sw_vers", "/usr/bin/sw_vers");
 pub const UPTIME: Tool = Tool::new("uptime", "/usr/bin/uptime");
 pub const SYSTEM_PROFILER: Tool = Tool::new("system_profiler", "/usr/sbin/system_profiler");
+
+/// أداتا Node.js وTauri CLI — استثناءٌ عن قاعدة هذا الملف.
+///
+/// كل أداة أخرى هنا مسارها ثابتٌ في نظام التشغيل. `npm` و`tauri` (المحلّي في
+/// `node_modules/.bin`) ليستا كذلك: يثبّتهما المستخدم بنفسه في مسارٍ يختاره
+/// هو، ويُحلّان وقت التخطيط من ذلك الاختيار — انظر `ops/dev_common.rs`.
+///
+/// فلماذا `Tool` بهذا الشكل إذن؟ لأن `Availability::of` تحتاج مسارًا مطلقًا
+/// حقيقيًا تفحصه لتقرّر «هل هذه العملية متاحةٌ على هذا الجهاز؟» — وهذا سؤالٌ
+/// عن **الجهاز**، لا عن إعداد المستخدم. إعداد المستخدم يُفحص لاحقًا كمدخلٍ
+/// عاديّ (`node_path`)، وله رسالة رفضٍ خاصّة إن غاب أو كان فاسدًا.
+///
+/// فالمسار المطلق هنا `/usr/bin/env` نفسه — حاضرٌ دائمًا على macOS، وهو فعلًا
+/// ما يُفسِّر شِبَنغ `#!/usr/bin/env node` الذي تبدأ به `npm` و`tauri.js`
+/// كلتاهما. أمّا الهوية (`id`) فتحمل الاسم الحقيقي وحده، فيظهر في البحث
+/// وفي رسائل الخطأ باسمه لا باسم `env`.
+pub const NPM: Tool = Tool::new("npm", "/usr/bin/env");
+pub const TAURI_CLI: Tool = Tool::new("tauri", "/usr/bin/env");
+
 pub const DISKUTIL: Tool = Tool::new("diskutil", "/usr/sbin/diskutil");
 
 /// تفريغ ذاكرة DNS المؤقتة.

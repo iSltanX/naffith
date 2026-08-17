@@ -13,6 +13,16 @@ pub mod common;
 pub mod compress_ditto;
 pub mod internal_echo;
 
+// ── أدوات المطوّرين ─────────────────────────────────────────────────────
+pub mod dev_common;
+pub mod dev_npm_dev;
+pub mod dev_npm_install;
+pub mod dev_npm_lint;
+pub mod dev_npm_test;
+pub mod dev_npm_typecheck;
+pub mod dev_tauri_build;
+pub mod dev_tauri_dev;
+
 // ── الملفات والمجلدات ───────────────────────────────────────────────────
 pub mod files_copy;
 pub mod files_find_large;

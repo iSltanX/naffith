@@ -79,6 +79,14 @@ static ALL: &[&OperationSpec] = &[
     &ops::system_uptime::SPEC,
     &ops::system_dns_flush::SPEC,
     &ops::system_report::SPEC,
+    // ── أدوات المطوّرين ──────────────────────────────────────────────────
+    &ops::dev_npm_typecheck::SPEC,
+    &ops::dev_npm_lint::SPEC,
+    &ops::dev_npm_test::SPEC,
+    &ops::dev_npm_install::SPEC,
+    &ops::dev_npm_dev::SPEC,
+    &ops::dev_tauri_dev::SPEC,
+    &ops::dev_tauri_build::SPEC,
     // ── داخليّة ─────────────────────────────────────────────────────────
     &ops::internal_echo::SPEC,
 ];
