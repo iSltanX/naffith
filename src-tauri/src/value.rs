@@ -176,6 +176,43 @@ impl Inputs {
             })
             .collect()
     }
+
+    /// Render command arguments for the persistent run journal without
+    /// retaining any value declared secret by the operation specification.
+    ///
+    /// Redacting `journal_form` alone is not sufficient: the same value may
+    /// also occur in the argv that the Run Log persists and renders. Signed
+    /// download URLs are the concrete case today. The executed command is not
+    /// changed; this method is only for the audit record.
+    pub fn journal_args(
+        &self,
+        op: &crate::spec::OperationSpec,
+        args: &[std::ffi::OsString],
+    ) -> Vec<String> {
+        const REDACTED: &str = "[redacted]";
+
+        let secrets: Vec<String> = self
+            .values
+            .iter()
+            .filter(|(id, _)| op.input(id).is_some_and(|input| input.secret))
+            .map(|(_, value)| value.as_journal_text())
+            // An empty secret is not useful as a substring and would redact
+            // every argument. Required secret inputs are validated elsewhere,
+            // but this keeps the persistence helper fail-safe on its own.
+            .filter(|value| !value.is_empty())
+            .collect();
+
+        args.iter()
+            .map(|arg| {
+                let rendered = arg.to_string_lossy();
+                if secrets.iter().any(|secret| rendered.contains(secret)) {
+                    REDACTED.to_owned()
+                } else {
+                    rendered.into_owned()
+                }
+            })
+            .collect()
+    }
 }
 
 impl Value {

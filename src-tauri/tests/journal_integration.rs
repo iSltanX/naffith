@@ -16,7 +16,7 @@ use naffith_core::reveal;
 use std::io::Write;
 use std::path::PathBuf;
 
-/// موضع اختبار تحت المنزل: `paths::existing_file` ترفض ما خرج عن الجذور
+/// موضع اختبار تحت المنزل: `paths::existing_path` ترفض ما خرج عن الجذور
 /// المسموحة، فمجلد مؤقّت في `/var` لا يصلح لاختبار `reveal`.
 struct Sandbox(PathBuf);
 

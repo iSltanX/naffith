@@ -17,8 +17,8 @@
 //! ثم تُرقّيه بعد نجاحٍ كامل، لأن أداتها تبني شيئًا جديدًا قد يخرج نصفه.
 //! و`mv` لا تبني شيئًا: هي إمّا نجحت فصار الاسم في موضعه، وإمّا فشلت فبقي
 //! كما كان. اختراعُ مؤقّتٍ لها كان يعني نقلتين بدل نقلة، وهو أبطأ وأخطر لا
-//! أأمن. لذلك تعلن العملية `reveal` على مجلد الوجهة: «أين أنظر؟» سؤالٌ له
-//! جواب حتى حين لا يوجد `Artifact`.
+//! أأمن. لذلك تعلن العملية المسار النهائي نفسه ناتجًا قابلًا للإظهار، مع أنه
+//! ليس `Artifact` مؤقّتًا: عقد النتيجة يعرض المنقول لا مجلدًا عامًا حوله.
 //!
 //! ## `-n` حارسٌ **تحت** حارسنا لا بدلًا منه
 //!
@@ -109,8 +109,9 @@ fn plan(inputs: &Inputs) -> Result<PlannedCommand> {
         .end_of_flags()
         .explained_path(source, "explain.role.source")
         .explained_path(&final_path, "explain.role.moved")
-        // لا `Artifact`، فالسؤال «أين أنظر بعد النجاح؟» يحتاج جوابًا صريحًا.
-        .reveal(destination);
+        // لا `Artifact` مؤقّت، لكن المسار النهائي هو الناتج الفعلي المملوك
+        // للتشغيل. `reveal(run_id)` يعيد التحقق منه قبل أي فتح.
+        .reveal(&final_path);
 
     for key in warnings_for(inputs, source, destination) {
         argv = argv.warn(key);
@@ -206,7 +207,41 @@ mod tests {
         // `mv` تنقل إلى مكانه مباشرة: لا مؤقّت، ولا ترقية، ولا توجيه خرج.
         assert!(cmd.artifact.is_none(), "mv renames in place; there is nothing to promote");
         assert!(cmd.stdout_to.is_none());
-        assert_eq!(cmd.reveal_target.as_deref(), Some(dst.as_path()));
+        assert_eq!(cmd.reveal_target.as_deref(), Some(dst.join("بعد النقل.txt").as_path()));
+    }
+
+    #[tokio::test]
+    async fn a_successful_result_names_the_actual_moved_path() {
+        let s = Scratch::new("move-result").unwrap();
+        let src = s.file("قبل.txt", b"data");
+        let dst = s.dir("الوجهة");
+        let final_path = dst.join("بعد.txt");
+        let cmd = plan_with(&src, &dst, "بعد.txt").unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::channel(8);
+        let (_cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
+
+        let execution = crate::executor::run_for(ID, cmd, tx, cancel_rx).await;
+        assert_eq!(
+            execution.outcome,
+            crate::executor::Outcome::Success { produced: Some(final_path.display().to_string()) }
+        );
+        assert!(!src.exists());
+        assert_eq!(std::fs::read(&final_path).unwrap(), b"data");
+
+        let reveal = crate::reveal::safe_target_kind(&final_path);
+        let result = crate::result::ResultContract::for_operation(
+            ID,
+            execution.semantic,
+            execution.outcome.produced(),
+            Vec::new(),
+            reveal,
+        );
+        assert_eq!(result.category, crate::result::ResultCategory::Artifact);
+        assert!(matches!(
+            result.payload,
+            crate::result::ResultPayload::Artifact { ref path, .. }
+                if path == &final_path.display().to_string()
+        ));
     }
 
     #[test]

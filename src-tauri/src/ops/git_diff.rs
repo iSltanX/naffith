@@ -6,7 +6,7 @@
 //! ## الصيغة
 //!
 //! ```text
-//! /usr/bin/git -C <المستودع> diff --stat [--staged]
+//! /usr/bin/git -C <المستودع> diff --stat --exit-code [--staged]
 //! ```
 //!
 //! ## لماذا `--stat` لا الفرق الكامل
@@ -92,7 +92,10 @@ fn plan(inputs: &Inputs) -> Result<PlannedCommand> {
         .flag("-C", "explain.git.dash_c")
         .path(repo)
         .flag("diff", "explain.git.diff")
-        .flag("--stat", "explain.git.diff.stat");
+        .flag("--stat", "explain.git.diff.stat")
+        // لا نقرأ نص الخرج لنستنتج الدلالة. Git تعرّف 0 = لا فروق و1 = توجد
+        // فروق حين تُطلب هذه الراية، والنواة تحوّل الرمزين إلى جوابين ناجحين.
+        .flag("--exit-code", "explain.git.diff.exit_code");
 
     // الراية تُضاف أو لا تُضاف؛ ولا صيغة هنا تجعل قيمةً من المستخدم تصير رايةً.
     // مدخل `Flag` منطقيّ لا نصّي (انظر `RawValue` في `value.rs`)، فأقصى ما
@@ -188,11 +191,12 @@ mod tests {
         let args = args_of(&cmd);
 
         assert_eq!(cmd.program, Path::new("/usr/bin/git"));
-        assert_eq!(args.len(), 4);
+        assert_eq!(args.len(), 5);
         assert_eq!(args[0], "-C");
         assert_eq!(Path::new(&args[1]), repo.as_path());
         assert_eq!(args[2], "diff");
         assert_eq!(args[3], "--stat");
+        assert_eq!(args[4], "--exit-code");
 
         assert!(cmd.artifact.is_none());
         assert!(cmd.cwd.is_none(), "the repository is named in the argv, not behind it");
@@ -205,13 +209,16 @@ mod tests {
         let Some(repo) = repo_in(&s, "مستودع") else { return };
 
         let on = args_of(&plan_with(&repo, Some(true)).unwrap());
-        assert_eq!(on, vec!["-C", repo.to_str().unwrap(), "diff", "--stat", "--staged"]);
+        assert_eq!(
+            on,
+            vec!["-C", repo.to_str().unwrap(), "diff", "--stat", "--exit-code", "--staged"]
+        );
 
         // «لا» صريحةٌ من الواجهة تساوي غيابَ الحقل تمامًا: لا راية تُضاف، ولا
         // رايةُ نفيٍ تُخترع.
         let off = args_of(&plan_with(&repo, Some(false)).unwrap());
         assert_eq!(off, args_of(&plan_with(&repo, None).unwrap()));
-        assert_eq!(off.len(), 4);
+        assert_eq!(off.len(), 5);
     }
 
     #[test]
@@ -257,7 +264,7 @@ mod tests {
         for name in shellish {
             let Some(repo) = repo_in(&s, name) else { return };
             let cmd = plan_with(&repo, None).unwrap();
-            assert_eq!(cmd.args.len(), 4, "{name:?} must not add arguments");
+            assert_eq!(cmd.args.len(), 5, "{name:?} must not add arguments");
             assert_eq!(Path::new(&cmd.args[1]), repo.as_path());
         }
     }

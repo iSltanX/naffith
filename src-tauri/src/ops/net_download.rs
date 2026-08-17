@@ -374,6 +374,19 @@ mod tests {
 
         let written = serde_json::to_string(&records).unwrap();
         assert!(!written.contains("SECRET-DO-NOT-LOG"), "the token leaked into the journal");
+
+        let command = plan(&inputs).unwrap();
+        let persisted_args = inputs.journal_args(&SPEC, &command.args);
+        let persisted = serde_json::to_string(&persisted_args).unwrap();
+        assert!(persisted_args.iter().any(|arg| arg == "[redacted]"));
+        assert!(
+            !persisted.contains("SECRET-DO-NOT-LOG"),
+            "redacting the input record is not enough; argv is persisted too"
+        );
+        assert!(
+            persisted_args.iter().any(|arg| arg == "--progress-bar"),
+            "non-secret arguments must remain auditable"
+        );
     }
 
     #[test]

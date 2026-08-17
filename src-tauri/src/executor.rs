@@ -13,6 +13,7 @@
 //!    ونعرض حالة عمل. رقم مخترع أسوأ من غياب الرقم.
 
 use crate::atomic::ArtifactGuard;
+use crate::result::{self, ExitMeaning, ResultSemantic};
 use crate::spec::PlannedCommand;
 use serde::Serialize;
 use std::process::{ExitStatus, Stdio};
@@ -47,16 +48,7 @@ pub const TRUNCATION_MARK: &str = " …";
 /// المهلة بين الطلب اللطيف بالإنهاء والقتل القسري.
 const GRACE: Duration = Duration::from_millis(1500);
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case", tag = "stream", content = "line")]
-pub enum OutputLine {
-    Stdout(String),
-    Stderr(String),
-    /// بُلغ سقف الأسطر وتوقّف البثّ. `dropped` عدد الأسطر التي لم تُرسل.
-    Truncated {
-        dropped: usize,
-    },
-}
+pub use crate::result::RawOutputLine as OutputLine;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case", tag = "status")]
@@ -77,6 +69,37 @@ impl Outcome {
     pub fn is_success(&self) -> bool {
         matches!(self, Outcome::Success { .. })
     }
+
+    pub fn produced(&self) -> Option<&str> {
+        match self {
+            Outcome::Success { produced: Some(path) } => Some(path),
+            _ => None,
+        }
+    }
+}
+
+/// Internal execution result used to build the typed ResultView contract.
+///
+/// `outcome` preserves the established run transport state. `semantic` is the
+/// domain answer selected from the operation id and exit code, never stdout.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Execution {
+    pub outcome: Outcome,
+    pub semantic: ResultSemantic,
+}
+
+impl Execution {
+    fn answer(outcome: Outcome, semantic: ResultSemantic) -> Self {
+        Self { outcome, semantic }
+    }
+
+    fn failed(outcome: Outcome) -> Self {
+        Self { outcome, semantic: ResultSemantic::Failed }
+    }
+
+    fn cancelled() -> Self {
+        Self { outcome: Outcome::Cancelled, semantic: ResultSemantic::Cancelled }
+    }
 }
 
 pub struct Handle {
@@ -89,8 +112,31 @@ pub struct Handle {
 pub async fn run(
     command: PlannedCommand,
     output: mpsc::Sender<OutputLine>,
-    mut cancel: oneshot::Receiver<()>,
+    cancel: oneshot::Receiver<()>,
 ) -> Outcome {
+    run_inner("", command, output, cancel).await.outcome
+}
+
+/// Execute a registered operation and return both transport and domain result.
+///
+/// The operation id came from the consumed core-owned plan. It is not a new
+/// frontend-controlled command or argument, and it is used only to select the
+/// closed result mapping in `result.rs`.
+pub async fn run_for(
+    op_id: &str,
+    command: PlannedCommand,
+    output: mpsc::Sender<OutputLine>,
+    cancel: oneshot::Receiver<()>,
+) -> Execution {
+    run_inner(op_id, command, output, cancel).await
+}
+
+async fn run_inner(
+    op_id: &str,
+    command: PlannedCommand,
+    output: mpsc::Sender<OutputLine>,
+    mut cancel: oneshot::Receiver<()>,
+) -> Execution {
     // الحارس يحمل المؤقّت. أي خروج من هذه الدالة دون `commit` يحذفه — بما في
     // ذلك الذعر وإسقاط المستقبل.
     let guard = command.artifact.as_ref().map(ArtifactGuard::new);
@@ -115,7 +161,7 @@ pub async fn run(
                     if let Some(g) = guard {
                         g.abort();
                     }
-                    return Outcome::Error { key: "err.redirect" };
+                    return Execution::failed(Outcome::Error { key: "err.redirect" });
                 }
             }
         }
@@ -143,6 +189,13 @@ pub async fn run(
     }
     cmd.env("LC_ALL", "C.UTF-8");
 
+    // ‏`PATH` وحده مشروط: غائبٌ إلا حين تعلنه العملية صراحةً (`extra_path`)،
+    // وعندها هو فقط ما أعلنته — لا إضافة ولا وراثة. انظر توثيق الحقل في
+    // `spec.rs` للقرار الأمني كاملًا.
+    if !command.extra_path.is_empty() {
+        cmd.env("PATH", std::env::join_paths(&command.extra_path).unwrap_or_default());
+    }
+
     // ينقل الطفل إلى جلسة/مجموعة جديدة يقودها، كي يطال الإلغاءُ ذرّيتَه.
     unsafe {
         cmd.pre_exec(|| {
@@ -159,7 +212,7 @@ pub async fn run(
             if let Some(g) = guard {
                 g.abort();
             }
-            return Outcome::Error { key: "err.spawn" };
+            return Execution::failed(Outcome::Error { key: "err.spawn" });
         }
     };
 
@@ -169,7 +222,7 @@ pub async fn run(
             if let Some(g) = guard {
                 g.abort();
             }
-            return Outcome::Error { key: "err.spawn" };
+            return Execution::failed(Outcome::Error { key: "err.spawn" });
         }
     };
 
@@ -220,7 +273,7 @@ pub async fn run(
         if let Some(g) = guard {
             g.abort();
         }
-        return Outcome::Cancelled;
+        return Execution::cancelled();
     }
 
     let status = match status {
@@ -229,23 +282,31 @@ pub async fn run(
             if let Some(g) = guard {
                 g.abort();
             }
-            return Outcome::Error { key: "err.wait" };
+            return Execution::failed(Outcome::Error { key: "err.wait" });
         }
     };
 
-    if !status.success() {
+    use std::os::unix::process::ExitStatusExt;
+    if let Some(sig) = status.signal() {
         if let Some(g) = guard {
             g.abort();
         }
-        use std::os::unix::process::ExitStatusExt;
-        return match status.signal() {
-            Some(sig) => Outcome::Signalled { signal: Some(sig) },
-            None => Outcome::Failed { code: status.code() },
-        };
+        return Execution::failed(Outcome::Signalled { signal: Some(sig) });
     }
 
-    // نجاح: الآن فقط يُرقّى الناتج إلى اسمه النهائي.
-    match guard {
+    let semantic = match result::classify_exit(op_id, status.code()) {
+        ExitMeaning::Answer(semantic) => semantic,
+        ExitMeaning::Failure => {
+            if let Some(g) = guard {
+                g.abort();
+            }
+            return Execution::failed(Outcome::Failed { code: status.code() });
+        }
+    };
+
+    // جوابٌ مكتمل: الآن فقط يُرقّى الناتج إلى اسمه النهائي. قد يكون رمز الخروج
+    // غير صفريًا ذا معنى معلَن (grep/diff/spctl/codesign)، لكنه ليس خطأ تنفيذ.
+    let outcome = match guard {
         // بلا ناتجٍ مؤقّت، يبقى ما أعلنته العملية موضعًا يستحقّ الفتح: مجلدٌ
         // نُقل إليه، أو مستودعٌ أُنشئ، أو شجرةٌ مُسحت. كان `None` دائمًا، فكان
         // زرّ الإظهار يفشل بعد تشغيلٍ نجح.
@@ -260,6 +321,11 @@ pub async fn run(
             Err(crate::error::CoreError::PathMissing) => Outcome::Error { key: "err.output.empty" },
             Err(_) => Outcome::Error { key: "err.commit" },
         },
+    };
+    if outcome.is_success() {
+        Execution::answer(outcome, semantic)
+    } else {
+        Execution::failed(outcome)
     }
 }
 
@@ -431,6 +497,7 @@ mod tests {
             estimate: None,
             stdout_to: None,
             reveal_target: None,
+            extra_path: Vec::new(),
         }
     }
 
@@ -443,6 +510,14 @@ mod tests {
             lines.push(l);
         }
         (task.await.unwrap(), lines)
+    }
+
+    async fn collect_for(op_id: &'static str, cmd: PlannedCommand) -> Execution {
+        let (tx, mut rx) = mpsc::channel(64);
+        let (_cancel_tx, cancel_rx) = oneshot::channel();
+        let task = tokio::spawn(run_for(op_id, cmd, tx, cancel_rx));
+        while rx.recv().await.is_some() {}
+        task.await.unwrap()
     }
 
     #[tokio::test]
@@ -477,9 +552,75 @@ mod tests {
             estimate: None,
             stdout_to: None,
             reveal_target: None,
+            extra_path: Vec::new(),
         };
         let (outcome, _) = collect(cmd).await;
         assert!(matches!(outcome, Outcome::Failed { code: Some(1) }), "got {outcome:?}");
+    }
+
+    #[tokio::test]
+    async fn declared_nonzero_domain_answers_are_successful_runs() {
+        for (op_id, code, semantic) in [
+            ("text.search", 1, ResultSemantic::NoMatches),
+            ("text.diff", 1, ResultSemantic::Differences),
+            ("git.diff", 1, ResultSemantic::Differences),
+            ("security.gatekeeper", 3, ResultSemantic::Rejected),
+            ("security.codesign", 1, ResultSemantic::Unsigned),
+            ("disk.compare.bytes", 1, ResultSemantic::Differences),
+            ("security.codesign.verify", 1, ResultSemantic::Rejected),
+            ("system.process.find", 1, ResultSemantic::NoMatches),
+            ("net.port.owner", 1, ResultSemantic::NoMatches),
+            ("system.process.open_files", 1, ResultSemantic::NoMatches),
+            // `+D` تخرج بـ1 في مجراها الطبيعي حتى حين تجد. لولا هذا لكان كل
+            // تشغيلٍ واقعي لهذه العملية يصل السجلّ `failed`.
+            ("disk.directory.open_handles", 1, ResultSemantic::Completed),
+        ] {
+            let execution = collect_for(op_id, sh(format!("exit {code}"))).await;
+            assert_eq!(execution.outcome, Outcome::Success { produced: None }, "{op_id}");
+            assert_eq!(execution.semantic, semantic, "{op_id}");
+        }
+    }
+
+    #[tokio::test]
+    async fn zero_exit_domain_answers_are_also_explicit() {
+        for (op_id, semantic) in [
+            ("text.search", ResultSemantic::Matches),
+            ("text.diff", ResultSemantic::NoDifferences),
+            ("git.diff", ResultSemantic::NoDifferences),
+            ("security.gatekeeper", ResultSemantic::Accepted),
+            ("security.codesign", ResultSemantic::Signed),
+            ("disk.compare.bytes", ResultSemantic::NoDifferences),
+            ("security.codesign.verify", ResultSemantic::Accepted),
+            ("system.process.find", ResultSemantic::Matches),
+            ("net.port.owner", ResultSemantic::Matches),
+            ("system.process.open_files", ResultSemantic::Matches),
+            ("disk.directory.open_handles", ResultSemantic::Completed),
+        ] {
+            let execution = collect_for(op_id, sh("exit 0".into())).await;
+            assert!(execution.outcome.is_success(), "{op_id}: {:?}", execution.outcome);
+            assert_eq!(execution.semantic, semantic, "{op_id}");
+        }
+    }
+
+    #[tokio::test]
+    async fn undeclared_nonzero_codes_still_fail() {
+        for op_id in [
+            "text.search",
+            "text.diff",
+            "git.diff",
+            "security.gatekeeper",
+            "security.codesign",
+            "disk.compare.bytes",
+            "security.codesign.verify",
+            "system.process.find",
+            "net.port.owner",
+            "system.process.open_files",
+            "disk.directory.open_handles",
+        ] {
+            let execution = collect_for(op_id, sh("exit 2".into())).await;
+            assert_eq!(execution.outcome, Outcome::Failed { code: Some(2) }, "{op_id}");
+            assert_eq!(execution.semantic, ResultSemantic::Failed, "{op_id}");
+        }
     }
 
     #[tokio::test]
@@ -494,6 +635,7 @@ mod tests {
             estimate: None,
             stdout_to: None,
             reveal_target: None,
+            extra_path: Vec::new(),
         };
         let (outcome, _) = collect(cmd).await;
         assert!(matches!(outcome, Outcome::Error { key: "err.spawn" }));
@@ -517,6 +659,7 @@ mod tests {
             estimate: None,
             stdout_to: None,
             reveal_target: None,
+            extra_path: Vec::new(),
         };
 
         let (tx, _rx) = mpsc::channel(8);
@@ -549,6 +692,7 @@ mod tests {
             estimate: None,
             stdout_to: None,
             reveal_target: None,
+            extra_path: Vec::new(),
         };
         let (outcome, _) = collect(cmd).await;
 
@@ -574,6 +718,7 @@ mod tests {
             estimate: None,
             stdout_to: None,
             reveal_target: None,
+            extra_path: Vec::new(),
         };
         let (outcome, _) = collect(cmd).await;
 
@@ -611,6 +756,7 @@ mod tests {
             estimate: None,
             stdout_to: None,
             reveal_target: None,
+            extra_path: Vec::new(),
         };
         let (outcome, lines) = collect(cmd).await;
         assert!(outcome.is_success(), "got {outcome:?}");
@@ -640,6 +786,7 @@ mod tests {
             estimate: None,
             stdout_to: None,
             reveal_target: None,
+            extra_path: Vec::new(),
         };
         let (_, lines) = collect(cmd).await;
         assert_eq!(lines.len(), 10);
@@ -660,6 +807,7 @@ mod tests {
             estimate: None,
             stdout_to: None,
             reveal_target: None,
+            extra_path: Vec::new(),
         }
     }
 
@@ -720,6 +868,7 @@ mod tests {
             estimate: None,
             stdout_to: None,
             reveal_target: None,
+            extra_path: Vec::new(),
         };
         let (outcome, lines) = collect(cmd).await;
         assert!(outcome.is_success(), "got {outcome:?}");
@@ -832,6 +981,7 @@ mod tests {
             estimate: None,
             stdout_to: None,
             reveal_target: None,
+            extra_path: Vec::new(),
         };
         let (outcome, lines) = collect(cmd).await;
         assert!(outcome.is_success());
@@ -839,5 +989,63 @@ mod tests {
             !lines.iter().any(|l| matches!(l, OutputLine::Stdout(s) if s.starts_with("PATH="))),
             "the child must not inherit PATH: {lines:?}"
         );
+    }
+
+    /// عملية أعلنت `extra_path` تحصل عليه حرفيًا — لا زيادة ولا نقصان.
+    ///
+    /// هذا هو الاستثناء الوحيد على الاختبار السابق، ومقصود: أدوات المطوّرين
+    /// (‏`cargo`، `npm`) تستدعي أدواتٍ أخرى داخليًا وتحتاج `PATH` كي تجدها —
+    /// لكنه `PATH` أعلنته العملية نفسها من مسارات تحقّقت منها، لا `PATH`
+    /// المستخدم الفعلي.
+    #[tokio::test]
+    async fn a_command_that_declares_extra_path_receives_exactly_that_and_nothing_else() {
+        let cmd = PlannedCommand {
+            program: PathBuf::from("/usr/bin/env"),
+            args: vec![],
+            cwd: None,
+            explain: vec![],
+            warnings: vec![],
+            artifact: None,
+            estimate: None,
+            stdout_to: None,
+            reveal_target: None,
+            extra_path: vec![PathBuf::from("/usr/bin"), PathBuf::from("/bin")],
+        };
+        let (outcome, lines) = collect(cmd).await;
+        assert!(outcome.is_success());
+        let path_line = lines.iter().find_map(|l| match l {
+            OutputLine::Stdout(s) if s.starts_with("PATH=") => Some(s.clone()),
+            _ => None,
+        });
+        assert_eq!(path_line.as_deref(), Some("PATH=/usr/bin:/bin"), "got {lines:?}");
+    }
+
+    /// السطر السابق يعتمد على أن لا متغيّرٍ آخر أُضيف معه بصمت.
+    #[tokio::test]
+    async fn declaring_extra_path_adds_nothing_beyond_path_itself() {
+        let cmd = PlannedCommand {
+            program: PathBuf::from("/usr/bin/env"),
+            args: vec![],
+            cwd: None,
+            explain: vec![],
+            warnings: vec![],
+            artifact: None,
+            estimate: None,
+            stdout_to: None,
+            reveal_target: None,
+            extra_path: vec![PathBuf::from("/usr/bin")],
+        };
+        let (outcome, lines) = collect(cmd).await;
+        assert!(outcome.is_success());
+        // ترتيب `envp` غير مضمون من نظام التشغيل، فالمقارنة كمجموعةٍ لا كقائمة.
+        let mut names: Vec<String> = lines
+            .iter()
+            .filter_map(|l| match l {
+                OutputLine::Stdout(s) => s.split('=').next().map(str::to_owned),
+                _ => None,
+            })
+            .collect();
+        names.sort();
+        assert_eq!(names, vec!["HOME", "LC_ALL", "PATH"], "unexpected env leaked in: {names:?}");
     }
 }

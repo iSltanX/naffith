@@ -93,6 +93,8 @@ pub struct Planned {
     pub response: PlanResponse,
     /// المدخلات كما تُقيَّد في السجل، بعد تنقيح السرّي منها.
     pub journal_inputs: Vec<crate::journal::InputRecord>,
+    /// الأمر كما يُقيَّد، مع تنقيح أي قيمة سرّية ظهرت في وسيط.
+    pub journal_argv: Vec<String>,
 }
 
 /// يخطّط عملية: يبحث عنها، يتحقّق من مدخلاتها، يبني أمرها، ويحجز لها رمزًا.
@@ -147,6 +149,8 @@ pub fn plan(
     });
 
     let journal_inputs = inputs.journal_form(op);
+    let mut journal_argv = vec![command.program.display().to_string()];
+    journal_argv.extend(inputs.journal_args(op, &command.args));
     let (token, plan_id) = store.insert(session, op.id, inputs, command)?;
 
     let response = PlanResponse {
@@ -167,7 +171,7 @@ pub fn plan(
         writes_to,
         working_directory: cwd,
     };
-    Ok(Planned { response, journal_inputs })
+    Ok(Planned { response, journal_inputs, journal_argv })
 }
 
 #[cfg(test)]
