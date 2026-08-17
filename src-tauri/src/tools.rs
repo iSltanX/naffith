@@ -185,6 +185,23 @@ pub const SYSTEM_PROFILER: Tool = Tool::new("system_profiler", "/usr/sbin/system
 /// التي تجيب عنها `sw_vers`.
 pub const UNAME: Tool = Tool::new("uname", "/usr/bin/uname");
 
+/// البحث عن عمليةٍ بالاسم. **قارئةٌ فقط** خلافًا لأختها `pkill` التي تحمل
+/// الاسم نفسه تقريبًا وتُنهي ما تجده — وهذه لا تملك رايةً تُنهي شيئًا أصلًا،
+/// و`pkill` غير معلَنة في هذا الملفّ فلا سبيل إليها من المنتج كلّه.
+pub const PGREP: Tool = Tool::new("pgrep", "/usr/bin/pgrep");
+
+/// سجلّ النظام الموحَّد. أداةٌ خطرة الأفعال وآمنة الاستعمال هنا بالبنية لا
+/// بالفحص: `log erase` تمحو أرشيف السجلّات و`log config` تغيّر إعداد التسجيل،
+/// ولا سبيل إلى أيٍّ منهما لأن الفعل `show` سلسلةٌ ثابتة تدخل الثنائيّة عند
+/// الترجمة — نفس منطق `diskutil list` في `disk_list.rs`.
+pub const LOG: Tool = Tool::new("log", "/usr/bin/log");
+
+/// إرسال إشارةٍ إلى عمليةٍ برقمها. **لا `pkill` ولا `killall`**: كلتاهما
+/// تُنهيان كلّ ما يطابق اسمًا دفعةً واحدة — عددًا لا يظهر في الأمر المعروض
+/// ولا يعرفه المستخدم قبل الضغط. هذه تأخذ رقمًا واحدًا فتُصيب عمليةً واحدة
+/// مكتوبةً أمام عينه.
+pub const KILL: Tool = Tool::new("kill", "/bin/kill");
+
 /// أداتا Node.js وTauri CLI — استثناءٌ عن قاعدة هذا الملف.
 ///
 /// كل أداة أخرى هنا مسارها ثابتٌ في نظام التشغيل. `npm` و`tauri` (المحلّي في
@@ -272,6 +289,9 @@ mod tests {
         UPTIME,
         SYSTEM_PROFILER,
         UNAME,
+        PGREP,
+        LOG,
+        KILL,
         DISKUTIL,
         DSCACHEUTIL,
         XATTR,
