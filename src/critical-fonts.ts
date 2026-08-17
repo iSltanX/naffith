@@ -101,7 +101,7 @@ export interface CriticalFace {
 export const CRITICAL_FONT_FACES: readonly CriticalFace[] = [
   { spec: '300 1rem Cairo', sample: '—' },
   { spec: '700 1rem Cairo', sample: 'اختر العملية ابدأ' },
-  { spec: '800 1rem Cairo', sample: 'أهلًا بك في نَفِّذ — سَطْر' },
+  { spec: '800 1rem Cairo', sample: 'أهلًا بك في نَفِّذ' },
   { spec: '400 1rem Almarai', sample: 'تفتح القائمة فترى ما يستطيع' },
   // بلا مسافة عن قصد: عنوان الشريط كلمةٌ واحدة، فلا داعي لجرّ `almarai-008`.
   { spec: '700 1rem Almarai', sample: 'سَطْر' },

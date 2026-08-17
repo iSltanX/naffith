@@ -1,5 +1,5 @@
 /* =============================================================================
-   نَفِّذ — سَطْر · Base Layer
+   نَفِّذ · Base Layer
    Reset, typography, bidi handling, focus, and the shared component primitives.
    Consumes tokens.css only — no raw colour values below this line.
    ========================================================================== */
@@ -66,7 +66,7 @@ strong, b { font-weight: var(--fw-bold); }
    label and inherited the surrounding ink. */
 a:any-link:not(.btn):not(.card):not(.nav-item):not(.brand-lockup) {
   color: var(--text-link);
-  text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+  text-decoration-color: currentColor;
   text-underline-offset: 0.2em;
   transition: color var(--duration-fast) var(--ease-standard);
 }
@@ -110,6 +110,15 @@ code, kbd, samp, .mono, .path, .cmd-inline {
   direction: ltr;
   unicode-bidi: isolate;
   font-size: 0.92em;
+}
+
+/* Long technical values remain readable inside narrow RTL surfaces.  The
+   isolate keeps mixed Arabic filenames together while wrapping the path. */
+.path {
+  max-inline-size: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 code, .cmd-inline {
@@ -156,7 +165,15 @@ kbd {
    Keyboard focus is always visible and always meets 3:1 against its ground.
    Pointer focus is not decorated.
    ========================================================================= */
-:focus { outline: none; }
+:focus {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+  border-radius: var(--radius-xs);
+}
+/* Safari 15.0 keeps the visible `:focus` fallback above. Browsers that know
+   `:focus-visible` may suppress the ring for pointer-only focus without
+   making keyboard focus disappear on the oldest supported WKWebView. */
+:focus:not(:focus-visible) { outline: none; }
 :focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring-color);
   outline-offset: var(--focus-ring-offset);
@@ -165,7 +182,7 @@ kbd {
 /* Inputs keep a ring even on pointer focus — the caret alone is too subtle. */
 .field:focus-within {
   border-color: var(--focus-ring-color);
-  box-shadow: 0 0 0 var(--focus-ring-width) color-mix(in srgb, var(--focus-ring-color) 30%, transparent);
+  box-shadow: var(--focus-ring);
 }
 
 ::selection { background: var(--command-selection); color: inherit; }
@@ -201,7 +218,7 @@ kbd {
      black-on-dark in dark mode. */
   color: var(--text-primary);
   border: var(--border-hairline) solid transparent;
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-button);
   font-family: var(--font-display);
   font-size: var(--fs-button);
   font-weight: var(--fw-bold);
@@ -214,6 +231,23 @@ kbd {
 }
 .btn svg { width: var(--icon-sm); height: var(--icon-sm); flex: none; }
 
+/* Utility icons stay neutral until the control is engaged. Filled semantic
+   actions keep their on-fill colour for contrast. */
+.btn--quiet svg,
+.btn--ghost svg {
+  color: var(--text-muted);
+  transition: color var(--duration-fast) var(--ease-standard);
+}
+
+.btn--quiet:hover:not(:disabled) svg,
+.btn--quiet:focus:not(:disabled) svg,
+.btn--quiet:active:not(:disabled) svg,
+.btn--ghost:hover:not(:disabled) svg,
+.btn--ghost:focus:not(:disabled) svg,
+.btn--ghost:active:not(:disabled) svg {
+  color: var(--text-accent);
+}
+
 .btn--primary  { background: var(--action-primary); color: var(--action-primary-text); }
 .btn--primary:hover  { background: var(--action-primary-hover); }
 .btn--primary:active { background: var(--action-primary-active); }
@@ -221,6 +255,20 @@ kbd {
 .btn--neutral  { background: var(--action-neutral); color: var(--action-neutral-text); }
 .btn--neutral:hover  { background: var(--action-neutral-hover); }
 .btn--neutral:active { background: var(--action-neutral-active); }
+
+/* Outline is a production Type in `Control/Button` (page 09), ranked between
+   Neutral and Destructive — not a local override. It lived scoped inside
+   `.result-actions` while three call sites in ResultView used the bare
+   `.btn--outline` class; the rule only held because all three happened to sit
+   inside that one container. Any fourth use elsewhere would have rendered a
+   transparent, borderless button and `tsc` would never have said a word. */
+.btn--outline {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border-color: var(--border-default);
+}
+.btn--outline:hover:not(:disabled)  { background: var(--bg-hover); }
+.btn--outline:active:not(:disabled) { background: var(--bg-active); }
 
 .btn--quiet {
   background: var(--action-quiet-bg);
@@ -264,6 +312,38 @@ kbd {
    and shout louder than the accent it is supposed to sit under.) */
 .card--naffith { border-inline-start: var(--border-accent) solid var(--border-strong); }
 .card--satr    { border-inline-start: var(--border-accent) solid var(--action-primary); }
+
+/* Inline notices are shared by operation, history, and settings surfaces. */
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-8);
+  padding: var(--space-12) var(--space-16);
+  border: var(--border-hairline) solid transparent;
+  border-radius: var(--radius-card);
+  font-family: var(--font-body);
+  font-size: var(--fs-body-secondary);
+  line-height: var(--lh-body-secondary);
+}
+
+.notice svg {
+  inline-size: var(--icon-sm);
+  block-size: var(--icon-sm);
+  flex: none;
+  margin-block-start: var(--space-2);
+}
+
+.notice p { margin: 0; }
+.notice--warning {
+  background: var(--status-warning-tint);
+  border-color: var(--status-warning-border);
+  color: var(--status-warning-text);
+}
+.notice--quiet {
+  background: var(--bg-sunken);
+  border-color: var(--border-subtle);
+  color: var(--text-secondary);
+}
 
 /* ============================================================================
    FIELD
@@ -464,7 +544,7 @@ kbd {
   align-items: center;
   gap: var(--space-8);
   width: 100%;
-  height: var(--control-h-md);
+  height: var(--control-h-nav);
   padding-inline: var(--space-12);
   background: none;
   border: none;

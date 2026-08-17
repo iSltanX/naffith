@@ -1,7 +1,7 @@
 [package]
 name = "naffith"
 version = "0.2.0"
-description = "نَفِّذ — سَطْر · Arabic-first macOS productivity tool"
+description = "نَفِّذ (Naffith) · Arabic-first macOS productivity tool"
 edition = "2021"
 rust-version = "1.77"
 
