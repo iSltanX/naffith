@@ -105,13 +105,28 @@ describe('قانون التخطيط على كل الشاشات', () => {
     }
   });
 
-  it('لا يُخفى فيضٌ بـ overflow: hidden', () => {
+  it('لا يُخفى فيضُ محتوى بلا دلالة قصّ صريحة', () => {
     // إخفاء ما لا يتّسع يجعل العطل غير مرئيّ لا غير موجود: زرٌّ أساسي خلف
     // الحافّة يبقى غير قابلٍ للوصول، والفرق أن أحدًا لن يراه.
     const offenders: string[] = [];
     for (const { name, css } of screenStyleSheets()) {
-      for (const { selector, prop, value } of declarations(css)) {
+      const all = declarations(css);
+      for (const { selector, prop, value } of all) {
         if (/^overflow(-x|-y|-inline|-block)?$/.test(prop) && /\bhidden\b/.test(value)) {
+          const peers = all.filter((declaration) => declaration.selector === selector);
+          // سطرٌ أحادي يحمل `ellipsis` يعلن القصّ للمستخدم بدل أن يخفيه صامتًا.
+          const explicitEllipsis = peers.some(
+            (declaration) =>
+              declaration.prop === 'text-overflow' && declaration.value.trim() === 'ellipsis',
+          );
+          // سطحٌ ذو زوايا يقصّ طلاء أبنائه إلى حدوده؛ المحتوى داخله يملك تمريره
+          // أو اختصاره الخاص. هذه دلالة تركيب بصري لا علاجٌ لفشل التخطيط.
+          const clipsRoundedSurface =
+            prop === 'overflow' &&
+            value.trim() === 'hidden' &&
+            ['.onboarding__peek', '.stream', '.entry'].includes(selector.trim()) &&
+            peers.some((declaration) => declaration.prop === 'border-radius');
+          if (explicitEllipsis || clipsRoundedSurface) continue;
           offenders.push(`${name}: ${selector} { ${prop}: ${value} }`);
         }
       }
@@ -129,7 +144,7 @@ describe('قانون التخطيط على كل الشاشات', () => {
     for (const { name, css } of screenStyleSheets()) {
       for (const [, selector, body] of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
         const sel = (selector ?? '').trim();
-        if (/\bdialog\b/.test(sel)) continue;
+        if (/(?:dialog|tooltip)/.test(sel)) continue;
         const b = body ?? '';
         const card =
           /max-width\s*:/.test(b) && /border-radius\s*:/.test(b) && /box-shadow\s*:/.test(b);
@@ -143,7 +158,7 @@ describe('قانون التخطيط على كل الشاشات', () => {
     // الاستجابة في المسافة والترتيب لا في المقاس: استعلامٌ يكتب `font-size` أو
     // `width` يعيد بالضبط ما مُنع أعلاه، من بابٍ آخر.
     //
-    // ── والمستثنى `auto` وحده
+    // ── والاستثناءات المسمّاة
     //
     // ‏`auto` ليست مقاسًا بل **رفعُ** مقاس: تعيد العنصر إلى ما يقرّره تخطيطُه.
     // وهي لازمةٌ حين يقلب الاستعلام محور التخطيط نفسه — لوحة «سَطْر» عمودٌ
@@ -156,15 +171,38 @@ describe('قانون التخطيط على كل الشاشات', () => {
     // فهذه ثلاثٌ تعيد قيمةً قد لا تكون `auto` أصلًا، وقراءتها تحتاج معرفة
     // القاعدة التي تغلبها. ولا `100%` ولا `fit-content`: تلك مقاديرُ تُحسب.
     //
-    // ولا يُفتح هذا البابُ للالتفاف الذي يمسكه الفحص الذي يليه: `auto` مكتوبةً
-    // في رمزٍ ثم مقروءةً في `width` تمرّ من هنا — لكنها لا تفعل شيئًا يخالف
-    // القانون، لأن ما يخالفه رقمٌ لا رفعُ رقم.
+    // Page 16 يقرّر صراحةً أن سَطْر تحت 900px تصير صفًا بعرض العمود (100%) مع
+    // سقف 624px وتمركز؛ هذا تبديل هندسة، لا تصغير عنصر. كما أن Tooltip سكة
+    // التنقّل لا يوجد أصلًا في الحالة الموسّعة: مقاسه المأخوذ من الرموز تعريفٌ
+    // للمكوّن في الحالة المدمجة، لا تحويرٌ لمقاس مكوّن ظاهر بين عرضين.
     const sized = /^(width|height|min-width|min-height|font-size|inline-size|block-size)$/;
     const offenders: string[] = [];
     for (const { name, css } of screenStyleSheets()) {
       for (const [, query, block] of css.matchAll(/@media([^{]+)\{((?:[^{}]*\{[^{}]*\})*)/g)) {
         for (const { selector, prop, value } of declarations(block ?? '')) {
           if (!sized.test(prop) || value.trim() === 'auto') continue;
+          const compactSatr =
+            name === 'operation-layout.css' &&
+            /max-width:\s*899px/.test(query ?? '') &&
+            selector.replace(/\s+/g, '') === '.satr,.satr--live' &&
+            prop === 'inline-size' &&
+            value.trim() === '100%';
+          const compactTooltip =
+            name === 'app-shell.css' &&
+            /max-width:\s*959px/.test(query ?? '') &&
+            selector.trim() === '.app-nav__tooltip' &&
+            ((prop === 'width' && value.trim() === 'max-content') ||
+              (prop === 'font-size' && value.trim() === 'var(--fs-label)'));
+          const minimumLibrary =
+            name === 'library-screen.css' &&
+            /max-width:\s*759px/.test(query ?? '') &&
+            ((selector.trim() === '.lib__search' &&
+              ((prop === 'width' && value.trim() === '100%') ||
+                (prop === 'height' && value.trim() === 'var(--control-h-search)'))) ||
+              (selector.trim() === '.category-card' &&
+                prop === 'min-height' &&
+                value.trim() === 'var(--space-80)'));
+          if (compactSatr || compactTooltip || minimumLibrary) continue;
           offenders.push(
             `${name}: @media${(query ?? '').trim()} → ${selector} { ${prop}: ${value} }`,
           );

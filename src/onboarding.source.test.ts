@@ -19,11 +19,11 @@
  * لذلك تُقرأ الورقة نصًّا لا تُستورد. وبيئة الاختبار `node` لأن `jsdom` يعيد
  * كتابة أصل `import.meta.url` إلى عنوان http فيصير المسار من جذر القرص.
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 const CSS = readFileSync(new URL('./onboarding.css', import.meta.url).pathname, 'utf8');
-const TOKENS = readFileSync(new URL('./app-tokens.css', import.meta.url).pathname, 'utf8');
+const APP_TOKENS = new URL('./app-tokens.css', import.meta.url).pathname;
 const DS_TOKENS = readFileSync(
   new URL('./design-system/tokens.css', import.meta.url).pathname,
   'utf8',
@@ -158,9 +158,9 @@ function nestedIn(inner: Region, outer: Region): boolean {
   );
 }
 
-/** جدول الرموز الطولية: اسمٌ ← بكسل. من نظام التصميم وطبقة التطبيق معًا. */
+/** جدول الرموز الطولية: اسمٌ ← بكسل. من مصدر نظام التصميم الواحد. */
 const PX = new Map<string, number>();
-for (const source of [DS_TOKENS, TOKENS]) {
+for (const source of [DS_TOKENS]) {
   for (const hit of source.matchAll(/(--[a-z0-9-]+)\s*:\s*(-?\d+(?:\.\d+)?)px\s*;/g)) {
     PX.set(hit[1] ?? '', Number(hit[2]));
   }
@@ -417,14 +417,10 @@ describe('نقاط تحوّل شاشة الترحيب', () => {
     expect(BARE).not.toMatch(/transform:[^;}]*\bscale\s*\(/);
     expect(BARE).not.toMatch(/(^|[\s;{])zoom\s*:/);
 
-    // والاستجابة هنا في المسافة لا في المقاس ولا في نقطة تحوّل: الحشو وحده
-    // يقرأ العرض، والفراغ الزائد توزّعه المحاذاة الوسطى حول محتوًى ثابت.
-    // كان في الورقة نقطةُ تحوّلٍ تُخفي المقتطف، فحُذفت: إخفاءُ برهان الشاشة
-    // في أضيق نافذة ليس «تغييرًا لما يُعرض»، بل إسقاطٌ له.
-    // الحشو معلَنٌ `clamp(min, k·vw, max)` — والفحص على `vw` نفسها لا على شكل
-    // `clamp()`، لأن `var()` بداخلها تحمل أقواسًا تُربك أي نمطٍ ساذج.
-    const breathes = /--[hv]-pane:[^;]*vw/.test(BARE);
-    expect(breathes, 'لا مسافة تتنفّس مع العرض').toBe(true);
+    // الهوية الجديدة تُبقي لوحتين متساويتين ومحتوىً بعرض أقصى 396px؛ الفراغ
+    // الزائد توزّعه المحاذاة الوسطى ولا يغيّر مقاس العناصر.
+    expect(BARE).toMatch(/grid-template-columns:\s*repeat\(2,/);
+    expect(BARE).toMatch(/max-width:\s*396px/);
     for (const decl of mediaBlocks(BARE).flatMap((b) => b.decls)) {
       expect(
         /^(padding|margin|gap|width|height|font-size)/.test(decl.prop),
@@ -468,41 +464,46 @@ describe('حضور المقتطف في أول إطار', () => {
     expect(BARE).not.toMatch(/--[a-z0-9-]+\s*:\s*-?\d*\.?\d+m?s\s*[;)]/);
   });
 
-  it('ارتفاع الصندوق محجوز بحسابٍ لا يعرف الخطّ', () => {
-    // بلا هذا الحجز يقفز ما تحت المقتطف حين يصل خطّ `mono` بمقاييسه المختلفة
-    // (‏`font-display: swap`). والحساب من رموزٍ لا من px مقدّرة، فيتبع أي
-    // تغييرٍ في مقاس الطرفية بدل أن ينفصل عنه.
-    const body = BARE.match(/\.onboarding__peek\s+\.command__body\s*\{([^}]*)\}/);
-    expect(body, 'قاعدة جسم الأمر غير موجودة').not.toBeNull();
-    const decls = body?.[1] ?? '';
-    expect(decls).toMatch(/min-height:\s*calc\(/);
-    expect(decls).toMatch(/--peek-lines:\s*4\s*;/);
-    expect(decls).toMatch(/var\(--fs-terminal\)/);
-    expect(decls).toMatch(/var\(--lh-terminal\)/);
-    expect(decls).not.toMatch(/min-height:\s*\d/);
+  it('بطاقة البرهان هي سطح Page 15 البسيط بقياس 396×112', () => {
+    const peek = BARE.match(/\.onboarding__peek\s*\{([^}]*)\}/);
+    expect(peek, 'قاعدة بطاقة البرهان غير موجودة').not.toBeNull();
+    const decls = peek?.[1] ?? '';
+    expect(decls).toMatch(/width:\s*100%/);
+    expect(decls).toMatch(/height:\s*112px/);
+    expect(decls).toMatch(/background:\s*var\(--command-bg\)/);
+    expect(BARE).toMatch(/max-width:\s*396px/);
+    expect(BARE).not.toMatch(/\.onboarding__peek\s+\.command__(bar|body)/);
   });
 
-  it('لا يُخفى المقتطف عند أي مقاس، ولا يُصغَّر خطّه', () => {
-    // كان يُخفى تحت ‎856px لأنه `white-space: pre` فلا يضيق. لكنه برهان الشاشة:
-    // الجملة تدّعي أن الأمر يبقى معروضًا، وهو ذلك الأمر. وقد كُسر على أربعة
-    // أسطر أطولها ‎٣٢ محرفًا، فعرضه الطبيعي ‎274px يسعه العمود عند ‎680px — أضيق
-    // نافذة — فلا حاجة إلى إخفاء أصلًا.
-    // والبديلان المرفوضان: تصغير خطّه (يخرج عن سلّم الرموز)، أو لفّه
-    // (‏`pre-wrap` يكسر الأمر في موضعٍ لا تكسره فيه الصدفة، فيصير أمرًا لا يُنسخ).
+  it('لا يُخفى البرهان، ويبقى الأمر سطرًا واحدًا بخط Mono الرمزي', () => {
     const hiding = mediaBlocks(BARE).filter((block) =>
       block.decls.some((d) => d.selector.includes('__peek') && d.prop === 'display'),
     );
     expect(hiding.length, 'المقتطف يُخفى عند مقاسٍ ما').toBe(0);
-    expect(BARE).not.toMatch(/\.onboarding__peek[\s\S]{0,400}?white-space:\s*pre-wrap/);
-    expect(BARE).not.toMatch(/\.onboarding__peek[^{}]*\{[^{}]*font-size:\s*\d/);
+    const command = BARE.match(/\.onboarding__proof-command\s*\{([^}]*)\}/)?.[1] ?? '';
+    expect(command).toMatch(/white-space:\s*nowrap/);
+    expect(command).toMatch(/font-family:\s*var\(--font-mono\)/);
+    expect(command).toMatch(/font-size:\s*var\(--fs-terminal\)/);
+  });
+});
+
+describe('تفاصيل مكوّن الترحيب من Page 15', () => {
+  it('الخطوة الأولى Ember صلب، وما بعدها يبقى شاحبًا', () => {
+    const base = BARE.match(/\.onboarding__n\s*\{([^}]*)\}/)?.[1] ?? '';
+    const first =
+      BARE.match(/\.onboarding__step:first-child \.onboarding__n\s*\{([^}]*)\}/)?.[1] ?? '';
+    expect(base).toMatch(/background:\s*var\(--bg-selected\)/);
+    expect(base).toMatch(/color:\s*var\(--text-accent\)/);
+    expect(first).toMatch(/background:\s*var\(--action-primary\)/);
+    expect(first).toMatch(/color:\s*var\(--action-primary-text\)/);
   });
 });
 
 describe('نطاق أنماط الترحيب', () => {
   it('كل محدّدٍ محبوسٌ داخل `.onboarding`', () => {
-    // لغة mockups-v3 نُقلت إلى هنا بدل استيراد الورقة كلّها، والثمن الوحيد
-    // المقبول لذلك أن لا يتسرّب منها شيء: أربع شاشاتٍ أخرى لم تُحوَّل بعد،
-    // ومحدّدٌ عارٍ واحد يعيد تلوينها في مرحلةٍ لم تُطلب.
+    // هوية الشاشة نُقلت إلى ورقة إنتاجية محليّة بدل استيراد ورقة العينات
+    // التوثيقية كلّها. يجب أن تبقى محدداتها محصورة كي لا تعيد ورقة شاشة واحدة
+    // تعريف مكوّن مشترك أو تغيّر بقية النظام بالصدفة.
     const loose = selectors(BARE).filter(
       (sel) => !sel.includes('.onboarding') && !/^(from|to|\d+(\.\d+)?%)$/.test(sel),
     );
@@ -516,21 +517,15 @@ describe('نطاق أنماط الترحيب', () => {
   });
 });
 
-describe('طبقة رموز التطبيق', () => {
-  it('تُعرَّف الثلاثة المفقودة، ولا يُعاد تعريف رمزٍ من نظام التصميم', () => {
-    expect(TOKENS).toMatch(/--space-10:\s*10px/);
-    expect(TOKENS).toMatch(/--space-14:\s*14px/);
-    expect(TOKENS).toMatch(/--space-28:\s*28px/);
-
-    // الملف طبقةٌ فوق `tokens.css` لا نسخةٌ ثانية منه. أي رمزٍ رابع يُضاف هنا
-    // هو أول خطوةٍ نحو سلّمين لأحدهما ٢٤٤ درجة وللآخر ما تيسّر.
-    const declared = [...TOKENS.matchAll(/(--[a-z0-9-]+)\s*:/g)].map((hit) => hit[1]);
-    expect(declared.sort()).toEqual(['--space-10', '--space-14', '--space-28']);
+describe('مصدر الرموز الواحد', () => {
+  it('تعيش درجات المسافة في المصدر المشترك ولا تبقى لها طبقة تطبيقية موازية', () => {
+    expect(DS_TOKENS).toMatch(/--space-10:\s*10px/);
+    expect(DS_TOKENS).toMatch(/--space-14:\s*14px/);
+    expect(DS_TOKENS).toMatch(/--space-28:\s*28px/);
+    expect(existsSync(APP_TOKENS)).toBe(false);
   });
 
-  it('تُستورد من الشاشة وحدها لا من الجذر', () => {
-    // في هذه المرحلة شاشةٌ واحدة تتكلّم لغة mockups-v3. تحميل رموزها عالميًا
-    // يوسّع أثر التحويل إلى ما لم يُطلب تحويله.
-    expect(BARE).toMatch(/@import\s+['"]\.\/app-tokens\.css['"]/);
+  it('لا تستورد الشاشة طبقة رموز موازية', () => {
+    expect(BARE).not.toMatch(/@import\s+['"]\.\/app-tokens\.css['"]/);
   });
 });

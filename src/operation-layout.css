@@ -1,0 +1,1245 @@
+/* Production operation workspace from the approved Figma identity.
+   This file owns the Naffith form, Satr panel, execution stream, and their
+   responsive relationship. Global window rules live in app.css. */
+
+/* ══ شاشة العملية ═══════════════════════════════════════════════════════
+   شريطٌ مدمج يعلو سطحًا أساسيًا ولوحةً ثانوية، والثلاثة تملأ النافذة من حافّة
+   إلى حافّة.
+
+   ── ما سقط من التخطيط السابق
+
+   ثلاثة قرارات كانت تُفسد الشاشة معًا:
+
+   1. **قسمةٌ متساوية.** ‏`1.05fr / 0.95fr` سطحان بعرضٍ واحد تقريبًا. لكن ما
+      فيهما ليس متساويًا: في «نَفِّذ» ثلاثة حقول ونصوصها وملخّصٌ يطول والفعل
+      نفسه؛ وفي «سَطْر» أمرٌ يُقرأ ووسائطُه. فكانت اللوحة الثانوية تحجز نصف
+      النافذة وأكثرَ الوقت لا شيء فيها، والنموذج محشورٌ في النصف الآخر.
+   2. **‏`--bg-sunken` أرضيةً لـ«سَطْر».** الرمز في الوضع الليلي `--ink-950`،
+      أي ‎#04040E‎ — سوادٌ خالص بلا أثرٍ من الكحلي الذي تُبنى عليه اللوحة كلّها.
+      فصار نصف الشاشة كتلةً ميتة لا لوحةً أعمق درجة.
+   3. **رأسٌ ضخم.** انظر `.opbar`.
+
+   ── والقاعدة الآن
+
+   «نَفِّذ» هو السطح الأساسي (`--bg-surface`)، و«سَطْر» لوحةٌ ثانوية أضيق على
+   أرضية النافذة نفسها (`--bg-canvas`) يفصلها خطٌّ شعرة. الفرق بينهما درجةٌ
+   واحدة في السلّم — هادئ وواضح في الوضعين، ومن مادّة التطبيق لا من خارجها:
+
+     النهاري   ‎#FFFFFF‎ للسطح، و‎#FAF8F5‎ للوحة (ورقٌ دافئ تحت بياض)
+     الليلي    ‎#1A1A2B‎ للسطح، و‎#0F0F1E‎ للوحة (كحليٌّ أعمق درجة، لا سواد)
+
+   والسواد يبقى حيث معناه: داخل صندوق الأمر وقائمة الوسائط (`--command-bg`)،
+   فيُقرأ مادّةَ الطبقة التقنية على لوحةٍ تحمله، لا لونَ اللوحة نفسها. */
+.op {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Page 16 places the opening context inside Naffith, not in a global toolbar
+   above both workspaces. The breadcrumbs keep the true RTL route visible while
+   leaving the physical-left Satr surface uninterrupted. */
+.opintro {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.opintro__crumbs {
+  min-block-size: var(--control-h-md);
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  color: var(--text-muted);
+  font-family: var(--font-body);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+}
+.opintro__crumbs button {
+  appearance: none;
+  padding: var(--space-4);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.opintro__crumbs button:hover,
+.opintro__crumbs button:focus,
+.opintro__crumbs button:active {
+  color: var(--text-accent);
+  background: var(--bg-hover);
+}
+.opintro__crumbs strong {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+  font-weight: var(--fw-semibold);
+}
+.opintro__category-ellipsis { display: none; }
+@media (max-width: 1080px) {
+  .opintro__category-label { display: none; }
+  .opintro__category-ellipsis { display: inline; }
+}
+.opintro__heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-8) var(--space-12);
+}
+.opintro__title {
+  flex-basis: 100%;
+  margin: 0;
+}
+/* «ماذا سيحدث؟» — يقع تحت الاسم وفوق النموذج، فيُقرأ قبل أن تُملأ الحقول لا
+   بعدها. ومحدود العرض بمقياس النصّ لا بعرض العمود: سطرٌ يمتدّ عبر النافذة
+   العريضة كلّها يفقد عينُ القارئ أوّلَه قبل أن يبلغ آخره. */
+.opintro__execution {
+  margin: var(--space-8) 0 0;
+  max-inline-size: var(--width-prose);
+  color: var(--text-secondary);
+}
+.opintro__danger {
+  min-block-size: var(--space-28);
+  display: inline-flex;
+  align-items: center;
+  margin-inline-start: auto;
+  padding-inline: var(--space-12);
+  border: var(--border-hairline) solid var(--border-subtle);
+  border-radius: var(--radius-chip);
+  background: var(--bg-canvas);
+  color: var(--text-secondary);
+  font-family: var(--font-body);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-semibold);
+}
+.opintro__danger--creates {
+  border-color: var(--status-info-border);
+  background: var(--status-info-tint);
+  color: var(--status-info-text);
+}
+.opintro__danger--modifies {
+  border-color: var(--status-warning-border);
+  background: var(--status-warning-tint);
+  color: var(--status-warning-text);
+}
+.opintro__danger--destructive {
+  border-color: var(--status-danger-border);
+  background: var(--status-danger-tint);
+  color: var(--status-danger-text);
+}
+
+/* ── الشريط ───────────────────────────────────────────────────────── */
+/* صفٌّ واحد مدمج: رجوع، فاصل، هويّة. بعرض النافذة كاملًا وبارتفاع محتواه.
+
+   كان يأخذ `--fs-page-title` (‏28px بوزن ‎800) للاسم وفقرةً كاملة للوصف وحشوةً
+   ‎20px‎ فوق وتحت، فيبلغ نحو ‎170px‎ — خُمسَ نافذةٍ من ‎780px‎ قبل أن يُرى حقلٌ
+   واحد. والاسم `--fs-section-title` الآن (‏20px): يبقى أظهر ما في الشاشة لأنه
+   أكبر من كل ما تحته، بلا أن يزاحم النموذج على الارتفاع. */
+/* والحشوة العلوية أكبر من السفلية بدرجة: النافذة `titleBarStyle: Overlay` بلا
+   عنوان (‏`tauri.conf.json`)، فأزرار النظام الثلاثة تُرسم فوق أعلى يسار الشريط.
+   المساحة التي تحتلّها فارغةٌ في هذا التخطيط — الهويّة تبدأ من اليمين — لكن
+   حرفًا يلامس حدّ النافذة العلوي يُقرأ خطأً في الطباعة قبل أن يُقرأ تخطيطًا. */
+
+/* زرّ الرجوع: زرّ شريط أدوات، لا صندوقٌ مؤطَّر ملصق فوق الواجهة.
+
+   كان `btn--quiet btn--sm` — حدٌّ كامل حول كلمتين ونصف، بمقاسٍ ‎26px‎ يحاذي
+   رأس كتلةٍ من ثلاثة أسطر. الآن بلا حدٍّ ولا أرضية حتى يُلمس (كزرّ التنقّل في
+   شريط أدوات macOS)، بمقاس عناصر التحكّم الوسطى، ومحاذٍ لمركز الشريط رأسيًا
+   لأن الشريط صفٌّ واحد لا كتلة.
+
+   والحشوة غير متناظرة عمدًا: الشيفرون يشغل جهته بصريًا، فحشوةٌ متساوية
+   تجعله يبدو مبعَدًا عن حافّة الزرّ بينما النصّ ملتصقٌ بحافّته. */
+
+/* فاصلٌ شعرة بين التنقّل والهويّة: يفصل دورين بلا أن يرسم صندوقًا حول أيّهما.
+   وارتفاعه من سلّم عناصر التحكّم لا من ارتفاع الشريط: خطٌّ يمتدّ حشوةَ الشريط
+   كلّها يقطعه نصفين. */
+
+/* الهويّة: أيقونة، ثم اسمٌ وشارته، ثم الوصف. كتلةٌ واحدة بإيقاعٍ واحد.
+   و`1fr` لأن الوصف يجب أن يلتفّ داخل ما تبقّى من الشريط لا أن يمدّه. */
+/* الأيقونة مربّعٌ ثابت: هي وسمُ العملية، ومقاسها لا يتبع النافذة. وأرضيتها
+   `--bg-canvas` لا `--bg-sunken`: الثاني سوادٌ خالص في الوضع الليلي فيصير
+   المربّع ثقبًا في الشريط. */
+/* الوصف والشارة صفٌّ واحد: الوصف يأخذ ما يتّسع له، والشارة لا تنضغط ولا تتمدّد.
+   و`baseline` كي تجلس الشارة على خطّ حروف الوصف لا على مركز الصفّ. */
+/* الوصف سطرٌ تحت الاسم مباشرة.
+
+   ── كان تذكيرًا، وصار خبرًا
+
+   كُتب هذا السطر بمقاس النصّ المساعد وبدرجة `--text-muted` بحجّةٍ صحيحة يومها:
+   «شرحٌ قرأه المستخدم في القائمة قبل أن يدخل، فحضورُه هنا تذكيرٌ لا خبر».
+   وقد سقطت المقدّمة: بطاقة العملية في الشبكة لم تعد تحمل وصفًا — اسمٌ ووسمُ
+   أداةٍ لا غير (انظر `library-tiles.tsx`) — فهذا هو الموضع **الأوّل** الذي
+   يقرأ فيه المستخدم ما تفعله العملية وحدودَها، لا الثاني.
+
+   فيأخذ درجة النصّ الثانوي ومقاسه: يبقى تحت الاسم في التسلسل، ويُقرأ محتوًى لا
+   حاشية. */
+
+/* ولا يسقط في النافذة الضيّقة.
+
+   كان يُخفى تحت ‎820px‎، وحجّتُه أن «قائمة العمليات قد عرضت الوصف كاملًا قبل
+   الدخول» — وهي الجملة نفسها التي لم تعد صحيحة. وإخفاؤه اليوم يعني أن تُفتح
+   العملية في نافذةٍ ضيّقة فلا يُعرف ما تفعله في أي شاشةٍ من شاشات المنتج.
+   الالتفاف على سطرين هو الثمن، وهو أهون من محتوًى لا موضع له. */
+
+/* ── السطحان ──────────────────────────────────────────────────────── */
+/* «نَفِّذ» يأخذ ما تبقّى، و«سَطْر» عرضُها دالّةُ محتواها.
+
+   ── لماذا `flex` لا `grid`
+
+   عرضُ اللوحة يتبدّل بين حالتين، والتبدّل يجب أن يكون انسيابًا لا قفزة. وشبكةٌ
+   تُبدّل `grid-template-columns` تحتاج إلى انتقالٍ على تلك الخاصّية، وهو لا
+   يعمل على WebKit قبل ‎17‎ — والتطبيق يدعم macOS 12، أي Safari 15. فيسقط
+   الانتقال صامتًا في أقدم المنصّات المدعومة وتعود القفزة.
+   و`transition: inline-size` على العنصر نفسه مدعومٌ في كل ما نستهدفه، فالمرن
+   هو الأداة الصحيحة هنا: عمودٌ يقرّر عرضه، وأخوه يأخذ ما بقي.
+
+   ── ولماذا لا يُقرأ هذا خرقًا لـ«مقاس عنصرٍ لا يقرأ النافذة»
+
+   القانون يمنع أن يتبع *مقاسُ* العنصر المرأى فينكمش التصميم مع السحب. وعرضُ
+   اللوحة المتوسّعة نسبةٌ من الصفّ بسقفٍ مطلق (‏34% بحدّ ‎464px‎): لا ينكمش داخلها
+   حرفٌ ولا أيقونة، وما يتغيّر هو حصّتها من الفراغ. والمطويّة قيمةٌ مطلقة لا
+   تتحرّك أصلًا. */
+.op__panes {
+  /* المطويّة: تكفي الاسم والحالة، ولا تكفي شيئًا آخر — وهذا هو المقصود. */
+  --satr-w-folded: calc(var(--sidebar-w-collapsed) + var(--space-40));
+  /* Page 16 Side = 328px: 232 + 56 + 40 من السلم نفسه. */
+  --satr-w-live: calc(var(--sidebar-w) + var(--sidebar-w-collapsed) + var(--space-40));
+
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.op__panes > .naffith { flex: 1; min-width: 0; }
+.op__result {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow-y: auto;
+  background: var(--bg-surface);
+}
+.op__result > .naffith { flex: 1; min-width: 0; }
+
+/* ── نَفِّذ ─────────────────────────────────────────────────────────── */
+/* السطح الأساسي: يملأ عموده، ومحتواه بعرضٍ مقروء داخله. الفرق بينهما هو ما
+   كان مفقودًا: السطح يستعمل النافذة، والحقول لا تتمدّد معه إلى عرضٍ لا يُقرأ. */
+.naffith {
+  background: var(--bg-surface);
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+/* Page 16: اللوحة نفسها لا تمرّر في العرض المنقسم؛ مجرى النموذج الداخلي يفعل،
+   فيبقى شريط التنفيذ شقيقًا ثابتًا لا ابنًا يهرب تحت الطيّة. */
+.naffith__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0;
+}
+.naffith__body--result { padding: var(--space-20); }
+.result-page {
+  --result-page-cap: calc(var(--width-narrow) + var(--space-80));
+  inline-size: 100%;
+  max-inline-size: var(--result-page-cap);
+  margin-inline: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+@media (min-width: 1080px) {
+  .result-page {
+    --result-page-cap: calc(var(--width-narrow) + var(--space-64) + var(--space-64));
+  }
+}
+/* عرضٌ مريح للنموذج: أضيق من `--width-base` بمقدار العمود الذي كان يزاحمه.
+   الحقلُ الذي يحمل مسارًا يُقرأ أفضل حين لا يمتدّ إلى ما بعد نصف الشاشة، وحدُّه
+   واحدٌ للنموذج والملخّص والفعل معًا فتتحاذى حوافّها الثلاثة على خطٍّ واحد. */
+.naffith__col {
+  inline-size: 100%;
+  block-size: 100%;
+  min-block-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.naffith__scroll {
+  flex: 1;
+  min-block-size: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-20);
+  padding: var(--space-8) var(--space-20) var(--space-20);
+}
+/* وسم اللوحة: اسمُها وسطرٌ يقول وظيفتها، كتلةً لا صفًّا. الصفُّ كان يضع السطر
+   المساعد بجانب الاسم فيُقرآن نصًّا واحدًا مقطوعًا. */
+.naffith__head { display: flex; flex-direction: column; gap: var(--space-2); }
+.naffith__name { margin: 0; }
+.naffith__subtitle { color: var(--text-muted); margin: 0; }
+/* فجوة ما بين الحقول ‎16 وفجوة ما داخلها ‎8: الضعف، فتُقرأ الحقول ثلاثةً لا
+   ستّة أسطر متساوية التباعد. */
+.naffith__form { display: flex; flex-direction: column; gap: var(--space-16); }
+.opintro,
+.naffith__form,
+.summary,
+.naffith__scroll > .field-error,
+.naffith__scroll > .naffith__why {
+  inline-size: 100%;
+  max-inline-size: calc(var(--width-narrow) + var(--space-80) + var(--space-40));
+}
+
+/* شريط الفعل يظلّ ظاهرًا أسفل العمود بينما يمرّ `.naffith__scroll` فوقه. */
+.naffith__act {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  min-block-size: var(--space-80);
+  justify-content: center;
+  padding: var(--space-16) var(--space-20);
+  border-block-start: var(--border-hairline) solid var(--border-subtle);
+  background: var(--bg-surface);
+}
+/* الزرّ وسببُ تعطّله في صفٍّ واحد: السبب جملةٌ قصيرة تُقرأ مع الفعل لا تحته.
+   و`baseline` تجعل النصّ يجلس على خطّ حروف الزرّ لا على مركزه. */
+.naffith__actions {
+  display: flex;
+  inline-size: 100%;
+  align-items: center;
+  gap: var(--space-12);
+  flex-wrap: wrap;
+}
+.naffith__go { flex: 1 1 100%; min-block-size: var(--control-h-lg); }
+/* سبب تعطّل «نفِّذ»: حالةٌ لا خطأ. لا أرضية حمراء ولا أيقونة تحذير ولا لون
+   خطر — نبرته إرشاد، وهي نبرة `t-helper` نفسها تحت كل حقل في النموذج. */
+.naffith__why { margin: 0; flex: 1 1 100%; min-width: 0; text-align: center; }
+
+/* راية Page 14: يبقى عنصر checkbox الحقيقي للدلالة ولوحة المفاتيح، ويُرسم
+   كمفتاح 44×26 داخل صف 72px بدل كروم النظام الأصلي. */
+.row-field--flag {
+  display: block;
+}
+.row-field--flag .row-field__flag {
+  inline-size: 100%;
+  max-inline-size: calc(var(--width-narrow) - var(--space-56) - var(--space-4));
+  min-block-size: calc(var(--space-64) + var(--space-8));
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12);
+  padding-inline: var(--space-12);
+  border-radius: var(--radius-control);
+  background: var(--bg-surface);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+.row-field--flag .row-field__flag:hover {
+  background: var(--bg-hover);
+}
+
+.row-field--flag .row-field__flag:focus-within {
+  box-shadow: var(--focus-ring);
+}
+
+.row-field__flag-copy {
+  min-inline-size: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-4);
+  direction: rtl;
+}
+
+.row-field__flag-copy > span {
+  margin: 0;
+}
+
+.flag-toggle {
+  appearance: none;
+  inline-size: var(--control-h-search);
+  block-size: calc(var(--space-24) + var(--space-2));
+  flex: none;
+  position: relative;
+  direction: ltr;
+  margin: 0;
+  border: 0;
+  border-radius: var(--radius-chip);
+  background: var(--bg-active);
+  cursor: pointer;
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+
+.flag-toggle::after {
+  content: "";
+  position: absolute;
+  inset-block-start: var(--space-2);
+  inset-inline-start: var(--space-2);
+  inline-size: calc(var(--space-24) - var(--space-4));
+  block-size: calc(var(--space-24) - var(--space-4));
+  border-radius: var(--radius-full);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-xs);
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+
+.flag-toggle:checked {
+  background: var(--action-primary);
+}
+
+.flag-toggle:checked::after {
+  transform: translateX(calc(var(--space-16) + var(--space-2)));
+}
+
+.flag-toggle:focus {
+  outline: 0;
+}
+
+.row-field--disabled .row-field__flag {
+  color: var(--text-disabled);
+  cursor: not-allowed;
+}
+
+.row-field--disabled .row-field__flag-copy > span {
+  color: var(--text-disabled);
+}
+
+.flag-toggle:disabled {
+  opacity: var(--opacity-disabled);
+  cursor: not-allowed;
+}
+
+/* الحقل: صفٌّ فيه الوسم ونصّه المساعد، ثم الضابط تحتهما بعرض الحقل كلّه، ثم
+   الخطأ إن وقع.
+
+   كان الثلاثة عمودًا: وسم، ضابط، نصّ مساعد — أربعة أسطر لكل حقل، والنصّ المساعد
+   يصل بعد أن كتب المستخدم. والوسم والنصّ المساعد كلاهما ‎12px‎ وكلاهما جملةٌ
+   قصيرة، فصفٌّ واحد يحملهما ويوفّر سطرًا في كل حقل — ثمانين بكسلًا في نموذجٍ من
+   ثلاثة حقول، وهي فرقُ ظهور زرّ «نفِّذ» أو غيابه تحت الطيّة في نافذةٍ قصيرة.
+
+   وشبكةٌ لا `flex`: بها يبقى الوسم ابنًا مباشرًا لـ`.row-field` كما يقرؤه
+   `naffith-view.test.tsx`، ويمتدّ الضابط على العمودين بسطرٍ واحد. */
+.row-field {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  /* فجوةٌ عرضية أوسع من الرأسية: الوسم ونصّه المساعد بمقاسٍ واحد (‏12px)، لا
+     يفرّق بينهما إلا الوزن والدرجة. وبفجوةٍ ضيّقة يُقرآن جملةً واحدة مقطوعة. */
+  column-gap: var(--space-16);
+  row-gap: var(--space-8);
+}
+.row-field__control { grid-column: 1 / -1; display: flex; align-items: center; }
+.row-field > .field-error { grid-column: 1 / -1; }
+.row-field__control .field { flex: 1; min-width: 0; }
+/* ‏`.field__icon` انتقلت إلى `controls.css`: هي جزءٌ من الحقل لا من هذه الشاشة،
+   ومربّع بحث المكتبة يستعملها كذلك. تركُها هنا كان يجعل شاشةً تعتمد على ملفّ
+   أنماط شاشةٍ أخرى. */
+
+/* حقلٌ يحمل زرًّا في طرفه — نمطُ نظام التصميم نفسه (`.field--with-action` في
+   `mockups-v3.css`)، منقولًا هنا لأن المنتج يحمّل `base.css` وحده.
+
+   وارتفاع الزرّ درجةٌ تحت ارتفاع الحقل: يبقى بينهما ‎3px‎ في كل جهة، فلا يُقصّ
+   إطاره ولا حلقةُ تركيزه بحافّة الحقل الذي يجلس فيه. */
+.field--with-action { padding-inline-end: var(--space-4); }
+.field--with-action .btn { flex: none; height: var(--control-h-sm); }
+/* اللاحقة داخل الحقل: يفصلها خطٌّ شعرة عن نصّ المستخدم فيُقرأ ما بعده إضافةَ
+   النواة لا حرفًا يُكتب. وحشوتُها في جهة واحدة لأن حشوة الحقل تكفي الأخرى. */
+.suffix-hint {
+  flex: none;
+  padding-inline-start: var(--space-8);
+  border-inline-start: var(--border-hairline) solid var(--border-subtle);
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  color: var(--text-muted);
+}
+
+.field-error {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: var(--fs-caption);
+  color: var(--status-danger-text);
+}
+.field-error svg { width: var(--icon-xs); height: var(--icon-xs); flex: none; }
+.field-error--block {
+  padding: var(--space-8) var(--space-12);
+  background: var(--status-danger-tint);
+  border: var(--border-hairline) solid var(--status-danger-border);
+  border-radius: var(--radius-control);
+}
+
+/* ── Plan/Summary — Page 14/16 ───────────────────────────────────── */
+.summary {
+  min-block-size: calc(var(--space-64) + var(--space-64) + var(--space-28) + var(--space-24));
+  background: var(--bg-surface);
+  border: var(--border-hairline) solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  padding: var(--space-16) var(--space-20);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+}
+.summary__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12);
+}
+.summary__title { margin: 0; color: var(--text-primary); }
+.summary__chip {
+  min-inline-size: calc(var(--sidebar-w-collapsed) + var(--sidebar-w-collapsed) + var(--space-64) + var(--space-20));
+  min-block-size: var(--control-h-xs);
+  padding-inline: var(--space-12);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-chip);
+  border: var(--border-hairline) solid var(--status-info-border);
+  background: var(--status-info-tint);
+  color: var(--status-info-text);
+  font-family: var(--font-body);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+}
+.summary--safe .summary__chip {
+  border-color: var(--border-subtle);
+  background: var(--bg-sunken);
+  color: var(--text-secondary);
+}
+.summary--modifies { border-color: var(--status-warning-border); }
+.summary--modifies .summary__title { color: var(--status-warning-text); }
+.summary--modifies .summary__chip {
+  border-color: var(--status-warning-border);
+  background: var(--status-warning-tint);
+  color: var(--status-warning-text);
+}
+.summary--warning { border-color: var(--status-warning-border); }
+.summary--unavailable {
+  border-color: var(--status-warning-border);
+  background: var(--status-warning-tint);
+}
+.summary--unavailable .summary__title,
+.summary--unavailable .summary__chip {
+  color: var(--status-warning-text);
+}
+.summary--unavailable .summary__chip {
+  border-color: var(--status-warning-border);
+  background: var(--bg-surface);
+}
+.summary__body { margin: 0; color: var(--text-secondary); }
+.summary__path {
+  min-block-size: var(--space-36);
+  padding: var(--space-8) var(--space-12);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: var(--bg-sunken);
+  border: var(--border-hairline) solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  color: var(--text-primary);
+  font-size: var(--fs-code);
+  line-height: var(--lh-code);
+}
+.summary__warning {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-block-size: var(--space-36);
+  padding: var(--space-8) var(--space-12);
+  border-radius: var(--radius-control);
+  background: var(--status-warning-tint);
+  font-family: var(--font-body);
+  font-size: var(--fs-caption);
+  color: var(--status-warning-text);
+}
+.summary__warning svg { width: var(--icon-xs); height: var(--icon-xs); flex: none; }
+.summary__estimate {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-4) var(--space-12);
+  padding-block-start: var(--space-8);
+  border-block-start: var(--border-hairline) solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-family: var(--font-body);
+  font-size: var(--fs-caption);
+}
+.summary__estimate bdi {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+.summary__estimate p {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--text-muted);
+}
+.summary__estimate--partial p { color: var(--status-warning-text); }
+
+/* ── حالة التشغيل ─────────────────────────────────────────────────── */
+/* صفٌّ مدمج لا بطاقة: حالة، ثم مسار، ثم الفعل التالي. حشوته حشوةُ صفٍّ
+   (‏8/12) لا حشوةُ بطاقة (‏12/16)، وارتفاعه ارتفاع أطول عنصرٍ فيه — النجاح خبرٌ
+   يُقرأ لمحًا ويُغادَر، لا لوحةُ إعلان. */
+.runstate {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  flex-wrap: wrap;
+  padding: var(--space-8) var(--space-12);
+  border-radius: var(--radius-control);
+  border: var(--border-hairline) solid var(--border-subtle);
+  /* الأرضية نفسها التي يأخذها الملخّص، ولنفس السبب: `--bg-sunken` سوادٌ خالص
+     في الوضع الليلي. */
+  background: var(--bg-canvas);
+}
+.runstate p { margin: 0; }
+/* ── سَطْر ─────────────────────────────────────────────────────────── */
+/* اللوحة الثانوية: مطويّةٌ حتى يوجد أمر، ثم تتوسّع. وعلى أرضية النافذة نفسها
+   بدرجةٍ واحدة تحت السطح — انظر تعليق `.op` لقيم الوضعين ولسبب سقوط
+   `--bg-sunken`.
+
+   ── الطيّ
+
+   المطويّة ‎96px‎: شريطٌ يقول ما هذه اللوحة وأنها تنتظر. والمتوسّعة ‎34%‎ بسقف
+   ‎464px‎. لا حالة ثالثة، والفاصل بينهما وجودُ خطّة — لا اسم عملية ولا عدد حقول،
+   فالسلوك واحد في كل عملية.
+
+   ── الانتقال
+
+   `inline-size` وحدها بمدّة `--duration-slow` و`--ease-out` — وهي منحنى «الطيّة»
+   في نظام التصميم: كشفٌ ثم استقرار بلا ارتداد. والمدّة رمزٌ ينهار إلى ‎1ms‎ تحت
+   `prefers-reduced-motion`، فالانتقال يختفي بلا سطرٍ إضافي.
+
+   والانتقال من طولٍ مطلق (‏96px) إلى دالّة `min()` فيها نسبة **يُستوفى فعلًا** لا
+   يُقفز: قيس على المحرّك بضبط `currentTime` على انتقالٍ حقيقي من
+   `getAnimations()`، فأعطى ‎96 → 172 → 249 → 325 → 401‎ على مدّته. والقياس بهذه
+   الطريقة لا بالمشاهدة عمدًا: صفحةٌ مخفيّة أو زمنٌ افتراضيّ يُجمِّدان تقدّمَ
+   الانتقالات، فيُقرأ العرضُ ثابتًا على قيمة البداية ويبدو الانتقال معطوبًا وهو
+   سليم — وقع هذا في التحقّق مرّتين قبل أن يُكتشف سببه.
+   ولا انتقال على الحشوة ولا على الفجوة: تبدّلُ ثلاث خاصّيات معًا يجعل المحتوى
+   يهتزّ داخل صندوقٍ يتّسع. تتبدّل الحشوة فورًا، ويتّسع العرض وحده. */
+.satr {
+  flex: none;
+  inline-size: var(--satr-w-folded);
+  /* مرجعٌ للشريط الخارج وهو يخبو خارج المجرى. */
+  position: relative;
+  background: var(--bg-inverse-deep);
+  border-inline-start: var(--border-hairline) solid var(--border-on-inverse);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  /* الحشوة الرأسية هي حشوةُ مجرى «نَفِّذ» نفسها، ولا تتبدّل بين الحالتين: بها
+     يبدأ السطحان من خطٍّ أفقيّ واحد، ولا يهبط محتوى اللوحة ولا يعلو وهي
+     تتوسّع — فالحركة في محورٍ واحد لا في اثنين. */
+  padding: var(--space-24) var(--space-12);
+  transition: inline-size var(--duration-slow) var(--ease-out);
+}
+.satr--live {
+  inline-size: var(--satr-w-live);
+  padding-inline: var(--space-24);
+}
+/* المحتوى يظهر بعد أن يبدأ العرض في الاتّساع لا معه: ظهورُه في اللحظة صفر
+   يعني أن الأمر يُرسم في صندوقٍ عرضُه ‎96px‎ ثم يُعاد رسمه سبع مرّات وهو يتّسع.
+   التأخير `--duration-fast` يجعله يبدأ الظهور وقد بلغ العرضُ نصفه. */
+.satr--live > * {
+  animation: satr-unfold var(--duration-base) var(--ease-out) var(--duration-fast) both;
+}
+@keyframes satr-unfold {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+/* ولا ينضغط شيء داخلها.
+   عمودٌ مرن يمرِّر محتواه فخٌّ صامت: أبناؤه ينضغطون قبل أن يبدأ التمرير، وحدُّ
+   انضغاطهم ارتفاعُ محتواهم الأدنى — وهو **صفر** لصندوق `overflow: hidden`.
+   فكان صندوق الأمر (‏`.command` في `base.css`) ينضغط إلى خطٍّ لا ارتفاع له كلّما
+   طالت قائمة الوسائط: يختفي أوّلُ ما جاءت اللوحة لأجله، بلا شريط تمريرٍ يدلّ
+   على أن هناك ما اختفى. `flex: none` تُنهي الانضغاط، فيفيض المحتوى وتمرّره
+   اللوحة كما يوجب القانون: تمريرٌ ظاهر لا إخفاء. */
+.satr > *,
+.satr__stage > * { flex: none; }
+/* وسم اللوحة، بنفس بنية وسم «نَفِّذ» ومقاسه: اللوحتان قراءتان لخطّةٍ واحدة،
+   فوسمٌ كبير وآخر صغير كان يجعل إحداهما تبدو تابعةً للأخرى. */
+.satr__head {
+  min-block-size: var(--space-32);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12);
+}
+.satr__name { margin: 0; color: var(--accent-on-inverse); }
+.satr__state { margin: 0; color: var(--text-on-inverse-secondary); }
+.satr__state--warning { color: var(--status-warning-text); }
+.satr__state--danger { color: var(--status-danger-border); }
+.satr__state--success { color: var(--command-flag); }
+/* المسرح: مكان الأمر ووسائطه، بخطٍّ شعرة يفصله عن وسم اللوحة — الوسم يقول ما
+   هذه اللوحة، وما تحته ناتجٌ لا تكملةٌ له. */
+.satr__stage {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  padding-block-start: var(--space-16);
+  border-block-start: 0;
+}
+
+.satr__cancel {
+  inline-size: 100%;
+  min-block-size: var(--control-h-md);
+  color: var(--status-danger-text);
+  background: var(--status-danger-tint);
+  border: var(--border-hairline) solid var(--status-danger-border);
+  border-radius: var(--radius-control);
+}
+.satr__cancel:hover:not(:disabled),
+.satr__cancel:focus:not(:disabled),
+.satr__cancel:active:not(:disabled) {
+  color: var(--status-danger-text);
+  background: var(--status-danger-tint);
+  border-color: var(--status-danger-text);
+}
+.satr__cancel--waiting,
+.satr__cancel--waiting:disabled {
+  color: var(--text-on-inverse-muted);
+  background: var(--action-neutral);
+  border-color: var(--border-on-inverse);
+  opacity: 1;
+}
+
+/* ── الشريط المطويّ ────────────────────────────────────────────────── */
+/* الاسم والحالة في عمودٍ بعرض ‎96px‎: هذه هي اللوحة وهي فارغة، لا محتوًى بديلًا
+   يشغل مساحة الغائب.
+
+   ولا شفافيةَ خفوتٍ عليه: النصوص هنا عناصرُ واجهة بدرجاتها من النظام
+   (`--text-primary` للاسم و`--text-muted` للحالة)، لا كتابةٌ مائية تحت ٦٥٪.
+   الشفافيةُ كانت لازمةً لكتلةٍ تحتلّ نصف الشاشة — تُخفَّض كي لا تصرخ؛ وشريطٌ
+   بعرض ‎96px‎ لا يصرخ أصلًا، فيأخذ حبره كاملًا ويُقرأ.
+
+   وحشوةٌ علوية تحاذيه برأس وسم «نَفِّذ» في العمود المقابل، فيبدأ السطحان من
+   خطٍّ واحد. */
+.satr__rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-8);
+  text-align: center;
+  transition: opacity var(--duration-fast) var(--ease-exit);
+}
+.satr__rail p, .satr__rail h2 { margin: 0; }
+/* الخارج يُنزع من المجرى قبل أن يخبو: بقاؤه فيه يدفع الأمرَ الواصل إلى أسفله
+   ثم يسحبه إلى أعلى عند النزع — قفزةٌ في اللحظة التي يفترض أن يكون فيها
+   الانتقال أهدأ ما في الشاشة. */
+.satr__rail--leaving {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+.satr__rail-name { color: var(--accent-on-inverse); }
+.satr__rail-state { color: var(--text-on-inverse-muted); }
+
+/* الأمر يلتفّ عند المسافات بدل أن يُمرَّر أفقيًا.
+
+   اللوحة أضيق من نصف الشاشة، وأمرٌ لا يلتفّ يصير فيها شريطًا يُسحب: يُقرأ منه
+   نحو ثلاثين محرفًا من مئةٍ وأربعين، وأوّلُ ما تعرضه اللوحة — وأهمُّه — يُخفى
+   حتى يُسحب إليه. وهي القاعدة نفسها التي يتبعها الأمر داخل قيد السجل
+   (‏`run-log.css`) ولنفس السبب.
+
+   ── والمقايضة، مصرَّحًا بها
+
+   الالتفاف عند المسافات يشقّ **الوسيط الذي في اسمه مسافة**: مجلدٌ اسمه
+   «مشروع الهوية» قد يقع نصفه في سطر ونصفه في التالي، فيبدو وسيطين. لكن هذا
+   الغموض ليس ممّا يُحدثه الالتفاف: سطرٌ واحد يفصل وسائطه بمسافات لا يمكن أن
+   يميّز مسافةَ الفصل من مسافةٍ داخل اسم، مسحوبًا كان أو ملتفًّا. ولذلك تحت هذا
+   الصندوق قائمةُ الوسائط: كلٌّ في صفٍّ مرقّم بحدٍّ حول رمزه، وهي المرجع القاطع
+   (انظر رأس `satr.tsx`). فالمكسب وضوحُ السطر كلّه، والثمنُ غموضٌ كان موجودًا
+   قبل الالتفاف وله في الشاشة نفسها جوابٌ قاطع.
+
+   ولا `overflow-wrap: anywhere` معها: القطعُ في أي موضع يشقّ المسار في منتصفه
+   بلا حدٍّ يدلّ على أنه شِقّ — وذلك غموضٌ بلا جواب. */
+.satr .command__body {
+  white-space: nowrap;
+  overflow-x: auto;
+  overflow-wrap: normal;
+}
+.satr .command {
+  block-size: calc(var(--space-64) + var(--space-64) + var(--space-64) + var(--space-8));
+  flex: none;
+}
+.satr .command--suspicious {
+  block-size: calc(var(--space-64) + var(--space-64) + var(--space-64) + var(--space-40));
+}
+.satr .command__body {
+  block-size: calc(100% - var(--control-h-search) - var(--space-4));
+  overflow: auto;
+}
+.satr .command--suspicious .command__body {
+  block-size: calc(100% - var(--control-h-search) - var(--space-36) - var(--space-4));
+}
+.command__copy {
+  appearance: none;
+  min-block-size: var(--space-28);
+  padding-inline: var(--space-8);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-on-inverse-secondary);
+  font-family: var(--font-body);
+  font-size: var(--fs-caption);
+  cursor: pointer;
+}
+.command__copy:hover,
+.command__copy:focus,
+.command__copy:active {
+  background: var(--command-bg);
+  color: var(--accent-on-inverse);
+}
+.command__body--empty {
+  display: grid;
+  place-items: center;
+  color: var(--text-on-inverse-muted);
+  font-family: var(--font-body);
+  direction: rtl;
+  text-align: center;
+}
+.command__warning {
+  min-block-size: var(--space-36);
+  margin: 0;
+  padding: var(--space-8) var(--space-12);
+  border-block-start: var(--border-hairline) solid var(--status-warning-border);
+  background: var(--status-warning-tint);
+  color: var(--status-warning-text);
+  font-family: var(--font-body);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  direction: rtl;
+  text-align: right;
+}
+.satr .command__token { display: inline; }
+.satr .command__token--path {
+  display: block;
+  padding-block-start: var(--space-4);
+}
+
+.satr__notes { display: flex; flex-direction: column; gap: var(--space-8); }
+.satr__notes p { margin: 0; }
+.satr__fineprint { color: var(--text-muted); }
+
+/* الوسائط، كلٌّ في صفّه: هكذا لا تُقرأ مسافةٌ داخل اسمٍ فاصلًا بين وسيطين.
+   والقائمة صفوفٌ على سطح اللوحة، لا صندوقٌ داكن يحتويها.
+
+   ── الحجّة القديمة، وأين انتهت
+
+   كانت القائمة كلّها على `--command-bg` — داكنةً في الوضعين — بحجّةٍ صحيحة في
+   مقدّمتها: ألوانُ الرموز (‏`--command-name` وأخواتها) محلولةٌ للتباين على
+   الأرضية الداكنة وحدها، فـ`-c` على سطحٍ فاتح ورديٌّ شاحب لا يكاد يُقرأ.
+
+   لكن النتيجة لم تكن تتبع المقدّمة: **الرمز يحمل أرضيته معه**. لكل رمزٍ حدٌّ
+   وأرضية من `--command-bg` (انظر `.arg__token`)، فلونُه على أرضيته التي حُلّ
+   لها أينما وُضع الصفّ. الذي كان داكنًا بلا سببٍ هو ما حول الرمز: رقمُه، ودورُه،
+   وشرحه — وهي نصوصٌ عربية عادية لها درجاتها في النظام.
+
+   والثمن كان يُدفع في الوضع النهاري: سطحٌ ورقيّ دافئ تحتلّه كتلةٌ سوداء بارتفاع
+   اللوحة، لأن الشرح — وهو أطول ما في القائمة — كان يحتاج أرضيةً داكنة كي يُقرأ
+   عليها. الآن الصفوف بطاقاتٌ من سطح التطبيق، والسواد باقٍ في موضعين يعنيهما:
+   صندوق الأمر، ورقعةُ كل رمز. */
+.args {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+/* ── قسمٌ يُطوى ────────────────────────────────────────────────────── */
+/* وسمُ قسمٍ داخل اللوحة: مقاسُ وسمٍ لا مقاسُ عنوان، فلا ينافس اسم اللوحة. */
+.satr__section { margin: 0; color: var(--text-secondary); }
+/* والمطويّ منه صفٌّ قابل للنقر بقرصٍ في طرفه.
+   ‏`summary` عنصرٌ أصليّ: يعطي المفتاح والدور و`aria-expanded` بلا شيفرة. لكن
+   الوكيل يرسم له مثلّثًا في مبدئه بمقاسٍ وشكلٍ خارجَي النظام، فيُنزع ويوضع
+   شيفرون اللوح في الطرف المقابل. النزعُ بصيغتين لأن `list-style` تكفي في
+   المحرّكات الحديثة و`::-webkit-details-marker` تلزم WebKit الأقدم. */
+.satr__section--fold,
+.arg > summary {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-8);
+  cursor: pointer;
+  list-style: none;
+}
+.satr__section--fold::-webkit-details-marker,
+.arg > summary::-webkit-details-marker { display: none; }
+/* القرص يدور مع الفتح: الشيفرون نفسه يقول «مطويّ» و«مفتوح» بلا رمزين.
+
+   وهامشُه مقدارٌ ثابت لا `auto`. كان `auto`، وكان الدورُ يحمل `auto` كذلك —
+   وهامشان تلقائيان في صفٍّ مرن يتقاسمان الفراغ بينهما بالتساوي، فيطفو الدورُ في
+   وسط الصفّ بعيدًا عن طرفه وعن رمزه معًا. الدفعُ إلى الطرف وظيفةُ هامشٍ واحد،
+   وهو هامش الدور؛ والقرص يتبعه بفجوةٍ صغيرة. */
+.arg__caret {
+  flex: none;
+  margin-inline-start: var(--space-4);
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  color: var(--text-muted);
+  transition: transform var(--duration-fast) var(--ease-standard);
+}
+details[open] > summary .arg__caret { transform: rotate(180deg); }
+.satr__section--fold:hover .arg__caret,
+.satr__section--fold:focus .arg__caret,
+.arg > summary:hover .arg__caret,
+.arg > summary:focus .arg__caret,
+details[open] > summary .arg__caret {
+  color: var(--text-accent);
+}
+.satr__notes-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding-block-start: var(--space-8);
+}
+
+/* الصفّ: سطرٌ فيه الرقم والرمز ودورُه، وتحته شرحه — مطويًّا.
+   كان الثلاثة والشرحُ في صفٍّ أفقيٍّ واحد، فكان الدور يحاذي رأس كتلةٍ من ثلاثة
+   أسطر ويزاحم الرمزَ على عرضٍ لم يبقَ منه شيء في لوحةٍ أضيق. */
+.arg {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-8) var(--space-12);
+  border-radius: var(--radius-control);
+  background: var(--bg-surface);
+  border: var(--border-hairline) solid var(--border-subtle);
+  transition: border-color var(--duration-fast) var(--ease-standard);
+}
+.arg > summary:hover { color: var(--text-primary); }
+.arg:hover { border-color: var(--border-default); }
+/* حلقةُ التركيز حول الصفّ كلّه بزواياه: الأساس يفرض `--radius-xs` على كل ما
+   يُركَّز عليه، وهو مقاسُ زرٍّ صغير — فكانت تقصّ زوايا الصفّ. */
+.arg > summary:focus { border-radius: var(--radius-control); }
+.arg__line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-8);
+  min-width: 0;
+}
+.arg__index {
+  flex: none;
+  width: 1.5em;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  color: var(--text-muted);
+}
+/* الشرح يحاذي الرمز لا حافّة الصفّ: إزاحةٌ بعرض الرقم وفجوته، فيُقرأ تابعًا
+   للرمز الذي فوقه لا سطرًا مستقلًّا في الصندوق. */
+.arg__main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding-inline-start: calc(1.5em + var(--space-8));
+}
+/* حدٌّ حول الرمز يجعل المسافة في طرفه مرئية بدل أن تختفي في الفراغ. ولذلك
+   يحتضن الرمزَ ولا يتمدّد: صندوقٌ بعرض الصفّ حول `-c` يجعل الفراغَ داخله يبدو
+   جزءًا من الرمز — وهو نقيض ما جاء الصندوق ليفعله. */
+.arg__token {
+  flex: 0 1 auto;
+  min-width: 0;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-xs);
+  background: var(--command-bg);
+  border: var(--border-hairline) solid var(--command-border);
+  color: var(--command-text);
+  font-size: var(--fs-caption);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+/* الشرح هو مقصود «سَطْر»، فيأخذ لون النصّ الأساسي على سطحه لا لونًا خافتًا. */
+.arg__note { margin: 0; color: var(--text-primary); }
+.arg__flagged {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  /* لون التحذير على سطح الصفحة، لا على الأرضية الداكنة: الصفّ صار بطاقةً من
+     سطح التطبيق. وبلا حاجةٍ إلى أرضية التحذير المحلولة معه — تلك لازمةٌ على
+     السطح الغائر (‏انظر `.warning`)، وعلى `--bg-surface` يبلغ اللونُ حدَّه
+     وحده: 4.96 نهارًا و5.48 ليلًا. */
+  color: var(--status-warning-text);
+}
+.arg__flagged svg { width: var(--icon-xs); height: var(--icon-xs); flex: none; }
+/* الدور إلى طرف الصفّ لا ملاصقًا للرمز: الأدوار تتصافّ عمودًا واحدًا فتُمسح
+   القائمةُ بالبصر — «أداة، راية، راية، راية، مسار، مسار». وبمسافةٍ ثابتة كان
+   موضعُه يتبع طول الرمز فيتعرّج العمود. */
+.arg__role { flex: none; margin-inline-start: auto; color: var(--text-muted); }
+
+/* ── مجرى التشغيل ─────────────────────────────────────────────────── */
+/* ما طبعته الأداة: قسمٌ يُطوى كأخواته، ومحتواه على مادّة الطبقة التقنية.
+
+   والأرضية `--command-bg` هنا بالحجّة نفسها التي تُبقي صندوق الأمر داكنًا في
+   الوضعين: هذا نصُّ أداةٍ لا نصُّ تطبيق، ومكانه سطحُ الطرفية لا سطح الصفحة.
+   وهو الموضع الثالث والأخير الذي يستحقّ السواد في الشاشة — مع صندوق الأمر
+   ورقعة كل رمز. */
+.stream__count { margin-inline-start: var(--space-4); color: var(--text-muted); }
+.stream__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  padding-block-start: var(--space-8);
+}
+.stream__empty, .stream__notice { margin: 0; color: var(--text-muted); }
+
+/* المجرى صندوقٌ يُمرَّر بسقفٍ من سلّم الهوية، لا قائمةٌ تمدّ اللوحة بلا نهاية.
+   و`max-block-size` سقفُ منطقةٍ تُمرَّر — وهي الآلية التي يوجبها قانون التخطيط
+   بديلًا عن الإخفاء، لا مخالفةً له. */
+/* والمجرى كلّه LTR ولو كانت الصفحة RTL.
+   هذا نصُّ طرفية: أسطرٌ متعاقبة يجب أن تبدأ من خطٍّ واحد كي تُمسح بالبصر. وفي
+   صفٍّ RTL يجلس الوسمُ يمينًا ويلتصق به صندوقُ النصّ، فيتبع موضعُ أوّل حرفٍ طولَ
+   السطر — سطرٌ قصير يبدأ في وسط اللوحة وطويلٌ يبدأ في طرفها، والقائمة تصير
+   مسنَّنة لا مقروءة. وبـ LTR يجلس الوسمُ يسارًا بعرضٍ ثابت، فتبدأ الأسطر كلّها
+   من خطٍّ واحد بعده.
+   والوسم نفسه كلمةٌ عربية معزولة، فاتجاه الصفّ لا يقلبها. */
+.stream__lines {
+  direction: ltr;
+  list-style: none;
+  margin: 0;
+  padding: var(--space-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-block-size: calc(var(--sidebar-w) + var(--space-64));
+  overflow-y: auto;
+  background: var(--command-bg);
+  border: var(--border-hairline) solid var(--command-border);
+  border-radius: var(--radius-control);
+}
+.stream__line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-8);
+  min-width: 0;
+}
+/* وسمُ المجرى (خرج/خطأ) بعرضٍ ثابت: بعرضٍ متغيّر يتعرّج مبدأ النصّ من سطرٍ إلى
+   سطر فيصير المجرى غير قابلٍ للمسح بالبصر. والعرض من سلّم عناصر التحكّم. */
+.stream__tag {
+  flex: none;
+  inline-size: var(--control-h-lg);
+  text-align: center;
+  border-radius: var(--radius-xs);
+  color: var(--command-prompt);
+  background: var(--command-bg-header);
+}
+/* `stderr` يُميَّز باللون **وبالوسم** معًا: أداةٌ ناجحة قد تكتب فيه تحذيرًا،
+   وتمييزٌ باللون وحده يسقط في وضع التباين العالي وعند عمى الألوان. */
+.stream__line--stderr .stream__tag { color: var(--command-string); }
+/* علامةُ القصّ جملةٌ عربية لا سطرَ أداة، فتعود إلى اتجاه الصفحة داخل قائمةٍ
+   قلبناها إلى LTR من أجل أسطر الأداة. */
+.stream__line--truncated {
+  direction: rtl;
+  padding-block-start: var(--space-4);
+}
+/* نصّ الأداة كما هو: خطٌّ أحادي، اتجاهٌ LTR مهما كان اتجاه الصفحة، ومسافاته
+   محفوظة. ولا `overflow-wrap: anywhere`: القطعُ في أي موضع يشقّ مسارًا في
+   منتصفه — القاعدة نفسها التي يتبعها الأمر أعلى اللوحة. */
+.stream__text {
+  /* يأخذ ما تبقّى من الصفّ: بلا هذا ينكمش إلى عرض حرفه فيبتعد عن وسمه في
+     الأسطر القصيرة، فتصير القائمة مسنَّنة. */
+  flex: 1;
+  min-width: 0;
+  direction: ltr;
+  text-align: left;
+  unicode-bidi: isolate;
+  font-family: var(--font-mono);
+  font-variant-ligatures: none;
+  font-size: var(--fs-terminal);
+  line-height: var(--lh-terminal);
+  color: var(--command-text);
+  white-space: pre-wrap;
+  overflow-wrap: normal;
+  /* نزعُ رقعة `code` من الأساس، وهي لازمة لا تجميل.
+     ‏`base.css` يعطي كل `code` أرضيةً وحدًّا وحشوة — `--code-inline-bg` — وهي
+     **فاتحة** في الوضع النهاري لأنها مصمَّمة لرمزٍ داخل نصٍّ عربي على سطح
+     الصفحة. وسطرُ الأداة هنا يجلس على أرضية الطرفية الداكنة بحبرٍ فاتح، فكان
+     المزيج في الوضع النهاري فاتحًا على فاتح: المجرى كلّه غير مقروء تقريبًا،
+     ولا يُكتشف إلا بفتح الوضع النهاري. */
+  background: none;
+  border: 0;
+  padding: 0;
+}
+
+/* Page 16 Run/Stream: سطح طرفية ثابت الرأس، لا بطاقة فاتحة ولا كشفٌ أصلي.
+   الخرج نفسه يمرّر داخل الجسم، فيما تبقى الحالة/العداد في رأس 48px. */
+.stream {
+  min-block-size: calc(var(--space-64) + var(--space-64) + var(--space-64) + var(--space-24));
+  overflow: hidden;
+  background: var(--command-bg);
+  border: var(--border-hairline) solid var(--command-border);
+  border-radius: var(--radius-card);
+}
+.stream__header {
+  min-block-size: var(--control-h-search);
+  padding-inline: var(--space-16);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12);
+  background: var(--command-bg-header);
+  border-block-end: var(--border-hairline) solid var(--command-border);
+}
+.stream__heading {
+  min-inline-size: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  color: var(--command-text);
+  font-family: var(--font-body);
+  font-size: var(--fs-body-secondary);
+  line-height: var(--lh-body-secondary);
+}
+.stream__heading svg {
+  inline-size: var(--icon-md);
+  block-size: var(--icon-md);
+  color: var(--text-on-inverse-muted);
+}
+.stream__count {
+  margin-inline-start: 0;
+  color: var(--text-on-inverse-muted);
+}
+.stream__body {
+  min-block-size: calc(var(--space-64) + var(--space-64) + var(--space-32));
+  padding: var(--space-16);
+  padding-block-start: var(--space-16);
+}
+.stream__lines {
+  max-block-size: calc(var(--space-64) + var(--space-64) + var(--space-16));
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+.stream__empty,
+.stream__notice { color: var(--text-on-inverse-muted); }
+.stream__waiting {
+  min-block-size: calc(var(--space-64) + var(--space-64) + var(--space-8));
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: var(--space-16);
+}
+.stream__waiting p { margin: 0; }
+.stream__waiting-body {
+  direction: rtl;
+  color: var(--command-text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-terminal);
+  line-height: var(--lh-terminal);
+}
+.stream__waiting-state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-8);
+  color: var(--text-on-inverse-muted);
+}
+.stream__waiting-dot {
+  inline-size: var(--icon-xs);
+  block-size: var(--icon-xs);
+  border-radius: 50%;
+  border: var(--border-hairline) solid var(--text-on-inverse-muted);
+}
+.stream__state-copy {
+  margin: 0;
+  color: var(--command-text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-terminal);
+  line-height: var(--lh-terminal);
+}
+.stream__footer {
+  min-block-size: var(--space-28);
+  margin: auto 0 0;
+  padding: var(--space-4) var(--space-8);
+  display: flex;
+  align-items: center;
+  border-radius: var(--radius-xs);
+}
+.stream--stderr,
+.stream--dropped { border-color: var(--status-danger-border); }
+.stream--truncated { border-color: var(--status-warning-border); }
+.stream--stderr .stream__heading,
+.stream--stderr .stream__count,
+.stream--stderr .stream__text,
+.stream--dropped .stream__heading,
+.stream--dropped .stream__count,
+.stream--dropped .stream__state-copy { color: var(--status-danger-text); }
+.stream--truncated .stream__heading,
+.stream--truncated .stream__count,
+.stream--truncated .stream__text { color: var(--status-warning-text); }
+.stream--truncated .stream__footer {
+  color: var(--status-warning-text);
+  background: var(--status-warning-tint);
+}
+.stream--dropped .stream__footer {
+  color: var(--status-danger-text);
+  background: var(--status-danger-tint);
+}
+
+/* ألوان أدوار الرموز داخل قائمة الوسائط تتبع لوحة «سَطْر» نفسها. */
+.arg__token.tok-name { color: var(--command-name); }
+.arg__token.tok-flag { color: var(--command-flag); }
+.arg__token.tok-path { color: var(--command-path); }
+.arg__token.tok-string { color: var(--command-string); }
+
+/* Below 900px the workspace is one vertical scroll flow. Keeping this rule at
+   the end is deliberate: the compact state must win over the split defaults. */
+@media (max-width: 899px) {
+  .opintro__crumbs { display: none; }
+
+  .op__panes {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .op__panes > .naffith {
+    flex: none;
+  }
+
+  .naffith__body {
+    flex: none;
+    overflow-y: visible;
+  }
+
+  .naffith__col {
+    block-size: auto;
+  }
+
+  .naffith__scroll {
+    flex: none;
+    overflow-y: visible;
+    padding: var(--space-20);
+  }
+
+  .satr,
+  .satr--live {
+    inline-size: 100%;
+    max-inline-size: calc(var(--width-narrow) + var(--space-96) + var(--space-48));
+    margin-inline: auto;
+    overflow-y: visible;
+    border: var(--border-hairline) solid var(--border-on-inverse);
+    border-radius: var(--radius-card);
+  }
+
+  .satr__rail {
+    flex-direction: row;
+    gap: var(--space-12);
+  }
+}
+
+@media (min-width: 760px) and (max-width: 899px) {
+  .naffith__scroll { padding: var(--space-32); }
+  .naffith__act { padding-inline: var(--space-32); }
+}

@@ -16,13 +16,15 @@
  * `PlanResponse`.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import Naffith, { OperationBar } from './naffith';
+import Naffith from './naffith';
 import Satr from './satr';
 import Onboarding from './onboarding';
 import LibraryScreen, { type LibraryState } from './library-screen';
 import CategoryScreen from './category-screen';
 import SettingsScreen from './settings-screen';
 import RunLog from './run-log';
+import AppShell from './app-navigation';
+import StatePanel from './state-panel';
 import { t } from './i18n';
 import './app-shell.css';
 import {
@@ -39,8 +41,10 @@ import {
   loadSettings,
   saveSettings,
   shouldShowOnboarding,
+  withCargoPath,
   withFavouriteToggled,
   withLastCategory,
+  withNodePath,
   withOnboardingCompleted,
   withOnboardingReset,
   type Settings,
@@ -89,6 +93,24 @@ import { appendLine, type StreamLine } from './run-stream';
 const REPLAN_DELAY_MS = 250;
 
 /** ما تعرضه الشاشة. `planning` مشتقّة، ليست حالة تشغيل. */
+/**
+ * حقول مسار أداةٍ يُختار مرّةً في الإعدادات ويُتذكَّر — Node.js وCargo
+ * كلاهما بالضبط، لا فرق بينهما هنا سوى الاسم والقيمة المحفوظة.
+ *
+ * دالّةٌ لا ثابتًا: القيم تتغيّر مع الإعداد، والمعرّفان (`inputId`) وحدهما
+ * ثابتان — وهما نفس المعرّفَين اللذين تُعلنهما عمليات `dev.npm.*` و`dev.cargo.*`
+ * في النواة، فتغييرهما هنا بلا تغييرهما هناك يكسر التعبئة التلقائية صامتًا.
+ */
+function toolPathFields(
+  nodePath: string | null,
+  cargoPath: string | null,
+): Array<{ inputId: 'node_path' | 'cargo_path'; value: string | null }> {
+  return [
+    { inputId: 'node_path', value: nodePath },
+    { inputId: 'cargo_path', value: cargoPath },
+  ];
+}
+
 export type Phase = 'idle' | 'planning' | 'running' | 'cancelling' | 'finished';
 
 /**
@@ -126,6 +148,9 @@ export default function App() {
   const [operations, setOperations] = useState<OperationSummary[] | null>(null);
   const [categories, setCategories] = useState<CategorySummary[] | null>(null);
   const [opsError, setOpsError] = useState<CoreErrorShape | null>(null);
+  // بحث المكتبة جزءٌ من سياق الفتح لا حالةٌ مؤقتة داخل شاشة تُفكّ عند فتح
+  // نتيجة. إبقاؤه هنا يجعل «رجوع» يعيد شاشة النتائج نفسها واستعلامها.
+  const [libraryQuery, setLibraryQuery] = useState('');
 
   const loadLibrary = useCallback(() => {
     setOperations(null);
@@ -171,10 +196,9 @@ export default function App() {
 
   // ── حالة النموذج، محفوظة لكل عملية ───────────────────────────────────
   //
-  // خريطةٌ بمعرّف العملية لا نموذجٌ واحد: الرجوع إلى القائمة ثم العودة يجب أن
-  // يعيد ما كُتب. هذا ما يجعل كلفة مغادرة شاشة العملية `free` في الحالة
-  // العادية — لا يُفقد شيء فلا معنى لسؤال المستخدم عن فقدٍ لن يقع. يبقى
-  // `dirty` في `nav.ts` لشاشةٍ تُتلف حالتها فعلًا.
+  // خريطةٌ بمعرّف العملية لا نموذجٌ واحد: التنقّل داخل شاشة العملية لا يخلط
+  // حقول عمليتين. مغادرة نموذجٍ معدّل تمرّ بحوار Page 18، والمغادرة المؤكدة
+  // تمحو قيم تلك العملية وحدها كي يطابق الفعل نصّ الحوار.
   const [formsByOp, setFormsByOp] = useState<Record<string, FormValues>>({});
 
   // ── دورة حياة التشغيل ────────────────────────────────────────────────
@@ -208,6 +232,9 @@ export default function App() {
   useEffect(() => {
     onRunFinished((event) => {
       setOutcome(event);
+      // نهاية التشغيل هي الحالة الأحدث. خطأُ محاولة إلغاءٍ سابقة لا يبقى
+      // معلّقًا تحت ResultView بعد أن وصلت النتيجة الفعلية.
+      setError(null);
       setPhase('finished');
       setRunId(null);
       // السجلّ صار فيه قيدٌ جديد، و«المستخدَمة حديثًا» تُقرأ منه.
@@ -235,8 +262,21 @@ export default function App() {
 
   const values: FormValues = useMemo(() => {
     if (!operation) return {};
-    return formsByOp[operation.id] ?? emptyValues(operation);
-  }, [operation, formsByOp]);
+    const saved = formsByOp[operation.id];
+    if (saved) return saved;
+
+    // مسارا Node.js وCargo يُختاران مرّةً — من الإعدادات، أو من أول عملية
+    // أدوات مطوّرين تحتاجهما — ويُتذكَّران بعدها. القيمة تُعرض كأي نموذجٍ
+    // ابتدائي آخر ويظلّ الحقل قابلًا للتعديل، لا فرضًا صامتًا: التحقّق
+    // الحقيقي يبقى في النواة وقت التخطيط كأي مسارٍ آخر.
+    const initial = emptyValues(operation);
+    for (const { inputId, value } of toolPathFields(settings.nodePath, settings.cargoPath)) {
+      if (value && operation.inputs.some((input) => input.id === inputId)) {
+        initial[inputId] = value;
+      }
+    }
+    return initial;
+  }, [operation, formsByOp, settings.nodePath, settings.cargoPath]);
 
   const setValues = useCallback(
     (next: FormValues) => {
@@ -314,15 +354,21 @@ export default function App() {
       await cancelRun(runId);
     } catch (e) {
       setError(asCoreError(e));
+      // رفض طلب الإلغاء لا يعني أن التشغيل توقف. نعود إلى «جارٍ» كي يبقى
+      // زر الإلغاء قابلًا للمحاولة، ولا تُحبس الشاشة في `cancelling` المعطّلة.
+      setPhase('running');
     }
   }, [runId]);
 
   const onReveal = useCallback(async () => {
     if (!outcome?.run_id) return;
+    // Reveal فعلٌ تالٍ مستقل عن نتيجة التشغيل. نمحو خطأ محاولةٍ سابقة قبل
+    // الجديدة، ولا نبدّل النتيجة الناجحة نفسها إن كان الملف قد نُقل بعد ذلك.
+    setError(null);
     try {
       await revealRun(outcome.run_id);
     } catch (e) {
-      setError(asCoreError(e));
+      setError({ key: 'err.reveal.failed', input: null, detail: e });
     }
   }, [outcome]);
 
@@ -353,14 +399,21 @@ export default function App() {
 
   // ── التنقّل ──────────────────────────────────────────────────────────
 
-  /**
-   * كلفة مغادرة الشاشة الحالية.
-   *
-   * تشغيلٌ جارٍ وحده يستحق سؤالًا. الحقول المملوءة لا تُفقد بالمغادرة — تبقى
-   * في `formsByOp` وتعود كما هي — فسؤال المستخدم عنها كان سيكون إنذارًا كاذبًا،
-   * وهو أسوأ من لا إنذار: من يتعلّم أن التحذير لا يعني شيئًا يتجاوزه حين يعني.
-   */
-  const exitCost: ExitCost = phase === 'running' || phase === 'cancelling' ? 'busy' : 'free';
+  /** كلفة المغادرة كما تعرضها حوارات Page 18: تشغيل جارٍ، أو نموذج لم يُنفّذ. */
+  const formDirty = Boolean(
+    operation &&
+      phase === 'idle' &&
+      operation.inputs.some(
+        (input) =>
+          (values[input.id] ?? '') !== (emptyValues(operation)[input.id] ?? ''),
+      ),
+  );
+  const exitCost: ExitCost =
+    phase === 'running' || phase === 'cancelling'
+      ? 'busy'
+      : formDirty
+        ? 'dirty'
+        : 'free';
 
   /**
    * الشاشة التي فُتحت منها العمليةُ الحالية.
@@ -394,10 +447,17 @@ export default function App() {
 
   const confirmLeave = useCallback(() => {
     if (!pending) return;
+    if (pending.reason === 'dirty' && operation) {
+      setFormsByOp((all) => {
+        const next = { ...all };
+        delete next[operation.id];
+        return next;
+      });
+    }
     const result = confirmNavigation(pending.screen);
     if (result.kind === 'navigate') setScreen(result.screen);
     setPending(null);
-  }, [pending]);
+  }, [pending, operation]);
 
   const persist = useCallback(
     (next: Settings) => {
@@ -419,6 +479,40 @@ export default function App() {
     go({ type: 'onboarding.replay' });
   }, [persist, settings, go]);
 
+  // مسارا Node.js وCargo: يُختاران مرّةً — من الإعدادات، أو من أول حقل
+  // `node_path`/`cargo_path` تملؤه شاشة عمليةٍ من أدوات المطوّرين — ويُتذكَّران
+  // لكل عملياتهما بعده.
+  const setNodePath = useCallback(
+    (path: string | null) => {
+      persist(withNodePath(settings, path));
+    },
+    [persist, settings],
+  );
+  const setCargoPath = useCallback(
+    (path: string | null) => {
+      persist(withCargoPath(settings, path));
+    },
+    [persist, settings],
+  );
+
+  // يعكس التعديل اليدوي على حقل مسار أداةٍ إلى الإعداد المحفوظ، فتُملأ به كل
+  // عملية أدوات مطوّرين لاحقة لا هذه وحدها. لا يكتب حين تكون القيمة نفسها
+  // (تجنّبًا لكتابةٍ عند كل رسم)، ولا حين يكون الحقل فارغًا (المستخدم في
+  // منتصف الكتابة — القيمة الفارغة ليست اختيارًا يستحقّ أن يُنسى به المحفوظ).
+  useEffect(() => {
+    if (!operation) return;
+    const setters: Record<'node_path' | 'cargo_path', (path: string) => void> = {
+      node_path: setNodePath,
+      cargo_path: setCargoPath,
+    };
+    for (const { inputId, value: saved } of toolPathFields(settings.nodePath, settings.cargoPath)) {
+      if (!operation.inputs.some((input) => input.id === inputId)) continue;
+      const current = values[inputId];
+      if (!current || current === saved) continue;
+      setters[inputId](current);
+    }
+  }, [operation, values, settings.nodePath, settings.cargoPath, setNodePath, setCargoPath]);
+
   // ── المفضّلة والمستخدَمة حديثًا ──────────────────────────────────────
 
   const onToggleFavourite = useCallback(
@@ -438,9 +532,15 @@ export default function App() {
   const openCategory = useCallback(
     (categoryId: string) => {
       persist(withLastCategory(settings, categoryId));
-      go({ type: 'category.selected', categoryId });
+      // «السجل» بطاقةٌ في مكتبة الفئات كي يبقى الوصول إليه متوقّعًا في
+      // البحث/الشبكة، لكنه ليس قسم عمليات. نوعه المعلن من النواة هو القرار؛
+      // فلا نفتح له شاشة فئة فارغة قبل شاشة السجل الحقيقية.
+      const category = findCategory(categoryCards, categoryId);
+      go(category?.kind === 'journal'
+        ? { type: 'log.opened' }
+        : { type: 'category.selected', categoryId });
     },
-    [persist, settings, go],
+    [persist, settings, go, categoryCards],
   );
 
   /**
@@ -492,6 +592,28 @@ export default function App() {
   /** هويّة الشاشة المعروضة نصًّا. تُحسب في `nav.ts` كي لا تُحسب في موضعين. */
   const currentKey = screenKey(screen);
 
+  const activeCategoryId =
+    screen.name === 'category-view'
+      ? screen.categoryId
+      : screen.name === 'operation-view'
+        ? operation?.category
+        : undefined;
+
+  const inShell = (content: ReactNode, viewportMode: 'scroll' | 'fixed' = 'scroll') => (
+    <AppShell
+      screen={screen}
+      categories={categoryCards}
+      activeCategoryId={activeCategoryId}
+      viewportMode={viewportMode}
+      onOpenLibrary={() => go({ type: 'library.opened' })}
+      onOpenCategory={openCategory}
+      onOpenLog={() => go({ type: 'log.opened' })}
+      onOpenSettings={() => go({ type: 'settings.opened' })}
+    >
+      {content}
+    </AppShell>
+  );
+
   // ── الرسم ────────────────────────────────────────────────────────────
 
   if (screen.name === 'onboarding') {
@@ -507,7 +629,7 @@ export default function App() {
   );
 
   if (screen.name === 'operations-list') {
-    return (
+    return inShell(
       <Page focusKey={currentKey}>
         <LibraryScreen
           state={libraryState}
@@ -518,11 +640,11 @@ export default function App() {
           onOpenOperation={(opId) => go({ type: 'operation.selected', opId })}
           onToggleFavourite={onToggleFavourite}
           onRetry={loadLibrary}
-          onOpenLog={() => go({ type: 'log.opened' })}
-          onOpenSettings={() => go({ type: 'settings.opened' })}
+          initialQuery={libraryQuery}
+          onQueryChange={setLibraryQuery}
         />
         {leaveDialog}
-      </Page>
+      </Page>,
     );
   }
 
@@ -531,16 +653,29 @@ export default function App() {
     // القسم قد يختفي بين اختياره وفتحه — نواةٌ أُعيد تحميل فهرسها، أو معرّفٌ
     // محفوظٌ من إصدارٍ أقدم. الحالتان تُعرضان نصًّا واحدًا ومخرجًا واضحًا.
     if (!category) {
-      return (
+      return inShell(
         <Page variant="message" focusKey={currentKey}>
-          <p className="t-body">{categories === null ? t('lib.loading') : t('lib.category.gone')}</p>
-          <button type="button" className="btn btn--quiet" onClick={() => go({ type: 'back' })}>
-            {t('nav.back.library')}
-          </button>
-        </Page>
+          {categories === null ? (
+            <StatePanel
+              title={t('lib.loading')}
+              body={t('lib.category.loading.body')}
+              busy
+              headingLevel={2}
+            />
+          ) : (
+            <StatePanel
+              title={t('lib.category.gone.title')}
+              body={t('lib.category.gone.body')}
+              tone="danger"
+              action={t('action.return.library')}
+              onAction={() => go({ type: 'back' })}
+              headingLevel={2}
+            />
+          )}
+        </Page>,
       );
     }
-    return (
+    return inShell(
       <Page focusKey={currentKey}>
         <CategoryScreen
           category={category}
@@ -551,25 +686,29 @@ export default function App() {
           onBack={() => go({ type: 'back' })}
         />
         {leaveDialog}
-      </Page>
+      </Page>,
     );
   }
 
   if (screen.name === 'settings') {
-    return (
+    return inShell(
       <Page focusKey={currentKey}>
         <SettingsScreen
           onBack={() => go({ type: 'back' })}
           onReplayOnboarding={replayOnboarding}
           storageAvailable={storageAvailable}
+          nodePath={settings.nodePath}
+          onNodePathChange={setNodePath}
+          cargoPath={settings.cargoPath}
+          onCargoPathChange={setCargoPath}
         />
         {leaveDialog}
-      </Page>
+      </Page>,
     );
   }
 
   if (screen.name === 'run-log') {
-    return (
+    return inShell(
       <Page focusKey={currentKey}>
           <RunLog
           onBack={() => go({ type: 'back' })}
@@ -577,59 +716,72 @@ export default function App() {
           onChanged={loadJournal}
         />
         {leaveDialog}
-      </Page>
+      </Page>,
     );
   }
 
   // شاشة العملية. الفهرس قد يكون ما زال يُحمَّل، أو قد تكون العملية اختفت منه
   // بين اختيارها وفتحها — والحالتان مختلفتان ولا يجوز أن تُعرضا نصًّا واحدًا.
   if (!operation) {
-    return (
+    return inShell(
       <Page variant="message" focusKey={currentKey}>
-        <p className="t-body">{operations === null ? t('lib.loading') : t('ops.gone')}</p>
-        <button type="button" className="btn btn--quiet" onClick={() => go({ type: 'back' })}>
-          {t('nav.back')}
-        </button>
-      </Page>
+        {operations === null ? (
+          <StatePanel
+            title={t('lib.loading')}
+            body={t('ops.loading.body')}
+            badge="Loading"
+            busy
+            headingLevel={2}
+          />
+        ) : (
+          <StatePanel
+            title={t('ops.gone.title')}
+            body={t('ops.gone.body')}
+            badge="Gone"
+            tone="danger"
+            action={t('action.return')}
+            onAction={() => go({ type: 'back' })}
+            headingLevel={2}
+          />
+        )}
+      </Page>,
     );
   }
 
-  return (
+  return inShell(
     <Page variant="bleed" focusKey={currentKey}>
-      {/* شريطٌ يعلو السطحين بعرض النافذة، ثم سطحان متجاوران يملآن ما تحته.
-          «نَفِّذ» و«سَطْر» ليسا وضعين يتبادلان: هما قراءتان لخطّةٍ واحدة تُعرضان
-          معًا، ورؤيةُ الأمر وهو يتغيّر مع الحقل هي الفكرة كلّها. */}
       <div className="op">
-        <OperationBar
-            operation={operation}
-            categoryIcon={categoryIcon}
-            onBack={() => go({ type: 'back' })}
-          />
-        <main className="op__panes">
+        <main className={uiPhase === 'finished' && outcome ? 'op__result' : 'op__panes'}>
           <Naffith
             operation={operation}
             categoryIcon={categoryIcon}
             values={values}
             onChange={setValues}
             plan={plan}
+            executionPlan={shownPlan}
             error={error}
             phase={uiPhase}
             outcome={outcome}
+            onBack={() => go({ type: 'back' })}
             onExecute={onExecute}
-            onCancel={onCancel}
             onReveal={onReveal}
             onReset={onReset}
+            onLibrary={() => go({ type: 'library.opened' })}
           />
-          <Satr
-            plan={shownPlan}
-            stream={stream}
-            phase={uiPhase}
-            status={outcome?.status}
-          />
+          {!(uiPhase === 'finished' && outcome) && (
+            <Satr
+              plan={shownPlan}
+              stream={stream}
+              phase={uiPhase}
+              status={outcome?.status}
+              onCancel={onCancel}
+            />
+          )}
         </main>
       </div>
       {leaveDialog}
-    </Page>
+    </Page>,
+    'fixed',
   );
 }
 
@@ -798,10 +950,15 @@ function ConfirmLeave({
           <button ref={stay} type="button" className="btn btn--primary" onClick={onStay}>
             {t(`nav.leave.${reason}.stay`)}
           </button>
-          <button type="button" className="btn btn--quiet" onClick={onLeave}>
+          <button
+            type="button"
+            className={`btn ${reason === 'dirty' ? 'btn--danger' : 'btn--quiet'}`}
+            onClick={onLeave}
+          >
             {t(`nav.leave.${reason}.leave`)}
           </button>
         </div>
+        <p className="dialog__hint">{t('dialog.safe_dismiss')}</p>
       </div>
     </div>
   );

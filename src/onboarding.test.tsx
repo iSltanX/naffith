@@ -52,6 +52,7 @@ describe('شاشة الترحيب', () => {
     // ما يعطيه المتصفّح مجّانًا. الدَور وحده لا يكفي: يُطلب الوسم نفسه.
     expect(start.tagName).toBe('BUTTON');
     expect(start.getAttribute('type')).toBe('button');
+    expect(start.querySelector('svg')).toBeNull();
   });
 
   it('تنادي onStart مرّةً واحدة عند الضغط على «ابدأ الآن»', async () => {
@@ -112,7 +113,12 @@ describe('شاشة الترحيب', () => {
 
     const peek = container.querySelector('.onboarding__peek');
     expect(peek).not.toBeNull();
-    expect(peek?.querySelector('.command__body')?.textContent ?? '').toContain('/usr/bin/ditto');
+    expect(peek?.querySelector('.onboarding__proof-command')?.textContent).toBe(
+      '$ ditto ~/Documents ~/Desktop/Backup',
+    );
+    expect(peek?.querySelector('.onboarding__proof-caption')?.textContent).toBe(
+      'الأمر ظاهر قبل أن يعمل',
+    );
   });
 
   it('المقتطف داخل البنية نفسها التي يظهر بها كل شيء آخر', () => {
@@ -129,7 +135,7 @@ describe('شاشة الترحيب', () => {
   it('لا نمط سطريّ يؤخّر المقتطف أو يُخفيه', () => {
     const { container } = render(<Onboarding onStart={() => {}} />);
     const peek = container.querySelector<HTMLElement>('.onboarding__peek');
-    const command = peek?.querySelector<HTMLElement>('.command');
+    const command = peek?.querySelector<HTMLElement>('.onboarding__proof-command');
 
     // الطريق الثاني إلى العطل نفسه: تأخيرٌ يُكتب في JSX بدل CSS. النمط السطري
     // يغلب كل ورقة، فيُحرَس هنا حيث يُقرأ.
@@ -140,19 +146,14 @@ describe('شاشة الترحيب', () => {
     }
   });
 
-  it('الأمر مكسورٌ على أربعة أسطر بالضبط: عليها يقوم حجز الارتفاع', () => {
+  it('يعرض برهان Page 15 في سطر واحد بلا شريط عنوان أو تفكيك طرفية', () => {
     const { container } = render(<Onboarding onStart={() => {}} />);
-    const body = container.querySelector('.onboarding__peek .command__body');
+    const proof = container.querySelector('.onboarding__proof-command');
 
-    // `--peek-lines` في `onboarding.css` مضروبٌ في ارتفاع السطر ليحجز ارتفاع
-    // الصندوق قبل وصول خطّ `mono`. زيادةُ سطرٍ هنا دون تحديث الرمز هناك تعيد
-    // القفزة بالضبط. الرقم مكتوبٌ حرفيًا في الطرفين ليصطدما.
-    const lines = (body?.textContent ?? '').split('\n');
-    expect(lines).toHaveLength(4);
-
-    // ولا سطرٌ منها يطول فيفيض عن الصندوق: الفيضان يُظهر شريط تمريرٍ أفقيًّا
-    // يأكل من الارتفاع، وهو المصدر الثاني للقفزة.
-    for (const line of lines) expect(line.length).toBeLessThanOrEqual(40);
+    expect(proof?.textContent).toBe('$ ditto ~/Documents ~/Desktop/Backup');
+    expect(proof?.textContent).not.toContain('\n');
+    expect(container.querySelector('.onboarding__peek .command__bar')).toBeNull();
+    expect(container.querySelector('.onboarding__peek .command__body')).toBeNull();
   });
 
   it('المقتطف خارج ترتيب التبويب: أول Tab للفعل لا للرسم المحجوب', () => {
@@ -171,7 +172,9 @@ describe('شاشة الترحيب', () => {
     // وهذا هو الموضع الذي جاءت منه المحطّة: صندوقٌ يمرّر أفقيًا تجعله
     // المتصفّحات الحديثة قابلًا للتبويب من تلقائها — لا يمنعه إلا تصريح.
     // (‏jsdom لا يفعل ذلك، فيُحرَس التصريح نفسه لا أثره.)
-    expect(peek?.querySelector('.command__body')?.getAttribute('tabindex')).toBe('-1');
+    expect(
+      peek?.querySelector('.onboarding__proof-command')?.getAttribute('tabindex'),
+    ).toBe('-1');
   });
 
   it('الفعل الأساسي يُبلَغ ويُفعَّل بلوحة المفاتيح وحدها', async () => {

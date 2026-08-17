@@ -15,7 +15,7 @@
  *    والتحذيرات عليه.
  */
 import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import Satr from './satr';
 import { AR } from './i18n';
 import type { PlanResponse } from './ipc';
@@ -57,6 +57,7 @@ describe('سَطْر مطويًّا', () => {
     expect(rail).toBeTruthy();
     expect(rail?.textContent).toContain(AR['app.satr']);
     expect(rail?.textContent).toContain(AR['satr.idle.title']);
+    expect(rail?.querySelector('svg')).toBeNull();
 
     // العقد البنيوي: لا محتوًى تقنيًّا ولا مسرحًا ولا حتى وسمَ قسمٍ في المطويّة.
     // كلّها مساحةٌ محجوزة لما لا يوجد، وهي العطل الذي تكرّر ثلاث مرّات.
@@ -66,7 +67,7 @@ describe('سَطْر مطويًّا', () => {
   });
 
   it('يعلن طيّه بصنفٍ على اللوحة نفسها', () => {
-    // الصنف هو ما يقرؤه `app.css` ليقرّر العرض، فغيابُه يعني لوحةً بعرض
+    // الصنف هو ما يقرؤه `operation-layout.css` ليقرّر العرض، فغيابُه يعني لوحةً بعرض
     // المطويّة وفيها محتوى المتوسّعة — أو العكس.
     const idle = render(<Satr plan={null} />);
     expect(idle.container.querySelector('.satr')?.className).not.toContain('satr--live');
@@ -105,51 +106,66 @@ describe('سَطْر متوسّعًا', () => {
     expect(screen.queryByText(AR['satr.idle.title'])).toBeNull();
   });
 
-  it('يعرض الأمر رمزًا رمزًا كما جاء من الخطة', () => {
+  it('يعرض الأمر رمزًا رمزًا كما جاء من الخطة بلا بادئة طرفية', () => {
     const { container } = render(<Satr plan={PLAN} />);
-    const tokens = [...container.querySelectorAll('.arg__token')].map((n) => n.textContent);
+    const tokens = [...container.querySelectorAll('.command__token')].map((n) =>
+      n.textContent?.trim(),
+    );
     expect(tokens).toEqual(PLAN.argv_display);
+    expect(container.querySelector('.command__body')?.textContent?.trim().startsWith('$')).toBe(false);
   });
 
   it('يلوّن كل رمز بدوره المعلَن لا بتخمينٍ من نصّه', () => {
     const { container } = render(<Satr plan={PLAN} />);
-    const tokens = container.querySelectorAll('.arg__token');
-    expect(tokens[0]?.className).toContain('tok-name');
-    expect(tokens[1]?.className).toContain('tok-flag');
-    expect(tokens[3]?.className).toContain('tok-path');
+    const tokens = container.querySelectorAll('.command__token');
+    expect(tokens[0]?.className).toContain('command__token--tool');
+    expect(tokens[0]?.querySelector('.tok-name')).toBeTruthy();
+    expect(tokens[1]?.className).toContain('command__token--flag');
+    expect(tokens[3]?.className).toContain('command__token--path');
   });
 
-  it('يفتح الأمر ويطوي شرحه', () => {
-    // الترتيب هو العقد: الأمر أوّلًا مفتوحًا، ثم الوسائط بشرحٍ مطويّ في كلٍّ
-    // منها. سبعُ بطاقاتٍ مفتوحة معًا كانت تدفع الأمرَ إلى أعلى جدارٍ من الشرح.
+  it('يعرض أمر Page 16 المدمج ولا يعيد تشريح الوسائط القديم', () => {
     const { container } = render(<Satr plan={PLAN} />);
     expect(container.querySelector('.command__body')?.textContent).toContain(
       PLAN.argv_display[0],
     );
-    const folds = [...container.querySelectorAll('.arg')];
-    expect(folds.length).toBe(PLAN.explain.length);
-    for (const fold of folds) {
-      expect(fold.tagName, 'صفُّ الوسيط ليس قسمًا يُطوى').toBe('DETAILS');
-      expect((fold as HTMLDetailsElement).open, 'شرحُ الوسيط مفتوح ابتداءً').toBe(false);
-    }
-    // والملاحظات قسمٌ مطويّ كلّه.
-    const notes = container.querySelector('.satr__notes');
-    expect(notes?.tagName).toBe('DETAILS');
-    expect((notes as HTMLDetailsElement).open).toBe(false);
+    expect(container.querySelector('.arg')).toBeNull();
+    expect(container.querySelector('.args')).toBeNull();
+    expect(container.querySelector('.satr__notes')).toBeNull();
+    expect(container.querySelector('.command__copy svg')).toBeNull();
   });
 
-  it('يفتح صفَّ الوسيط الذي عليه ملاحظة، فلا يُطوى تنبيه', () => {
-    // ‏`tokenNotes` تنبّه على محارف مريبة في الاسم. تنبيهٌ مطويّ تنبيهٌ لم يقع.
+  it('يبقي تحذير المسافة ظاهرًا تحت الأمر لا داخل صفٍّ مطوي', () => {
     const flagged: PlanResponse = {
       ...PLAN,
+      argv_display: PLAN.argv_display.map((token, i) =>
+        i === 3 ? '/Users/x/src ' : token,
+      ),
       explain: PLAN.explain.map((tok, i) =>
         i === 3 ? { ...tok, token: '/Users/x/src ' } : tok,
       ),
     };
     const { container } = render(<Satr plan={flagged} />);
-    const rows = [...container.querySelectorAll('.arg')] as HTMLDetailsElement[];
-    expect(rows[3]?.open, 'صفٌّ عليه ملاحظة وهو مطويّ').toBe(true);
-    expect(rows[3]?.querySelector('.arg__flagged')).toBeTruthy();
-    expect(rows[2]?.open, 'صفٌّ بلا ملاحظة وهو مفتوح').toBe(false);
+    expect(container.querySelector('.command__warning')?.textContent).toBe(
+      AR['satr.command.suspicious'],
+    );
+    expect(container.querySelector('.arg')).toBeNull();
+  });
+
+  it('يصل حالات الخطة والتشغيل والإلغاء بالفعل المناسب', () => {
+    render(<Satr plan={PLAN} phase="planning" />);
+    expect(screen.getByText(AR['satr.state.planned'])).toBeTruthy();
+    expect(screen.queryByRole('button', { name: AR['satr.action.cancel'] })).toBeNull();
+
+    cleanup();
+    const onCancel = vi.fn();
+    render(<Satr plan={PLAN} phase="running" onCancel={onCancel} />);
+    screen.getByRole('button', { name: AR['satr.action.cancel'] }).click();
+    expect(onCancel).toHaveBeenCalledTimes(1);
+
+    cleanup();
+    render(<Satr plan={PLAN} phase="cancelling" onCancel={vi.fn()} />);
+    const waiting = screen.getByRole('button', { name: AR['state.cancelling'] });
+    expect((waiting as HTMLButtonElement).disabled).toBe(true);
   });
 });

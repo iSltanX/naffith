@@ -1,353 +1,181 @@
-/* أنماط شاشة الترحيب — بلغة mockups-v3.
-   لا قيمة لونية ولا مقاسية مكتوبة هنا: كلها رموز من نظام التصميم، أو حسابٌ
-   على رموز حين احتاج المقاس قيمةً لا يعطيها رمزٌ واحد.
-
-   ── لماذا نُقلت قواعد mockups-v3 إلى هنا بدل استيراد الورقة
-
-   `src/design-system/mockups-v3.css` منسوخة في المشروع ولا تُستورد من أحد،
-   وذلك مقصود: محدّداتها العارية `.screen` و`.dialog` و`.dialog__actions` تصطدم
-   بأصنافٍ يملكها التطبيق، فيصير ترتيبُ التحميل وحده هو ما يقرّر الغالب — عطلٌ
-   يظهر في شاشةٍ أخرى غير التي عُدِّلت. واستيرادُ جزءٍ منها غير ممكن: CSS لا
-   تستورد قاعدةً بعينها، و`@import` يجلب الورقة كاملة.
-
-   والقواعد نفسها لا تُستعمل كما هي على أي حال: النموذج المرجعي يرسم
-   `.onboarding-visual h1` و`.onboarding-step h3` — محدّداتُ عناصر داخل شاشةٍ
-   واحدة — والتطبيق يكتب `.onboarding__title` و`.onboarding__step-title`. فما
-   نُقل هو *القرارات*: السطحان المتجاوران وعمقهما المختلف، شريط الحافّة على
-   المقتطف، بطاقات الخطوات ذات عمود الرقم ‎٢٨px. وكلّها مكتوبة تحت `.onboarding`
-   وحدها فلا تتسرّب إلى الشاشات الأربع الأخرى، ولم تُحوَّل بعد.
-
-   ══════════════════════════════════════════════════════════════════════════
-   ── قانون هذه الورقة: النافذة إطارٌ واحد، والأحجام ثابتة، والمسافات تتنفّس
-   ══════════════════════════════════════════════════════════════════════════
-
-   ثلاثة أعطال متتالية في هذه الشاشة كان لها جذرٌ واحد: قراءةُ المقادير للمرأى.
-
-   1. كانت المقادير الرأسية درجاتٍ في استعلامَي وسائط (`max-width: 880` ثم
-      `max-height: 580`) يتنازعان `padding-block` نفسه بالتخصيص نفسه، فيغلب
-      الأخير في الملف. المقيس: تقصير النافذة بكسلٍ واحد — من ‎581 إلى ‎580 —
-      كان يزيد المحتوى ‎16px.
-   2. ثم صارت منحنيات `clamp()` تقرأ `vh`، فزال التنازع لكن بقي الاقتران:
-      كل بكسل يُنقص من النافذة كان يُنقص ‎0.44 من المحتوى، فلا يُستردّ من
-      الفراغ إلا ‎0.56 — أي أن الشاشة كانت *تنكمش* بدل أن تنكمش مسافاتها.
-   3. وفوق ذلك نُسخ إطار الـ`mockup` بوصفه عنصرًا من المنتج، فصار في النافذة
-      نافذةٌ ثانية.
-
-   والقانون الذي يمنع الثلاثة:
-
-   1. **لا مقدار يقرأ `vh`.** الارتفاع لا يقرّر شيئًا: `align-content: center`
-      و`justify-content: center` توزّعان الفراغ الزائد حول محتوًى ثابت المقاس،
-      وهذا هو «التنفّس» كلّه.
-   2. **مقاس عنصرٍ لا يقرأ النافذة أصلًا.** الشعار والخطوط والزرّ وصندوق
-      «سَطْر» قيمٌ ثابتة من سلّم الهوية. ما يقرأ العرض هو الحشو وحده — أي
-      المسافة، لا الشيء.
-   3. **لا استعلام وسائط يكتب مقدارًا رأسيًا**، فلا موضع يمكن أن ينقلب فيه شيء.
-
-   وحارس هذا القانون في `onboarding.source.test.ts` — لا في هذا التعليق. */
-
-/* الرموز الثلاثة التي تقرؤها لغة mockups-v3 ولا يعرّفها نظام التصميم. تُستورد
-   من هنا لا من `main.tsx`: انظر تعليق الملف نفسه. */
-@import './app-tokens.css';
-
-/* ── الإطار ───────────────────────────────────────────────────────── */
-/* السطح مقلوب في الوضعين معًا. انظر تعليق الرأس في `onboarding.tsx`: الداكن
-   هنا يعني «الطبقة التي تحت»، لا «النظام في الوضع الليلي». */
 .onboarding {
-  /* ══ الإطار الوحيد هو نافذة macOS ═══════════════════════════════════
-     ملفات `mockups-v3` صفحاتُ HTML تُعرض في متصفّح، والبطاقة الكبيرة فيها
-     أداةُ عرضٍ تحصر التصميم وسط صفحةٍ لا حدّ لعرضها — ليست عنصرًا من عناصر
-     المنتج. وقد نُسخت هنا حرفيًا (‏`max-width` + إطار + زوايا + ظلّ)، فصار
-     المستخدم يرى نافذةً داخل نافذة: نافذة النظام، وبداخلها بطاقةٌ ثابتة
-     يتّسع الفراغ حولها كلّما كبرت النافذة.
-     في التطبيق نافذةٌ واحدة، فالسطح يمتدّ من حافّة إلى حافّة، ولا حشو هنا:
-     الحشو مِلك اللوحتين كي تبقى الخلفية ملاصقةً للحواف. */
-  min-height: 100vh;
+  height: 100%;
+  min-height: 100%;
+  overflow-y: auto;
   display: grid;
-  background: var(--bg-inverse);
-  color: var(--text-on-inverse);
-
-  /* ══ المقادير: أحجامٌ ثابتة، ومسافاتٌ وحدها تتنفّس ══════════════════
-     القاعدة التي انتُهكت سابقًا: مقاسُ عنصرٍ لا يقرأ النافذة أبدًا. الشعار
-     والخطوط والزرّ وصندوق «سَطْر» مقاساتٌ ثابتة من سلّم الهوية، فلا تكبر ولا
-     تصغر مع السحب. والمسافات وحدها هي المرنة: تنكمش تدريجيًا حين تضيق النافذة
-     كي يبقى كل شيء ظاهرًا، ويتّسع ما حول المحتوى حين تكبر — وهذا الاتّساع
-     تصنعه `justify-content: center` في اللوحتين، لا حسابٌ على `vh`.
-
-     ولا مقدار هنا يقرأ الارتفاع: قراءتُه كانت تجعل ارتفاعَ المحتوى تابعًا
-     لارتفاع النافذة، فتنكمش الشاشة كلّها بدل أن تنكمش مسافاتها. */
-
-  /* حشو اللوحتين: هو الهامش الخارجي للمحتوى عن حواف النافذة. */
-  --h-pane: clamp(var(--space-20), 3.6vw, var(--space-56));
-  --v-pane: clamp(var(--space-20), 3vw, var(--space-48));
-
-  /* الفواصل بين الكتل الكبرى: العلامة والعنوان، والمقتطف، والفعل. */
-  --v-block: var(--space-24);
-
-  /* الفواصل الصغرى: الجملة تحت العنوان، وحشو بطاقة الخطوة، والتذييل. */
-  --v-tight: var(--space-12);
-
-  /* فرجة ما بين بطاقات الخطوات — مقاسها في التصميم. */
-  --v-gap: var(--space-10);
-
-  /* حلقة البؤرة مرسومة لسطحٍ فاتح؛ على هذا السطح تبهت. اللون البديل مأخوذ من
-     رموز السطح المقلوب نفسها، فيبقى التباين محسوبًا لا مخمّنًا. */
-  --focus-ring-color: var(--accent-on-inverse);
+  grid-template-rows: var(--titlebar-h) minmax(0, 1fr);
+  background: var(--bg-canvas);
+  color: var(--text-primary);
 }
 
-/* الإطار يُركَّز برمجيًا ليُقرأ من العنوان، ولا يُبوَّب إليه أبدًا. حلقةٌ حول
-   الشاشة كلها عند التركيب ضجيجٌ يشير إلى ما لا يُفعل به شيء. */
 .onboarding:focus,
-.onboarding:focus-visible {
-  outline: none;
+.onboarding:focus { outline: none; }
+
+.onboarding__titlebar {
+  min-height: var(--titlebar-h);
+  padding-left: var(--space-80);
+  background: var(--bg-surface);
+  border-block-end: var(--border-hairline) solid var(--border-subtle);
+  -webkit-app-region: drag;
+  user-select: none;
 }
 
-/* ── اللوحتان ─────────────────────────────────────────────────────── */
-/* منطقتان من النافذة نفسها، لا بطاقةٌ تطفو داخلها. لا `max-width` يحصرهما في
-   وسط الشاشة، ولا إطار ولا زوايا ولا ظلّ: كلّها ما كان يرسم «نافذةً داخل
-   نافذة». وتمتدّان إلى الحواف الأربع، والفصل بينهما شعرةٌ واحدة. */
 .onboarding__panes {
-  /* ══ لماذا بقي العمودان عمودين حتى أضيق نافذة ══════════════════════
-     كانت الورقة ترصّ اللوحتين عمودًا واحدًا تحت ‎880px، وهذا هو مصدر العطل
-     الأول لا علاجه. المقيس عند ‎680px عرضًا: اللوحتان مرصوصتان ‎659.2px،
-     ومتجاورتان ‎428.5px — أي أن الرصّ وحده يشتري ‎230.7px من الارتفاع، وهو
-     أكثر من العجز كلّه (‎203px) الذي كان يدفع «ابدأ الآن» خارج النافذة عند
-     ‎680×520. السبب حسابيّ لا ذوقيّ: عمودان متجاوران ارتفاعُهما *أكبرهما*،
-     ومرصوصان ارتفاعُهما *مجموعهما*.
-
-     والرصّ لم يكن يشتري بذلك قراءةً أفضل: نصّ الخطوة في العمود المرصوص يبلغ
-     ‎507.8px أي نحو ‎٧٨ محرفًا في السطر — فوق أطول سطرٍ مقروء؛ وفي العمودين
-     يبلغ ‎216.2px أي نحو ‎٣٣ محرفًا، وهو الطرف القصير من المدى المقروء لا
-     خارجه. فالرصّ كان ينقل السطر من قصيرٍ مقبول إلى طويلٍ مرهق، ويشتري ذلك
-     بدفع الفعل خارج الشاشة.
-
-     والمواصفة (‏UX-SPEC §12) تكتب الرصّ لنطاق «صغير» أي ما دون ‎720px، ومداها
-     المكتوب ينزل إلى ‎420px. لكن النافذة لا تنزل تحت ‎680px، فالنطاق المتاح
-     منه ‎40px فقط — وهو ثمنٌ لا يُدفع فيه وضعُ تخطيطٍ كامل ونقطةُ تحوّل
-     تُختبر، مقابل سطرٍ أطول من اللازم وفعلٍ مقطوع. فالانحراف عن تلك الفقرة
-     مقصود ومقيس، ومكتوبٌ هنا كي لا يُقرأ سهوًا.
-
-     و`minmax(0, …)` في العمودين لأن المقتطف صندوق تمرير: بلا حدٍّ أدنى صفري
-     يفرض عرضَه على الشبكة فتتجاوز اللوحتان النافذة. */
+  min-height: 484px;
   display: grid;
-  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
-  align-items: stretch;
-  background: var(--bg-inverse-elevated);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  direction: ltr;
 }
 
-/* لوحة التعريف أعمق من لوحة التشغيل، والصفحة بينهما: ‎950 تحت، و‎900 للصفحة،
-   و‎800 للوحة التشغيل. ثلاث مواد لا لونان، وهي إشارة العمق نفسها التي تبيعها
-   الشاشة: طبقةٌ تحت طبقة. */
-/* `align-content: center` هي ما يجعل الفراغ ينمو حول المحتوى بدل أن ينمو
-   المحتوى: العناصر بمقاساتها الثابتة، والمساحة الزائدة تتوزّع أعلاها وأسفلها
-   من تلقائها. فلا حاجة إلى حسابٍ على `vh` كي «تتنفّس» الشاشة. */
+.onboarding__visual,
+.onboarding__copy {
+  min-width: 0;
+  padding: var(--space-32);
+  direction: rtl;
+}
+
 .onboarding__visual {
+  grid-column: 2;
   display: grid;
   align-content: center;
-  padding-block: var(--v-pane);
-  padding-inline: var(--h-pane);
-  background: var(--bg-inverse-deep);
+  justify-items: center;
+  background: var(--bg-surface);
+  border-inline-end: var(--border-hairline) solid var(--border-subtle);
 }
 
 .onboarding__copy {
-  min-width: 0;
+  grid-column: 1;
+  grid-row: 1;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  padding-block: var(--v-pane);
-  padding-inline: var(--h-pane);
-  /* الفاصل شعرةٌ على حافّة البداية، لا عنصرًا مطلقًا فوق اللوحتين كما في
-     النموذج المرجعي. */
-  border-inline-start: var(--border-hairline) solid var(--border-on-inverse);
+  background: var(--bg-canvas);
 }
 
-/* ── الرأس ────────────────────────────────────────────────────────── */
-/* العلامة رسمٌ لا نص: مقاسها لا يتبع تكبير النص، ولا تقتطع شيئًا لأنها عنصر
-   كتلة لا تشارك أحدًا سطره. وهي أول ما ينكمش حين تضيق النافذة — إذ لا تحمل
-   معلومةً تُفقد بالتصغير، بخلاف النص.
-
-   ومقاسها **ثابت**. كان يقرأ المحورين بـ`min()` ثم العرضَ وحده، فكانت تنكمش
-   من ‎72px إلى ‎26.8px مع سحب النافذة — والشعار هوية لا مسافة: تصغيرُه تصغيرٌ
-   للتصميم لا إعادةُ ترتيب. */
-.onboarding__mark {
-  --mark-size: calc(var(--space-64) + var(--space-8));
-  display: block;
-  width: var(--mark-size);
-  height: var(--mark-size);
-  margin-block-end: var(--v-block);
-  color: var(--brand-mark);
+.onboarding__visual > *,
+.onboarding__steps,
+.onboarding__actions,
+.onboarding__once {
+  width: 100%;
+  max-width: 396px;
 }
+
+.onboarding__steps,
+.onboarding__actions,
+.onboarding__once { align-self: center; }
 
 .onboarding__title {
   margin: 0;
-  color: var(--text-on-inverse);
+  color: var(--brand-mark);
+  font-family: var(--font-display);
+  font-size: var(--fs-display);
+  line-height: var(--lh-display);
+  font-weight: var(--fw-extrabold);
 }
 
-/* الفاصل خفيف ومُلوَّن: هو ما يجعل الاسمين اسمًا واحدًا لا اسمين متجاورين. */
-.onboarding__sep {
-  color: var(--accent-on-inverse);
-  font-weight: var(--fw-light);
-}
 
 .onboarding__lede {
-  margin: var(--v-tight) 0 0;
-  color: var(--text-on-inverse-secondary);
-  /* حدٌّ على طول السطر لا على عرض اللوحة: اللوحة تتّسع في النوافذ العريضة،
-     والجملة لا يجوز أن تتّسع معها. */
-  max-width: 46ch;
+  margin: var(--space-16) 0 0;
+  color: var(--text-secondary);
 }
 
-/* ── الخطوات ──────────────────────────────────────────────────────── */
+.onboarding__peek {
+  width: 100%;
+  height: 112px;
+  margin: var(--space-24) 0 0;
+  padding: var(--space-16) var(--space-8) var(--space-12);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  overflow: hidden;
+  background: var(--command-bg);
+  border: var(--border-hairline) solid var(--command-border);
+  border-radius: var(--radius-card);
+}
+
+.onboarding__proof-command {
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+  direction: ltr;
+  text-align: left;
+  unicode-bidi: isolate;
+  white-space: nowrap;
+  color: var(--command-text);
+  font-family: var(--font-mono);
+  font-variant-ligatures: none;
+  font-size: var(--fs-terminal);
+  line-height: var(--lh-terminal);
+}
+
+.onboarding__proof-caption {
+  margin-block-start: auto;
+  direction: rtl;
+  text-align: right;
+  color: var(--command-comment);
+  font-family: var(--font-body);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+}
+
 .onboarding__steps {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
-  gap: var(--v-gap);
-}
-
-/* بطاقةٌ هادئة لكل خطوة: سطحٌ غائر داخل لوحة التشغيل يفصل الثلاث عن بعضها بلا
-   خطوطٍ فاصلة. والثلاث سواء — النموذج المرجعي يميّز الأولى بـ`is-current`
-   وشريطٍ ملوّن، وهذا هنا ادّعاءٌ كاذب: لا خطوة «جارية» في شاشةٍ لم يبدأ فيها
-   شيء بعد، والتمييز يجعل المستخدم يبحث عمّا يفترض أنه أنجزه. */
-.onboarding__step {
-  /* شبكة لا `flex`: عمود الرقم يبقى بعرضٍ واحد في الخطوات الثلاث، فتصطفّ
-     العناوين على خطٍّ واحد مهما تغيّر مقاس النص.
-
-     والعمود يبقى بجانب النص عند كل مقاسٍ تبلغه النافذة، ولا يُرصّ فوقه: عرضه
-     ‎٢٨px، وأضيق نصٍّ يبقى له عند حدّ النافذة الأدنى ‎216px. رصُّه يشتري سطرًا
-     لا حاجة إليه ويكسر الاصطفاف الذي يجعل الثلاث تُقرأ تسلسلًا.
-
-     والحشو الرأسي وحده هو ما يتنفّس: الحشو الأفقي ثابتٌ لأن تقليصه يسرق من
-     عرض السطر وهو أضيق ما في الشاشة أصلًا. */
-  display: grid;
-  grid-template-columns: var(--space-28) minmax(0, 1fr);
   gap: var(--space-12);
-  align-items: start;
-  padding-block: var(--v-tight);
-  padding-inline: var(--space-12);
-  border-radius: var(--radius-card);
-  background: var(--bg-inverse);
 }
 
-/* لا حالة `hover` هنا: الخطوة ليست قابلة للنقر، وردُّ فعلٍ بصريّ على ما لا
-   يُنقر يَعِد بتفاعلٍ غير موجود. */
+.onboarding__step {
+  min-height: var(--library-card-h);
+  display: grid;
+  grid-template-columns: var(--control-h-search) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-16);
+  padding: var(--space-16);
+  border: var(--border-hairline) solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--bg-surface);
+}
+
 .onboarding__n {
-  width: var(--space-28);
-  height: var(--space-28);
-  flex: none;
+  width: var(--control-h-search);
+  height: var(--control-h-search);
   display: grid;
   place-items: center;
   border-radius: var(--radius-full);
-  background: var(--bg-inverse-deep);
-  border: var(--border-hairline) solid var(--border-on-inverse);
-  color: var(--accent-on-inverse);
-  font-family: var(--font-mono);
-  font-size: var(--fs-caption);
+  background: var(--bg-selected);
+  color: var(--text-accent);
+  font-family: var(--font-display);
+  font-size: var(--fs-body);
   font-weight: var(--fw-bold);
 }
 
-.onboarding__step-text {
-  min-width: 0;
+.onboarding__step:first-child .onboarding__n {
+  background: var(--action-primary);
+  color: var(--action-primary-text);
 }
 
-.onboarding__step-title {
-  margin: 0;
-  color: var(--text-on-inverse);
+.onboarding__step-text { min-width: 0; }
+.onboarding__step-title { margin: 0; }
+.onboarding__step-body { margin: var(--space-2) 0 0; color: var(--text-secondary); }
+.onboarding__actions { margin-block-start: var(--space-16); }
+.onboarding__actions .btn {
+  width: 100%;
+  height: var(--control-h-lg);
+  border-radius: var(--radius-cta);
 }
+.onboarding__once { margin-block-start: var(--space-8); text-align: center; color: var(--text-muted); }
 
-.onboarding__step-body {
-  margin: var(--space-2) 0 0;
-  color: var(--text-on-inverse-muted);
-}
-
-/* ── مقتطف سَطْر ───────────────────────────────────────────────────── */
-.onboarding__peek {
-  margin-block-start: var(--v-block);
-}
-
-/* شريط الحافّة من النموذج المرجعي: هو ما يربط الصندوق بالفعل الأساسي لونًا.
-   واللون من رموز السطح المقلوب لا من `--action-primary`، فالتباين على هذه
-   المادّة محسوبٌ مرّةً واحدة في `--*-on-inverse` ويصحّ في الوضعين. */
-.onboarding__peek .command {
-  border-inline-start: var(--border-accent) solid var(--accent-on-inverse);
-}
-
-.onboarding__peek .command__body {
-  /* عدد أسطر الأمر، مكتوبًا رمزًا لا رقمًا مبعثرًا. مصدره `PEEK_LINES` في
-     `onboarding.tsx`، وحارسه اختبارٌ في الطرفين. */
-  --peek-lines: 4;
-
-  padding: var(--space-8) var(--space-12);
-  font-size: var(--fs-terminal);
-  /* ارتفاع السطر يُثبَّت هنا صراحةً بدل أن يُورَّث من `--lh-command`: هو نصف
-     الحساب أدناه، وقيمتان لمقدارٍ واحد في ملفّين تنجرفان. */
-  line-height: var(--lh-terminal);
-
-  /* الارتفاع محجوزٌ من أول إطار.
-
-     `font-display: swap` يرسم الإطار الأول بخطٍّ بديل ثم يبدّله حين يصل
-     `JetBrains Mono`. ومقاييس الخطّين مختلفة، فارتفاع الصندوق كان يتغيّر
-     لحظةَ التبديل ويقفز ما تحته — وهذا الصندوق أشدّ عناصر الشاشة حساسيةً
-     للمقاييس لأنه `white-space: pre`. حجزُ الارتفاع بحسابٍ لا يعرف الخطّ
-     — ارتفاع السطر × عدد الأسطر + الحشو — يجعل الصندوق يشغل مقاسه النهائي
-     قبل وصول الخطّ وبعده سواء، فيبقى إزاحة التخطيط التراكمية صفرًا مهما
-     تأخّر الخطّ. والبديل المرفوض كان `min-height` بقيمة px مقدّرة: تصحّ مع
-     خطٍّ واحد وتنكسر مع أول تغييرٍ في `--fs-terminal`. */
-  min-height: calc(
-    var(--fs-terminal) * var(--lh-terminal) * var(--peek-lines) + var(--space-8) * 2
-  );
-}
-
-/* ── الفعل ────────────────────────────────────────────────────────── */
-.onboarding__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-8);
-  margin-block-start: var(--v-block);
-}
-
-.onboarding__once {
-  margin: var(--v-tight) 0 0;
-  color: var(--text-on-inverse-muted);
-}
-
-/* ── الحركة ───────────────────────────────────────────────────────── */
-/* الدخول قصير ومرّة واحدة: ارتفاعٌ يسير وظهور، للّوحتين معًا كتلةً واحدة.
-
-   كان للمقتطف حركةُ «انطواء» خاصّة به بتأخيرٍ قدره `--duration-base`، وهي
-   إيماءة الهوية نفسها. لكن `animation-fill-mode: both` يُثبِّت `opacity: 0`
-   طوال التأخير، فكان أهمّ ما في الشاشة — الأمر نفسه — آخرَ ما يظهر فيها،
-   بعد ٢٠٠ms من ظهور كل شيء حوله. الإيماءة لا تساوي أن يصل البرهان متأخّرًا
-   عن الدعوى، فحُذفت: المقتطف يصل مع إخوته في الإطار نفسه.
-
-   ولا يُحرَّك هنا إلا `opacity` و`transform`: كلّ ما عداهما — ارتفاعٌ أو حشو
-   أو إزاحة — يعيد حساب التخطيط في كل إطار ويظهر إزاحةً تراكمية. */
 @keyframes onboarding-rise {
-  from {
-    opacity: 0;
-    transform: translateY(var(--space-8));
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
+  from { opacity: 0; transform: translateY(var(--space-8)); }
+  to { opacity: 1; transform: none; }
 }
 
 .onboarding[data-motion='enter'] .onboarding__panes {
   animation: onboarding-rise var(--duration-base) var(--ease-out) both;
 }
 
-/* السمة تكفي في التطبيق، والاستعلام يكفي وحده لو رُكِّبت الشاشة قبل أن تُقرأ
-   `matchMedia`. الاثنان معًا: لا حركة تحت التفضيل بأي طريق. */
 @media (prefers-reduced-motion: reduce) {
-  .onboarding .onboarding__panes {
-    animation: none;
-  }
+  .onboarding .onboarding__panes { animation: none; }
 }
-
-/* ── المقتطف يبقى، ولا يُخفى ────────────────────────────────────────
-   كان يُخفى تحت ‎856px عرضًا لأنه `white-space: pre` فلا يضيق، وكان يمرَّر
-   أفقيًا فيأكل الشريط من ارتفاعه. لكنه برهان الشاشة: الجملة تدّعي أن الأمر
-   يبقى معروضًا، وهو ذلك الأمر — وإخفاؤه ينقض الدعوى في أضيق نافذة بالذات.
-   وقد كُسر الأمر على أربعة أسطر أطولها ‎٣٢ محرفًا (انظر `PEEK_LINES`)، فعرضه
-   الطبيعي ‎283.6px يسعه العمود عند ‎680px — أضيق نافذة — فلا فيض ولا إخفاء. */

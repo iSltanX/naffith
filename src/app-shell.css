@@ -1,59 +1,61 @@
-/* غلاف التطبيق: ما لا يخصّ شاشةً بعينها.
-   لا قيمة لونية ولا مقاسية مكتوبة هنا: كلها رموز من نظام التصميم، فالغلاف
-   يتبع الوضعين الليلي والنهاري وتباينَهما دون أن يعرف بهما. */
+.app-frame {
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-areas: 'content navigation';
+  grid-template-columns: minmax(0, 1fr) var(--sidebar-w);
+  direction: ltr;
+  background: var(--bg-canvas);
+}
 
-html, body, #root { height: 100%; }
-body { background: var(--bg-canvas); color: var(--text-primary); }
+.app-frame__main {
+  grid-area: content;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  direction: rtl;
+}
 
-/* ── وعاء الشاشة ──────────────────────────────────────────────────── */
+.app-titlebar {
+  flex: none;
+  height: var(--titlebar-h);
+  padding-left: var(--space-80);
+  background: var(--bg-surface);
+  border-block-end: var(--border-hairline) solid var(--border-subtle);
+  -webkit-app-region: drag;
+  user-select: none;
+}
 
-/* حشوةُ الصفحة وعرضها الأقصى وتوسيطها: مكتوبةٌ مرّة واحدة في الغلاف، لا في
-   ملفّ كل شاشة.
+.app-frame__viewport {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
 
-   كانت مِلك شاشة «نَفِّذ — سَطْر» وحدها، فكانت قائمة العمليات والإعدادات
-   وسجلّ التشغيل تُرسم ملاصقةً لحافّتي النافذة: العنوان يُقصّ عند الحافة،
-   وحلقةُ تركيز البطاقة المحاذية لها تُقصّ معها فيغيب نصف دليل التركيز.
+.app-frame__viewport--scroll { overflow: auto; }
+.app-frame__viewport--fixed { display: flex; }
 
-   وموضعُها الغلاف لا الشاشة عمدًا: من يركّب الشاشة هو من يعطيها وعاءها، فلا
-   تُضاف شاشةٌ رابعة غدًا بلا حشوة لأن أحدًا نسي سطرًا في ملفّ أنماطها. */
 .page {
+  width: 100%;
+  max-width: 1120px;
+  margin-inline: auto;
   min-height: 100%;
   display: flex;
   flex-direction: column;
   gap: var(--space-20);
-  padding: var(--space-32) var(--space-24) var(--space-48);
-  /* حدٌّ للسطر لا للنافذة: نصٌّ يمتدّ على شاشةٍ عريضة يضيع أوّله على العين
-     عند الانتقال إلى السطر التالي — وهو في العربية أوّل السطر يمينًا. */
-  max-width: 1120px;
-  margin-inline: auto;
+  padding: var(--space-20) var(--space-40) var(--space-40);
 }
 
-/* شاشةٌ تملك تخطيطها كلّه وتمتدّ إلى حواف النافذة: لا حشوة الوعاء ولا حدّه
-   الأقصى ولا فجوته. شاشة العملية وحدها اليوم — سطحان متجاوران يملآن النافذة،
-   فحصرُهما في عمودٍ موسَّط كان يترك ثلث النافذة فراغًا لا يؤدّي شيئًا. */
 .page--bleed {
-  padding: 0;
   max-width: none;
-  gap: 0;
-  /* ارتفاعٌ محدَّد لا حدٌّ أدنى وحده: بـ`min-height` تنمو الصفحة مع محتواها
-     فيمرَّر المستند كلّه — يهاجر التمرير من العمود إلى النافذة، ويسقط تحت
-     الطيّة كلُّ ما التصق بأسفل العمود. القطعُ هنا يجعل كل عمودٍ يمرّر ما فيه. */
+  margin: 0;
+  min-height: 0;
   height: 100%;
+  padding: 0;
+  gap: 0;
 }
 
-/* الوعاء يقبل البؤرة برمجيًا حين لا تلتقطها الشاشة التي بداخله، ولا يُبوَّب
-   إليه أبدًا (انظر `Page` في `app.tsx`). وبلا هذا السطر ترتسم حلقةُ تركيز حول
-   الشاشة كلها: حلقةٌ تحيط كل شيء لا تشير إلى شيء، وهي أسوأ من لا دليل لأنها
-   تَعِد بفعلٍ عند حدودها. */
-.page:focus,
-.page:focus-visible {
-  outline: none;
-}
-
-/* شاشة رسالة قصيرة (فهرس يُحمَّل، أو عملية لم تعد موجودة). تُوسَّط رأسيًا
-   لأنها سطرٌ واحد وزرّ: تركها في الأعلى يجعل الشاشة تبدو معطوبة لا هادئة.
-   وهي بعد `.page` في الملف نفسه، فحشوتُها تغلب حشوة الوعاء بلا اعتمادٍ على
-   ترتيب استيراد الملفّات. */
 .page--message {
   align-items: center;
   justify-content: center;
@@ -62,7 +64,133 @@ body { background: var(--bg-canvas); color: var(--text-primary); }
   text-align: center;
 }
 
-/* ── حوار المغادرة ────────────────────────────────────────────────── */
+.page:focus {
+  outline: none;
+}
+
+.app-nav {
+  position: relative;
+  z-index: var(--z-nav);
+  grid-area: navigation;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-20) var(--space-12) var(--space-24);
+  direction: rtl;
+  background: var(--bg-surface);
+  border-inline-end: var(--border-hairline) solid var(--border-subtle);
+}
+
+.app-nav__brand {
+  min-height: var(--space-56);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding-inline: var(--space-12);
+  font-family: var(--font-display);
+}
+
+.app-nav__brand-full {
+  color: var(--brand-mark);
+  font-size: var(--fs-section-title);
+  line-height: 1.2;
+  font-weight: var(--fw-extrabold);
+}
+
+
+.app-nav__brand-rail {
+  display: none;
+  color: var(--brand-mark);
+  font-size: var(--fs-section-title);
+  font-weight: var(--fw-extrabold);
+}
+.app-nav__primary {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin-block-start: var(--space-12);
+}
+.app-nav__categories {
+  min-height: 0;
+  overflow-y: auto;
+  padding-block-start: var(--space-8);
+}
+.app-nav__utility { margin-block-start: auto; display: grid; gap: var(--space-12); }
+
+.app-nav__item {
+  position: relative;
+  width: 100%;
+  height: var(--control-h-nav);
+  display: flex;
+  align-items: center;
+  gap: var(--space-10);
+  padding-inline: var(--space-12);
+  border: 0;
+  border-inline-start: var(--border-accent) solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-display);
+  font-size: var(--fs-body-secondary);
+  font-weight: var(--fw-semibold);
+  text-align: start;
+  cursor: pointer;
+  appearance: none;
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard);
+}
+
+.app-nav__item--category {
+  height: var(--control-h-nav-category);
+  padding-inline-start: var(--space-20);
+  font-family: var(--font-body);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-regular);
+}
+
+.app-nav__item svg {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  flex: none;
+  color: var(--text-muted);
+  transition: color var(--duration-fast) var(--ease-standard);
+}
+
+.app-nav__item:hover,
+.app-nav__item:focus {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.app-nav__item:hover svg,
+.app-nav__item:focus svg,
+.app-nav__item[aria-current='page'] svg,
+.app-nav__item.is-ancestor svg {
+  color: var(--text-accent);
+}
+
+.app-nav__item[aria-current='page'] {
+  background: var(--bg-selected);
+  border-inline-start-color: var(--action-primary);
+  color: var(--text-accent);
+  font-weight: var(--fw-bold);
+}
+
+.app-nav__item.is-ancestor {
+  background: var(--bg-selected);
+  color: var(--text-accent);
+  font-weight: var(--fw-bold);
+}
+
+/* الضغط — الحالة `Active` في 14.3 لكل صيغ عنصر التنقّل.
+   تُعلن **بعد** `current`/`ancestor` وبالخصوصية نفسها كي تفوز أثناء الضغط
+   وحدَه، ولا تُعلن إلا `background`: فتبقى هوية العنصر الحالي (لونُه ووزنُه)
+   كما هي، ولا يُعاد رسم المعنى لأجل حالةٍ لحظية تزول برفع الإصبع. */
+.app-nav__item:active { background: var(--bg-active); }
+
+.app-nav__tooltip { display: none; }
 
 .scrim {
   position: fixed;
@@ -78,36 +206,111 @@ body { background: var(--bg-canvas); color: var(--text-primary); }
 .dialog {
   width: 100%;
   max-width: var(--width-narrow);
-  /* ارتفاع محدود ونصّ يمرّ: حوارٌ أطول من النافذة يدفع أزراره خارجها، فيصير
-     قرارًا لا يمكن اتّخاذه — وهذا أسوأ من غياب الحوار. */
+  min-height: var(--dialog-h);
   max-height: calc(100% - var(--space-40));
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: var(--space-12);
-  padding: var(--space-24);
+  gap: var(--space-16);
+  padding: var(--space-28);
   border-radius: var(--radius-modal);
   box-shadow: var(--shadow-xl);
   animation: dialog-in var(--duration-fast) var(--ease-out) both;
 }
 
-.dialog__title { margin: 0; }
+.dialog__title,
 .dialog__body { margin: 0; }
+
 .dialog__actions {
-  display: flex;
-  gap: var(--space-8);
-  flex-wrap: wrap;
-  margin-block-start: var(--space-4);
+  display: grid;
+  grid-template-columns: repeat(2, 180px);
+  gap: var(--space-12);
+  justify-content: center;
+  margin-block-start: auto;
+}
+
+.dialog__actions .btn {
+  width: 180px;
+  height: var(--control-h-md);
+}
+
+.dialog__hint {
+  margin: 0;
+  padding-block-start: var(--space-12);
+  border-block-start: var(--border-hairline) solid var(--border-subtle);
+  color: var(--text-muted);
+  font-family: var(--font-body);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  text-align: center;
 }
 
 @keyframes scrim-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes dialog-in {
   from { opacity: 0; transform: translateY(var(--space-8)); }
-  to   { opacity: 1; transform: none; }
+  to { opacity: 1; transform: none; }
 }
 
-/* حركةٌ تُطفأ بالكامل عند طلبها: الحوار يظهر فورًا، ولا يبقى `both` ممسكًا
-   بحالة البداية. */
+@media (max-width: 959px) {
+  .app-frame { grid-template-columns: minmax(0, 1fr) var(--sidebar-w-collapsed); }
+  .app-nav { padding: var(--space-20) var(--space-4) var(--space-24); align-items: stretch; }
+  .app-nav__brand { padding: 0; align-items: center; }
+  .app-nav__brand-full,
+  .app-nav__label,
+  .app-nav__categories { display: none; }
+  .app-nav__brand-rail { display: block; }
+  .app-nav__item { justify-content: center; padding-inline: 0; }
+  .app-nav__tooltip {
+    position: absolute;
+    inset-block-start: 50%;
+    /* The navigation rail is physically right. In RTL, inline-start is its
+       right edge, so this places the label into the content on the left. */
+    inset-inline-start: calc(100% + var(--space-8));
+    z-index: var(--z-tooltip);
+    display: block;
+    width: max-content;
+    max-width: var(--width-narrow);
+    padding: var(--space-6) var(--space-10);
+    border: var(--border-hairline) solid var(--border-on-inverse);
+    border-radius: var(--radius-control);
+    background: var(--bg-inverse);
+    color: var(--text-on-inverse);
+    box-shadow: var(--shadow-md);
+    font-family: var(--font-display);
+    font-size: var(--fs-label);
+    font-weight: var(--fw-semibold);
+    line-height: var(--lh-label);
+    text-align: start;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-50%) translateX(var(--space-4));
+    transition:
+      opacity var(--duration-base) var(--ease-out),
+      transform var(--duration-base) var(--ease-out),
+      visibility var(--duration-base) var(--ease-out);
+  }
+  .app-nav__item:hover .app-nav__tooltip,
+  .app-nav__item:focus .app-nav__tooltip {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(-50%);
+  }
+  .page { padding-inline: var(--space-24); }
+}
+
+@media (max-width: 759px) {
+  /* At the 680px minimum the 36px titlebar plus this token-built 15px inset
+     places the Library title at audited y=51, while the content width is
+     the full 576px left after the 56px rail and two 24px side insets. */
+  .page {
+    padding: calc(var(--space-14) + var(--border-hairline)) var(--space-24)
+      var(--space-24);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .scrim, .dialog { animation: none; }
+  .scrim,
+  .dialog { animation: none; }
 }

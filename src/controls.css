@@ -9,7 +9,7 @@
    من النظام تحته حدُّنا، وحلقةُ تركيزٍ ثانية فوق حلقة الوكيل: الإطار المزدوج
    الذي كان يُرى ولا يُفسَّر.
 
-   وعلاجُه هنا لا في `library-screen.css` ولا في `shell-screens.css`: العطل نفسه
+   وعلاجُه هنا لا في `library-screen.css` ولا في `run-log.css`: العطل نفسه
    ظهر في شاشتين لأن المكوّن لم يكن موجودًا أصلًا. فيُكتب مرّةً حيث تقرؤه كل
    شاشة — `main.tsx` يحمّله مع `app.css` — وتُستهلك القاعدة ولا تُنسخ.
 
@@ -46,6 +46,25 @@
   block-size: var(--icon-sm);
   flex: none;
   color: var(--text-muted);
+  transition: color var(--duration-fast) var(--ease-standard);
+}
+
+.field:not(.field--disabled):hover .field__icon,
+.field:not(.field--disabled):focus-within .field__icon {
+  color: var(--text-accent);
+}
+
+/* ══ البحث بلا نتيجة — `Search/Field · State=NoResults` في 14.3 ═══════════
+   الحدُّ وحدَه يتلوّن بنبرة التحذير، والسطح يبقى `--bg-surface`: الحالة
+   **ليست خطأً** — الاستعلام صحيح ولا مقابل له — فلا تأخذ نبرة الخطر ولا
+   تُبطل الحقل. ولأن اللون لا يحمل الدلالة وحده (القاعدة الذهبية في 08)،
+   يبقى العدد «‏٠ نتيجة» في العنوان الحيّ هو ما ينطق بالمعنى، وهذا الحدّ
+   صدًى بصريٌّ له لا بديلٌ عنه.
+
+   ويُستثنى التركيز: حين يعود المستخدم إلى الحقل ليصحّح استعلامه تسترجع
+   حلقةُ التركيز الحدَّ — فنبرةٌ واحدة في اللحظة الواحدة، لا حدّان. */
+.field--no-results:not(:focus-within) {
+  border-color: var(--status-warning-border);
 }
 
 /* زرّ المسح الأصليّ في WebKit يرث لون النصّ فيختفي في الوضع الليلي. */
@@ -122,15 +141,19 @@
   background: var(--bg-hover);
   border-color: var(--border-strong);
 }
+.select__button:disabled {
+  cursor: not-allowed;
+  opacity: var(--opacity-disabled);
+  background: var(--bg-sunken);
+}
 /* التركيز: الحدُّ نفسه يتلوّن وتلتصق به حلقةٌ بلا إزاحة، فيُقرآن حلقةً واحدة.
-   ونزعُ `outline` هنا لازم لا تجميل: حلقةُ `:focus-visible` العامّة تُرسم
+   ونزعُ `outline` هنا لازم لا تجميل: حلقةُ التركيز العامّة تُرسم
    بإزاحة ‎2px‎ خارج الحدّ، فتظهر مع حدّ الضابط إطارين متراكزين — وهو بالضبط
    «الإطار البرتقالي المزدوج». */
-.select__button:focus-visible {
+.select__button:focus {
   outline: none;
   border-color: var(--focus-ring-color);
-  box-shadow: 0 0 0 var(--focus-ring-width)
-    color-mix(in srgb, var(--focus-ring-color) 30%, transparent);
+  box-shadow: var(--focus-ring);
 }
 /* والمفتوحة تُعلن نفسها بالحدّ الملوّن وحده — بلا حلقة: الحلقة تقول «هنا
    البؤرة»، والبؤرة حينئذٍ داخل القائمة لا على الزرّ. */
@@ -154,6 +177,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.select__value--placeholder { color: var(--text-muted); }
 /* القرص في الطرف المقابل للنصّ في الاتجاهين: `flex: none` في صفٍّ منطقي يكفي،
    ولا يحتاج قاعدةً ثانية لـ RTL. ودورانُه هو ما يفرّق المفتوحة من المغلقة بلا
    رمزٍ ثانٍ. */
@@ -165,6 +189,11 @@
   transition: transform var(--duration-fast) var(--ease-standard);
 }
 .select__button[aria-expanded='true'] .select__caret { transform: rotate(180deg); }
+.select__button:not(:disabled):hover .select__caret,
+.select__button:not(:disabled):focus .select__caret,
+.select__button[aria-expanded='true'] .select__caret {
+  color: var(--text-accent);
+}
 
 /* القائمة: بعرض الزرّ تمامًا (`inset-inline: 0`) فتُقرأ امتدادًا له لا صندوقًا
    طافيًا بجانبه. وارتفاعُها مسقوف بمنطقةٍ تُمرَّر — لا إخفاء، كما يوجب قانون
@@ -200,7 +229,8 @@
    تبقى على العنصر بعد انتهائها — فرُصدت القائمة في القياس تُرسم شفّافةً فوق
    السجلّ لحظةَ فتحها وإن كانت أرضيتها معتمة بالحساب (`#212133` وopacity ‎1).
    والشفافية وحدها تكفي المعنى: القائمة تظهر ثم تستقرّ. وهي المعالجة نفسها
-   التي تتبعها لوحة «سَطْر» عند التوسّع (`.satr--live > *` في `app.css`). */
+   التي تتبعها لوحة «سَطْر» عند التوسّع (`.satr--live > *` في
+   `operation-layout.css`). */
 @keyframes select-open {
   from { opacity: 0; }
   to   { opacity: 1; }

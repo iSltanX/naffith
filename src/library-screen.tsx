@@ -34,6 +34,7 @@ import type { CategoryCard, OperationCard } from './library';
 import { isAvailable, search } from './library';
 import { errorText, t } from './i18n';
 import { CategoryTile, OperationTile } from './library-tiles';
+import StatePanel from './state-panel';
 import './library-screen.css';
 
 /**
@@ -57,8 +58,8 @@ interface Props {
   onOpenOperation: (opId: string) => void;
   onToggleFavourite: (opId: string) => void;
   onRetry: () => void;
-  onOpenLog: () => void;
-  onOpenSettings: () => void;
+  initialQuery?: string;
+  onQueryChange?: (query: string) => void;
 }
 
 /**
@@ -71,6 +72,7 @@ function OperationRow({
   titleKey,
   hintKey,
   cards,
+  categories,
   favouriteIds,
   onOpen,
   onToggleFavourite,
@@ -78,6 +80,7 @@ function OperationRow({
   titleKey: string;
   hintKey: string;
   cards: OperationCard[];
+  categories: CategoryCard[];
   favouriteIds: string[];
   onOpen: (opId: string) => void;
   onToggleFavourite: (opId: string) => void;
@@ -96,6 +99,7 @@ function OperationRow({
           <OperationTile
             key={card.id}
             card={card}
+            categories={categories}
             isFavourite={favouriteIds.includes(card.id)}
             onSelect={onOpen}
             onToggleFavourite={onToggleFavourite}
@@ -116,11 +120,12 @@ export default function LibraryScreen(props: Props): JSX.Element {
     onOpenOperation,
     onToggleFavourite,
     onRetry,
-    onOpenLog,
-    onOpenSettings,
+    initialQuery = '',
+    onQueryChange,
   } = props;
 
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(initialQuery);
+  const [showUnavailableDetails, setShowUnavailableDetails] = useState(false);
   const heading = useRef<HTMLHeadingElement>(null);
   const box = useRef<HTMLInputElement>(null);
   const uid = useId();
@@ -139,6 +144,12 @@ export default function LibraryScreen(props: Props): JSX.Element {
     if (!ready) return null;
     return search(query, ready.operations, ready.categories);
   }, [ready, query]);
+
+  const updateQuery = useCallback((next: string) => {
+    setQuery(next);
+    setShowUnavailableDetails(false);
+    onQueryChange?.(next);
+  }, [onQueryChange]);
 
   /**
    * اختصارٌ واحد: `/` يضع البؤرة في مربّع البحث.
@@ -168,71 +179,69 @@ export default function LibraryScreen(props: Props): JSX.Element {
   const onSearchKeyDown = useCallback((event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Escape') {
       event.preventDefault();
-      setQuery('');
+      updateQuery('');
     }
-  }, []);
+  }, [updateQuery]);
 
   const searchId = `${uid}-search`;
+  const searching = results?.active === true;
   const found =
-    results?.active === true ? results.categories.length + results.operations.length : 0;
+    searching ? results.categories.length + results.operations.length : 0;
+  const searchUnavailable =
+    results?.active === true &&
+    results.categories.length === 0 &&
+    results.operations.length > 0 &&
+    results.operations.every((card) => !isAvailable(card.availability));
 
   return (
     <section className="lib" aria-labelledby="lib-heading">
-      <header className="ops__head">
-        <div className="ops__intro">
-          {/* `h1` للتطبيق كله في الغلاف، فترويسة الشاشة `h2`. حجمها من الصنف
-              لا من مستواها: المستوى بنيةٌ للقارئ، والحجم قرارٌ بصري. */}
-          <h2 id="lib-heading" className="t-page-title ops__title" tabIndex={-1} ref={heading}>
-            {t('lib.heading')}
-          </h2>
-          <p className="t-body-sec ops__sub">{t('lib.subheading')}</p>
+      <div className="lib__hero">
+        <header className="ops__head">
+          <div className="ops__intro">
+            <h2 id="lib-heading" className="t-page-title ops__title" tabIndex={-1} ref={heading}>
+              {t(searching ? 'lib.search.title' : 'lib.heading')}
+            </h2>
+            <p
+              className="t-body-sec ops__sub"
+              role={searching ? 'status' : undefined}
+              aria-live={searching ? 'polite' : undefined}
+            >
+              {searching ? (
+                <>
+                  <span className="num">{found}</span> {t('lib.search.summary')}{' '}
+                  <bdi>‹{query.trim()}›</bdi>
+                </>
+              ) : (
+                t('lib.subheading')
+              )}
+            </p>
+          </div>
+        </header>
+
+        <div
+          className={`field field--search lib__search${
+            searching && found === 0 ? ' field--no-results' : ''
+          }`}
+        >
+          <label className="visually-hidden" htmlFor={searchId}>
+            {t('lib.search.label')}
+          </label>
+          <svg viewBox="0 0 24 24" aria-hidden="true" className="field__icon">
+            <use href="#i-search" />
+          </svg>
+          <input
+            id={searchId}
+            ref={box}
+            type="search"
+            className="lib__search-input"
+            placeholder={t('lib.search.placeholder')}
+            value={query}
+            onChange={(e) => updateQuery(e.target.value)}
+            onKeyDown={onSearchKeyDown}
+            autoComplete="off"
+            spellCheck={false}
+          />
         </div>
-
-        <div className="ops__quiet">
-          <button type="button" className="btn btn--ghost btn--sm" onClick={onOpenLog}>
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <use href="#i-history" />
-            </svg>
-            {t('nav.log')}
-          </button>
-          <button type="button" className="btn btn--ghost btn--sm" onClick={onOpenSettings}>
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <use href="#i-settings" />
-            </svg>
-            {t('nav.settings')}
-          </button>
-        </div>
-      </header>
-
-      {/* مربّع البحث. `type="search"` لا `text`: المتصفّح يمنحه زرّ المسح
-          وسلوك Escape الأصليّين، وقارئ الشاشة ينطقه «بحث» بلا وسمٍ إضافي.
-
-          والصندوق `.field` من نظام التصميم لا صنفًا خاصًّا بهذه الشاشة: منه
-          يأخذ ارتفاع عناصر الإدخال وحشوتها وحدَّها الواحد وحلقةَ تركيزها، فهو
-          والحقول في شاشة العملية شيءٌ واحد بالبناء لا بالمصادفة. وكان
-          `class="input"` — ولا قاعدة بهذا الاسم في المشروع — فيُرسم بأثاث
-          الوكيل الخام تحته حدُّنا وفوقه حلقةُ تركيزٍ ثانية. */}
-      <div className="field field--search">
-        <label className="visually-hidden" htmlFor={searchId}>
-          {t('lib.search.label')}
-        </label>
-        {/* أيقونةٌ واحدة داخل الحقل، وهي ابنُه الأوّل: موضعُها من ترتيب الصفّ
-            لا من تثبيتٍ مطلق فوقه بحشوةٍ محسوبة له. */}
-        <svg viewBox="0 0 24 24" aria-hidden="true" className="field__icon">
-          <use href="#i-search" />
-        </svg>
-        <input
-          id={searchId}
-          ref={box}
-          type="search"
-          className="lib__search-input"
-          placeholder={t('lib.search.placeholder')}
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={onSearchKeyDown}
-          autoComplete="off"
-          spellCheck={false}
-        />
       </div>
 
       {/* منطقةٌ حيّة **ثابتة** يتبدّل ما بداخلها. لو كانت كل حالةٍ منطقةً حيّة
@@ -240,51 +249,45 @@ export default function LibraryScreen(props: Props): JSX.Element {
           لأُعلنت البطاقات كلها في كل تحميل. */}
       <div className="ops__live" role="status" aria-live="polite">
         {state.status === 'loading' && (
-          <div className="ops__state">
-            <span className="spinner" aria-hidden="true" />
-            <p className="t-body-sec">{t('lib.loading')}</p>
-          </div>
-        )}
-        {results?.active === true && (
-          <p className="t-caption ops__count">
-            {found === 0 ? (
-              t('lib.search.none')
-            ) : (
-              <>
-                <span className="num">{found}</span> {t('lib.search.count')}
-              </>
-            )}
-          </p>
+          <StatePanel
+            title={t('lib.loading')}
+            body={t('lib.loading.body')}
+            busy
+          />
         )}
       </div>
 
       {state.status === 'failed' && (
-        <div className="ops__state ops__state--bad" role="alert">
-          <span className="chip chip--danger">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <use href="#i-error" />
-            </svg>
-            {t('state.failed')}
-          </span>
-          <p className="t-body">{t('lib.failed')}</p>
-          <p className="t-caption">{errorText(state.error.key, state.error.detail)}</p>
-          <button type="button" className="btn btn--quiet" onClick={onRetry}>
-            {t('ops.retry')}
-          </button>
-        </div>
+        <StatePanel
+          title={t('lib.failed.title')}
+          body={`${t('lib.failed.body')} ${errorText(state.error.key, state.error.detail)}`}
+          tone="danger"
+          action={t('ops.retry')}
+          onAction={onRetry}
+        />
       )}
 
       {/* ── نتائج البحث ────────────────────────────────────────────── */}
       {results?.active === true && (
         <>
-          {results.categories.length > 0 && (
+          {searchUnavailable && !showUnavailableDetails && (
+            <StatePanel
+              title={t('lib.search.unavailable.title')}
+              body={t('lib.search.unavailable.body')}
+              tone="warning"
+              action={t('lib.search.unavailable.action')}
+              onAction={() => setShowUnavailableDetails(true)}
+            />
+          )}
+
+          {(!searchUnavailable || showUnavailableDetails) && results.categories.length > 0 && (
             <section className="lib__row" aria-labelledby="found-categories">
               <div className="lib__row-head">
                 <h3 id="found-categories" className="t-section-title">
                   {t('lib.search.categories')}
                 </h3>
               </div>
-              <ul className="ops__grid">
+              <ul className="ops__grid ops__grid--categories">
                 {results.categories.map((card) => (
                   <CategoryTile key={card.id} card={card} onSelect={onOpenCategory} />
                 ))}
@@ -292,14 +295,14 @@ export default function LibraryScreen(props: Props): JSX.Element {
             </section>
           )}
 
-          {results.operations.length > 0 && (
+          {(!searchUnavailable || showUnavailableDetails) && results.operations.length > 0 && (
             <section className="lib__row" aria-labelledby="found-operations">
               <div className="lib__row-head">
                 <h3 id="found-operations" className="t-section-title">
                   {t('lib.search.operations')}
                 </h3>
               </div>
-              <ul className="ops__grid">
+              <ul className="ops__grid ops__grid--operations">
                 {results.operations.map((card) => (
                   <OperationTile
                     key={card.id}
@@ -307,7 +310,6 @@ export default function LibraryScreen(props: Props): JSX.Element {
                     /* نتيجةُ بحثٍ بلا اسم قسمها تترك المستخدم يخمّن أين وجدها،
                        فلا يستطيع العودة إليها إلا بالبحث مرّةً أخرى. */
                     categories={ready?.categories ?? []}
-                    showCategory
                     isFavourite={favouriteIds.includes(card.id)}
                     onSelect={onOpenOperation}
                     onToggleFavourite={onToggleFavourite}
@@ -318,12 +320,12 @@ export default function LibraryScreen(props: Props): JSX.Element {
           )}
 
           {found === 0 && (
-            <div className="ops__state">
-              <svg viewBox="0 0 24 24" aria-hidden="true" className="ops__state-icon">
-                <use href="#i-info" />
-              </svg>
-              <p className="t-body-sec">{t('lib.search.empty')}</p>
-            </div>
+            <StatePanel
+              title={t('lib.search.empty.title')}
+              body={t('lib.search.empty.body')}
+              action={t('action.return.library')}
+              onAction={() => updateQuery('')}
+            />
           )}
         </>
       )}
@@ -331,32 +333,25 @@ export default function LibraryScreen(props: Props): JSX.Element {
       {/* ── المكتبة، حين لا بحث ────────────────────────────────────── */}
       {ready && results?.active === false && (
         <>
-          <section className="lib__row" aria-labelledby="lib-categories">
-            <div className="lib__row-head">
-              <h3 id="lib-categories" className="t-section-title">
-                {t('lib.categories.title')}
-              </h3>
-              <p className="t-caption lib__row-hint">{t('lib.categories.hint')}</p>
-            </div>
-            {ready.categories.length === 0 ? (
-              <div className="ops__state">
-                <svg viewBox="0 0 24 24" aria-hidden="true" className="ops__state-icon">
-                  <use href="#i-info" />
-                </svg>
-                <p className="t-body-sec">{t('lib.empty')}</p>
-              </div>
-            ) : (
-              <ul className="ops__grid">
-                {ready.categories.map((card) => (
-                  <CategoryTile key={card.id} card={card} onSelect={onOpenCategory} />
-                ))}
-              </ul>
-            )}
-          </section>
+          {ready.categories.length === 0 ? (
+            <StatePanel
+              title={t('lib.empty')}
+              body={t('lib.empty.body')}
+              action={t('action.return.library')}
+              onAction={onRetry}
+            />
+          ) : (
+            <ul className="ops__grid ops__grid--categories" aria-label={t('lib.search.categories')}>
+              {ready.categories.map((card) => (
+                <CategoryTile key={card.id} card={card} onSelect={onOpenCategory} />
+              ))}
+            </ul>
+          )}
           <OperationRow
             titleKey="lib.favourites.title"
             hintKey="lib.favourites.hint"
             cards={favourites}
+            categories={ready.categories}
             favouriteIds={favouriteIds}
             onOpen={onOpenOperation}
             onToggleFavourite={onToggleFavourite}
@@ -365,11 +360,11 @@ export default function LibraryScreen(props: Props): JSX.Element {
             titleKey="lib.recents.title"
             hintKey="lib.recents.hint"
             cards={recents}
+            categories={ready.categories}
             favouriteIds={favouriteIds}
             onOpen={onOpenOperation}
             onToggleFavourite={onToggleFavourite}
           />
-
         </>
       )}
     </section>

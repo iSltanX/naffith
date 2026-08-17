@@ -37,7 +37,7 @@ import type {
 // ── فهرسٌ مخترع بالكامل ────────────────────────────────────────────────
 
 function input(id: string, kind: string, extra: Record<string, unknown> = {}): InputSummary {
-  return { ...extra, id, required: true, kind };
+  return { ...extra, id, required: true, kind } as InputSummary;
 }
 
 function op(

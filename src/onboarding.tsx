@@ -42,14 +42,12 @@
  *
  * فبقي فعلٌ واحد، وهو أيضًا عنصر التبويب الوحيد في الشاشة.
  *
- * ## لماذا الأمر المعروض هو `ditto` نفسه
+ * ## لماذا البرهان سطرٌ واحد
  *
- * النموذج المرجعي يعرض `mv -v …` تحت الخطوة الثالثة. عرضُ أمرٍ لا يستطيع
- * التطبيق تنفيذه ينقض دعواه الوحيدة — «هذا هو الأمر نفسه، لا تمثيلٌ له» — في
- * أول شاشة يراها المستخدم. فالمعروض هنا شكل `argv` الحقيقي الذي تبنيه النواة:
- * الأداة ورايتها الأربع كما هي، ومسارَان نائبان يوضّحان الموضع لا أكثر.
- * وبما أن المسارين نائبان، فالمقتطف كلّه محجوب عن القارئ الصوتي: هو رسمُ سطحٍ
- * لا محتوى، ونصّ الخطوة الثالثة يقول ما يقوله كاملًا.
+ * هذا ليس سجلّ تنفيذ ولا معاينة خطة؛ هو برهان بصري قصير من Page 15 على أن
+ * الأمر يظل ظاهرًا. لذلك يبقى في سطرٍ واحد بلا شريط عنوان ولا تفكيك رايات.
+ * والمساران نائبان، فالبطاقة كلها محجوبة عن القارئ الصوتي: نصّ الخطوة الثالثة
+ * يشرح المعنى، ولا يُطلب من المستخدم تفسير مثالٍ لم يُنشئه.
  *
  * ## لماذا البؤرة على الإطار لا على الزر
  *
@@ -71,39 +69,7 @@ import './onboarding.css';
 /** الخطوات تُشتقّ من المفاتيح لا تُكتب صفًّا صفًّا: إضافة رابعة سطرٌ واحد. */
 const STEPS = ['step1', 'step2', 'step3'] as const;
 
-/**
- * شكل الأمر الحقيقي، لا مثالٌ مخترع — مكسورًا على أسطر كما يُكتب في الصدفة.
- *
- * الأداة والرايات منقولة حرفيًا عمّا تبنيه النواة (انظر `shell-quote.test.ts`)؛
- * المسارَان وحدهما نائبان لأن لا مصدر ولا وجهة بعد.
- *
- * ## لماذا أربعة أسطر لا سطرٌ واحد
- *
- * كان سطرًا واحدًا يبلغ ثلاثة أضعاف عرض الصندوق، فيمرَّر أفقيًا. وشريط التمرير
- * الأفقي — حين يظهره النظام شريطًا كلاسيكيًا لا عائمًا — يأكل من *ارتفاع*
- * الصندوق. فكان عرض المقتطف يتغيّر مع وصول خطّ `mono` المتأخّر، فيظهر الشريط
- * أو يختفي، فيقفز ما تحته. كسرُه على أسطر أطولها ٣٢ محرفًا يجعله لا يفيض عند
- * أضيق مقاسٍ يُعرض فيه أصلًا — ‎856px عرضًا، وهو الحدّ الذي تحته يُخفى؛ المقيس
- * عنده أن عرضه الطبيعي ‎283.6px وما يسعه ‎315px — فلا شريط ولا قفزة. وهذا شرطٌ
- * على المحتوى لا حيلةُ عرض، ولذلك هو هنا لا في CSS.
- *
- * وعدد الأسطر هنا مرتبطٌ بـ`--peek-lines` في `onboarding.css`: هي التي تحجز
- * الارتفاع النهائي من أول إطار. تغيير أحدهما دون الآخر يعيد القفزة، ويسقط في
- * `onboarding.test.tsx` و`onboarding.source.test.ts`.
- */
-const PEEK_LINES: ReadonlyArray<ReadonlyArray<readonly [token: string, role: string]>> = [
-  [
-    ['/usr/bin/ditto', 'tok-name'],
-    ['-c', 'tok-flag'],
-    ['-k', 'tok-flag'],
-  ],
-  [
-    ['--sequesterRsrc', 'tok-flag'],
-    ['--keepParent', 'tok-flag'],
-  ],
-  [['~/Documents/Reports', 'tok-path']],
-  [['~/Desktop/Reports.zip', 'tok-path']],
-];
+const PEEK_COMMAND = '$ ditto ~/Documents ~/Desktop/Backup';
 
 /**
  * تفضيل تقليل الحركة، مقروءًا مرّةً واحدة.
@@ -138,19 +104,10 @@ export default function Onboarding({ onStart }: { onStart: () => void }): JSX.El
       ref={frame}
       aria-labelledby={titleId}
     >
+      <div className="onboarding__titlebar" data-tauri-drag-region aria-hidden="true" />
       <div className="onboarding__panes">
         <div className="onboarding__visual">
-          <svg className="onboarding__mark" viewBox="0 0 64 64" aria-hidden="true">
-            <use href="#mark" />
-          </svg>
-
-          <h1 id={titleId} className="t-page-title onboarding__title">
-            {t('onboarding.title')} {t('app.naffith')}{' '}
-            <span className="onboarding__sep" aria-hidden="true">
-              —
-            </span>{' '}
-            {t('app.satr')}
-          </h1>
+          <h1 id={titleId} className="onboarding__title">{t('app.naffith')}</h1>
 
           <p className="t-body onboarding__lede">{t('onboarding.lede')}</p>
 
@@ -178,9 +135,6 @@ export default function Onboarding({ onStart }: { onStart: () => void }): JSX.El
 
           <div className="onboarding__actions">
             <button type="button" className="btn btn--primary btn--lg" onClick={onStart}>
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <use href="#i-execute" />
-              </svg>
               {t('onboarding.start')}
             </button>
           </div>
@@ -192,41 +146,18 @@ export default function Onboarding({ onStart }: { onStart: () => void }): JSX.El
   );
 }
 
-/** مقتطف سَطْر. انظر تعليق الرأس: شكلٌ حقيقي، ومحجوب عن القارئ الصوتي. */
+/** برهان سَطْر المختصر من Page 15، ومحجوب عن القارئ الصوتي. */
 function Peek() {
   return (
-    <div className="onboarding__peek" aria-hidden="true">
-      <div className="command">
-        <div className="command__bar">
-          <span className="command__label">{t('app.satr')}</span>
-        </div>
-        {/* `white-space: pre` في `.command__body`: لا مسافة مصدرٍ بين الوسوم،
-            وفواصل الأسطر تُكتب `\n` صريحةً لا انكسارَ مصدرٍ يُقلَّم عند البناء.
-
-            و`tabindex="-1"` ليس زينة: الصندوق يمرّر أفقيًا (`overflow-x: auto`
-            في `base.css`)، والمتصفّحات الحديثة تجعل كل صندوق تمريرٍ بلا ابنٍ
-            قابلٍ للتبويب محطّةَ تبويبٍ من تلقائها كي يبقى تمريرُه بالمفتاح
-            ممكنًا. فكانت أوّل ضغطة Tab في الشاشة تقع على هذا الرسم لا على
-            «ابدأ الآن» — وهو `aria-hidden`، فيقع التركيز على ما لا ينطقه
-            القارئ الصوتي: صمتٌ يظنّه المستخدم عطلًا. وكسرُ الأمر على أسطر رفع
-            الفيضان اليوم لكنه لم يرفع القاعدة: أي نصٍّ أطول يعيدها. لا شيء هنا
-            يُقرأ ولا يُمرَّر طلبًا لمعنى: نصّ الخطوة الثالثة يقول ما يقوله
-            كاملًا. */}
-        <div className="command__body" tabIndex={-1}>
-          {PEEK_LINES.map((line, li) => (
-            <span key={li}>
-              {li === 0 ? <span className="tok-prompt">$ </span> : '  '}
-              {line.map(([token, role], ti) => (
-                <span key={token}>
-                  <span className={role}>{token}</span>
-                  {ti < line.length - 1 ? ' ' : ''}
-                </span>
-              ))}
-              {li < PEEK_LINES.length - 1 ? ' \\\n' : ''}
-            </span>
-          ))}
-        </div>
-      </div>
-    </div>
+    <figure className="onboarding__peek" aria-hidden="true">
+      {/* قد يضيق العمود في نافذة 680px. يبقى المثال سطرًا واحدًا كما صُمّم،
+          والصندوق قابل للتمرير برمجيًا لكن خارج ترتيب Tab لأنه رسمٌ محجوب. */}
+      <code className="onboarding__proof-command" dir="ltr" tabIndex={-1}>
+        {PEEK_COMMAND}
+      </code>
+      <figcaption className="onboarding__proof-caption">
+        {t('onboarding.proof.caption')}
+      </figcaption>
+    </figure>
   );
 }
