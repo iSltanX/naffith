@@ -1,0 +1,76 @@
+.settings-screen {
+  inline-size: 100%;
+  max-inline-size: calc(var(--width-base) + var(--space-56));
+  margin-inline: auto;
+  gap: var(--space-24);
+}
+
+.settings-screen .screen__head {
+  gap: var(--space-12);
+}
+
+.settings-screen__subtitle { margin: 0; }
+
+.settings-screen__card {
+  inline-size: 100%;
+  max-inline-size: calc(var(--width-base) - var(--space-32));
+  min-block-size: calc(var(--space-96) + var(--space-96) - var(--space-8));
+  margin-inline: auto;
+  gap: var(--space-12);
+}
+
+.settings-screen__replay {
+  inline-size: var(--sidebar-w);
+  block-size: var(--control-h-md);
+  justify-content: center;
+}
+
+/* قسمُ مسار أداةٍ — Node.js وCargo كلاهما. المسار لاتينيّ الاتجاه دائمًا
+   (`dir="ltr"` في العنصر نفسه)، فيُقصّ من البداية اللاتينية لا النهاية حين
+   يطول — ‏`text-overflow` وحدها تقصّ من النهاية، فالسطر يُلفّ بدل أن يُقصّ كي
+   يبقى المسار كاملًا مقروءًا. */
+.settings-screen__path-value {
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  color: var(--text-secondary);
+}
+
+.settings-screen__path-actions {
+  display: flex;
+  gap: var(--space-8);
+}
+
+.settings-screen > .notice {
+  inline-size: 100%;
+}
+
+.settings-screen__storage-notice {
+  display: block;
+  padding: var(--space-16);
+}
+
+.settings-screen__notice-copy {
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.settings-screen__notice-title {
+  color: var(--status-warning-text);
+  font-family: var(--font-display);
+  font-size: var(--fs-label);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-label);
+}
+
+.settings-screen__notice-copy p {
+  color: var(--text-secondary);
+}
+
+@media (max-width: 759px) {
+  .settings-screen {
+    gap: var(--space-20);
+  }
+}

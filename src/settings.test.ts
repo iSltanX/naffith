@@ -17,6 +17,8 @@ import {
   loadSettings,
   saveSettings,
   shouldShowOnboarding,
+  withCargoPath,
+  withNodePath,
   withOnboardingCompleted,
   withOnboardingReset,
   type Settings,
@@ -118,6 +120,72 @@ describe('القراءة', () => {
     loadSettings(store);
     expect(store.reads).toEqual([SETTINGS_STORAGE_KEY]);
     expect(SETTINGS_STORAGE_KEY).toBe('naffith.settings');
+  });
+});
+
+describe('مسار Node.js', () => {
+  it('قيمةٌ من الإصدار ٣ تُقرأ كما كُتبت', () => {
+    const result = loadSettings(
+      fakeStorage(valid({ nodePath: '/Users/سارة/.nvm/versions/node/v20/bin/node' })),
+    );
+    expect(result.settings.nodePath).toBe('/Users/سارة/.nvm/versions/node/v20/bin/node');
+  });
+
+  it('إصدارٌ ٢ لا يحمل الحقل، فيُقرأ null لا خطأً', () => {
+    // الترقية تحتفظ بما كان وتضيف افتراضي ما استُجدّ — نفس منطق `lastCategoryId`
+    // عند الترقية من ١ إلى ٢.
+    const v2 = JSON.stringify({ schemaVersion: 2, onboardingCompletedAt: COMPLETED_AT });
+    const result = loadSettings(fakeStorage(v2));
+    expect(result).toMatchObject({ status: 'loaded', migratedFrom: 2 });
+    expect(result.settings.nodePath).toBeNull();
+  });
+
+  it('قيمةٌ عدّلها أحدٌ بيده — لا نصّ، أو مسارٌ نسبي، أو فارغ — تُقرأ null', () => {
+    for (const bad of [42, { path: '/x' }, 'ليس-مسارًا', '', '   ']) {
+      const result = loadSettings(fakeStorage(valid({ nodePath: bad })));
+      expect(result.settings.nodePath, JSON.stringify(bad)).toBeNull();
+    }
+  });
+
+  it('withNodePath يحفظ القيمة ويتخطّى الكتابة إن لم تتغيّر', () => {
+    const s1 = withNodePath(defaultSettings(), '/usr/local/bin/node');
+    expect(s1.nodePath).toBe('/usr/local/bin/node');
+
+    const s2 = withNodePath(s1, '/usr/local/bin/node');
+    expect(s2).toBe(s1); // نفس المرجع: لا تغيير فلا كتابة.
+
+    const s3 = withNodePath(s1, null);
+    expect(s3.nodePath).toBeNull();
+  });
+});
+
+describe('مسار Cargo', () => {
+  it('قيمةٌ من الإصدار ٤ تُقرأ كما كُتبت', () => {
+    const result = loadSettings(fakeStorage(valid({ cargoPath: '/Users/سارة/.cargo/bin/cargo' })));
+    expect(result.settings.cargoPath).toBe('/Users/سارة/.cargo/bin/cargo');
+  });
+
+  it('إصدارٌ ٣ لا يحمل الحقل، فيُقرأ null لا خطأً', () => {
+    const v3 = JSON.stringify({
+      schemaVersion: 3,
+      onboardingCompletedAt: COMPLETED_AT,
+      nodePath: '/usr/local/bin/node',
+    });
+    const result = loadSettings(fakeStorage(v3));
+    expect(result).toMatchObject({ status: 'loaded', migratedFrom: 3 });
+    expect(result.settings.nodePath).toBe('/usr/local/bin/node'); // يُحتفَظ بما كان
+    expect(result.settings.cargoPath).toBeNull(); // ويُضاف افتراض ما استُجدّ
+  });
+
+  it('withCargoPath يحفظ القيمة ويتخطّى الكتابة إن لم تتغيّر', () => {
+    const s1 = withCargoPath(defaultSettings(), '/Users/x/.cargo/bin/cargo');
+    expect(s1.cargoPath).toBe('/Users/x/.cargo/bin/cargo');
+
+    const s2 = withCargoPath(s1, '/Users/x/.cargo/bin/cargo');
+    expect(s2).toBe(s1);
+
+    const s3 = withCargoPath(s1, null);
+    expect(s3.cargoPath).toBeNull();
   });
 });
 

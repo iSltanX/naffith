@@ -27,8 +27,13 @@
  *
  * الإصدار ٢ أضاف المفضّلة وآخر قسمٍ مفتوح. والترقية من ١ ليست حذفًا: من أتمّ
  * الترحيب في نسخةٍ أقدم يجب ألّا يراه مرّةً أخرى لأننا أضفنا حقلًا لا يعرفه.
+ *
+ * الإصدار ٣ أضاف مسار Node.js — انظر توثيق `nodePath` أدناه لماذا يعيش هنا لا
+ * في النواة. والإصدار ٤ أضاف مسار Cargo لنفس السبب بالضبط — أداة أخرى
+ * يثبّتها المستخدم بنفسه في مسارٍ متغيّر (`~/.cargo/bin/cargo` عادةً، لا
+ * مسارًا نظاميًا ثابتًا).
  */
-export const SETTINGS_SCHEMA_VERSION = 2;
+export const SETTINGS_SCHEMA_VERSION = 4;
 
 /**
  * أقصى عدد مفضّلات تُحفظ.
@@ -67,6 +72,21 @@ export interface Settings {
    * يجد نفسه في شاشةٍ لم يطلبها.
    */
   lastCategoryId: string | null;
+  /**
+   * مسار ملفّ Node.js التنفيذي الذي اختاره المستخدم، أو `null` إن لم يُعيَّن.
+   *
+   * ‏Node.js ليست كأدوات النواة الثابتة (‏`/usr/bin/ditto`): يثبّتها المستخدم
+   * بنفسه في مسارٍ يختلف من جهازٍ لآخر (nvm، Homebrew، المثبِّت الرسمي)، ولا
+   * وجود لمسارٍ نظامي ثابت يشير إليها. يُختار مرّةً هنا — أو في أول عملية
+   * أدوات مطوّرين يفتحها المستخدم، فيُحفظ القيمة لما بعدها — ثم يُرسَل مع كل
+   * طلب تخطيط كمدخلٍ عادي (`node_path`)، فتتحقّق منه النواة في كل تخطيطٍ كما
+   * تتحقّق من أي مسارٍ آخر. لا سطح IPC سابع من أجله: هو قيمةٌ في `inputs` مثل
+   * أي حقل مسارٍ آخر، لا سرًّا تعرفه النواة عن هوية الجهاز.
+   */
+  nodePath: string | null;
+  /** مسار ملفّ Cargo التنفيذي، أو `null`. نفس منطق `nodePath` بالضبط —
+   *  انظر توثيقه أعلاه. */
+  cargoPath: string | null;
 }
 
 export function defaultSettings(): Settings {
@@ -75,6 +95,8 @@ export function defaultSettings(): Settings {
     onboardingCompletedAt: null,
     favourites: [],
     lastCategoryId: null,
+    nodePath: null,
+    cargoPath: null,
   };
 }
 
@@ -140,6 +162,21 @@ function readNullableId(value: unknown): string | null {
 }
 
 /**
+ * مسارٌ نظيف من قيمةٍ مخزَّنة قد تكون أي شيء، أو `null`.
+ *
+ * ليس تحقّقًا أمنيًا — القيمة تعبر لاحقًا سياسة المسارات الكاملة في النواة
+ * كأي مدخل مسارٍ آخر، تمامًا كما يعبرها مدخل «المشروع». هذا الفحص هنا حرسٌ
+ * وحيد الغرض: قيمةٌ عدّلها أحدهم بيده في `localStorage` (نصٌّ طويل عشوائي،
+ * أو كائنٌ لا نصّ) لا يجوز أن تصل إلى حقل نموذجٍ بوصفها مسارًا صالحًا.
+ */
+function readNullablePath(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (trimmed === '' || trimmed.length > 4096 || !trimmed.startsWith('/')) return null;
+  return trimmed;
+}
+
+/**
  * يرقّي قيمة من إصدار أقدم. تُضاف حلقة لكل إصدار جديد.
  *
  * الترقية من ١ إلى ٢ **تحتفظ بما كان** وتضيف الافتراضي لما استُجدّ. الاختصار
@@ -152,12 +189,15 @@ function migrate(raw: Record<string, unknown>, from: number): Settings | null {
   const at = raw['onboardingCompletedAt'];
   const onboardingCompletedAt = typeof at === 'string' && at !== '' ? at : null;
 
-  // الإصدار ١ لا يحمل الحقلين، فيقرآن غيابًا ويصيران افتراضيهما.
+  // الإصدار ١ لا يحمل الحقلين، والإصدار ٢ لا يحمل `nodePath`، والإصدار ٣ لا
+  // يحمل `cargoPath` — فتُقرأ غيابًا وتصير افتراضها.
   return {
     schemaVersion: SETTINGS_SCHEMA_VERSION,
     onboardingCompletedAt,
     favourites: readIdList(raw['favourites'], MAX_FAVOURITES),
     lastCategoryId: readNullableId(raw['lastCategoryId']),
+    nodePath: readNullablePath(raw['nodePath']),
+    cargoPath: readNullablePath(raw['cargoPath']),
   };
 }
 
@@ -279,4 +319,21 @@ export function withFavouriteToggled(settings: Settings, opId: string): Settings
 export function withLastCategory(settings: Settings, categoryId: string | null): Settings {
   if (settings.lastCategoryId === categoryId) return settings;
   return { ...settings, lastCategoryId: categoryId };
+}
+
+/**
+ * يحفظ مسار Node.js الذي اختاره المستخدم.
+ *
+ * `path` تُقبل كما هي — لا تنقيةً هنا: النواة هي الحَكَم الوحيد في صحّة
+ * المسار وقت التخطيط، وتكرار حكمها هنا كان يعني قاعدتين قد تفترقان.
+ */
+export function withNodePath(settings: Settings, path: string | null): Settings {
+  if (settings.nodePath === path) return settings;
+  return { ...settings, nodePath: path };
+}
+
+/** يحفظ مسار Cargo الذي اختاره المستخدم. نفس منطق `withNodePath` بالضبط. */
+export function withCargoPath(settings: Settings, path: string | null): Settings {
+  if (settings.cargoPath === path) return settings;
+  return { ...settings, cargoPath: path };
 }
