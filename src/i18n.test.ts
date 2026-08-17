@@ -30,11 +30,16 @@ function rustSources(dir: string): string[] {
 
 /** كل نصّ يبدأ بواحدة من بادئات المفاتيح داخل مصادر النواة. */
 function keysEmittedByCore(): Set<string> {
-  const prefixes = ['err.', 'warn.', 'explain.', 'op.'];
+  const prefixes = ['err.', 'warn.', 'explain.', 'op.', 'result.'];
   const found = new Set<string>();
   for (const file of rustSources(CORE_SRC)) {
     const text = readFileSync(file, 'utf8');
-    for (const match of text.matchAll(/"([a-z_]+(?:\.[a-z_]+)+)"/g)) {
+    // ‏`0-9` جزءٌ من صنف المحارف لا زيادة، نظير الشرطة السفلية أدناه في عدّ
+    // العمليات: بدونه كان الفحص يُسقط صامتًا كل مفتاحٍ يحمل رقمًا —
+    // `explain.shasum.sha256` و`explain.sips.rotate.90` و
+    // `op.disk.hash.sha256.*` و`op.text.encoding.utf8.*` وغيرها — فيمرّ
+    // مفتاحٌ بلا ترجمة ولا يسقط الحارس الذي وُضع ليمنع ذلك بعينه.
+    for (const match of text.matchAll(/"([a-z0-9_]+(?:\.[a-z0-9_]+)+)"/g)) {
       const key = match[1];
       if (key && prefixes.some((p) => key.startsWith(p))) found.add(key);
     }
@@ -311,5 +316,79 @@ describe('t و errorText', () => {
   it('يتحمّل تفصيلًا ليس نصًّا', () => {
     expect(errorText('err.path.missing', { tool: 'ditto' })).toBe(AR['err.path.missing']);
     expect(errorText('err.path.missing', null)).toBe(AR['err.path.missing']);
+  });
+});
+
+/**
+ * سلّم النصّ الثلاثي: البطاقة «ماذا تفعل؟»، وصفحة التنفيذ «ماذا سيحدث؟»،
+ * والحقل «ماذا أختار هنا؟».
+ *
+ * الطبقتان الأوليان مفتاحان لكل عملية. وغيابُ `execution` لا يُسقط شيئًا في
+ * التشغيل — `tOptional` تطويه بصمت — فالعمليةُ الجديدة تصل إلى الشاشة بلا
+ * جوابٍ عن «ماذا سيحدث؟» ولا أحد يعلم. هذا الحارس هو ما يجعل الغياب مسموعًا.
+ */
+describe('سلّم نصّ العمليات', () => {
+  // الشرطة السفلية جزءٌ من صنف المحارف لا زيادة: معرّفات مثل
+  // `system.process.open_files` و`disk.directory.open_handles` تحملها، وكان
+  // النمط بدونها **يُسقطها من العدّ صامتًا** — فتصل عمليةٌ إلى الشاشة بلا
+  // جوابٍ عن «ماذا سيحدث؟» ولا يسقط الحارس أدناه، وهو بالضبط ما وُجد ليمنعه.
+  const ids = Object.keys(AR)
+    .filter((k) => /^op\.[a-z0-9._]+\.title$/.test(k))
+    .map((k) => k.slice(3, -'.title'.length))
+    // العملية الداخلية لا تظهر في أي إصدار، فلا شاشة تنفيذ لها.
+    .filter((id) => id !== 'internal.echo');
+
+  it('يقرأ التسع والسبعين عملية من القاموس نفسه', () => {
+    expect(ids).toHaveLength(79);
+  });
+
+  it('لكل عملية جوابٌ عن «ماذا تفعل؟» وآخر عن «ماذا سيحدث؟»', () => {
+    const missing = ids.flatMap((id) => [
+      ...(`op.${id}.description` in AR ? [] : [`op.${id}.description`]),
+      ...(`op.${id}.execution` in AR ? [] : [`op.${id}.execution`]),
+    ]);
+    expect(missing, `نصٌّ ناقص: ${missing.join(', ')}`).toEqual([]);
+  });
+
+  it('جواب البطاقة جملةٌ واحدة، وجواب التنفيذ ليس تكرارًا لها', () => {
+    for (const id of ids) {
+      const card = t(`op.${id}.description`);
+      const exec = t(`op.${id}.execution`);
+      // جملةٌ واحدة: تنتهي بنقطة ولا تحمل فاصلَ جملةٍ في وسطها. والمقياس
+      // «نقطةٌ يتلوها فراغ» لا «نقطة»، وإلا عُدّت ⁦TAR.GZ⁩ جملتين.
+      expect(card, `بطاقة ${id} أكثر من جملة`).not.toMatch(/\.\s/u);
+      expect(card.trimEnd().endsWith('.'), `بطاقة ${id} لا تنتهي بنقطة`).toBe(true);
+      expect(card.length, `بطاقة ${id} طويلة`).toBeLessThan(90);
+      expect(exec, `تنفيذ ${id} يكرّر البطاقة`).not.toBe(card);
+      expect(exec.length, `تنفيذ ${id} أطول من ثلاث جمل قصيرة`).toBeLessThan(220);
+    }
+  });
+});
+
+/**
+ * الطبقة الثالثة: «ماذا أختار هنا؟».
+ *
+ * نصّ الحقل يُقرأ في لحظة الاختيار، بين تسميةٍ فوقه وحقلٍ تحته — فالسرد فيه
+ * يُتخطّى لا يُقرأ. والطمأنةُ العامّة («لا يُمسّ الأصل») صارت جواب صفحة
+ * التنفيذ، فتكرارُها هنا يُطيل النصّ ويزحم المعلومة الخاصّة بالحقل.
+ */
+describe('نصّ الحقول', () => {
+  const help = Object.entries(AR).filter(([k]) => /^field\.[a-z0-9._]+\.help$/.test(k));
+
+  it('يغطّي الحقول المعلَنة كلّها', () => {
+    expect(help.length).toBe(92);
+  });
+
+  it('يبقى قصيرًا بما يُقرأ في لحظة الاختيار', () => {
+    const long = help.filter(([, v]) => v.length > 110).map(([k, v]) => `${k} (${v.length})`);
+    expect(long, `نصّ حقلٍ أطول ممّا يُقرأ: ${long.join(', ')}`).toEqual([]);
+  });
+
+  it('لا يعيد جملة «ماذا سيحدث؟» في كل حقل مسار', () => {
+    // العبارتان كانتا مكرّرتين في عشرة حقول؛ موضعهما صفحة التنفيذ.
+    const echoed = help
+      .filter(([, v]) => /لا يُمسّ ولا يتغيّر|يُقرأ ولا يُعدَّل\.$/.test(v))
+      .map(([k]) => k);
+    expect(echoed, `طمأنةٌ مكرّرة عن صفحة التنفيذ: ${echoed.join(', ')}`).toEqual([]);
   });
 });
