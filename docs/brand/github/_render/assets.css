@@ -1,0 +1,84 @@
+/* =============================================================================
+   نَفِّذ · GitHub & README asset renderer
+   ---------------------------------------------------------------------------
+   Reproduces page «21 — GitHub & Repository Assets» of the identity file
+   (Figma NrM5WXneKizVv1MBa9nO14) so the PNGs the README ships can be rebuilt
+   from this repository alone — no Figma round-trip, no network.
+
+   Every value below is transcribed from the Figma nodes, not eyeballed:
+   frame sizes, auto-layout gaps, type sizes, line heights, letter spacing,
+   fills, strokes and the two ambient-glow gradients.
+
+   Fonts come from src/design-system/fonts.css — the same self-hosted Cairo /
+   Almarai / JetBrains Mono the application itself renders with, so the
+   exported artwork and the running app cannot drift apart.
+   ========================================================================== */
+
+@import url('../../../../src/design-system/fonts.css');
+
+:root {
+  --ink-900: #0F0F1E;   /* brand navy — every frame's ground */
+  --ink-050: #FAF8F5;   /* warm paper — display type */
+  --ink-700: #272831;   /* badge fill */
+  --border:  #2A2B35;   /* frame inset stroke */
+  --muted:   #8F90A1;   /* tertiary copy */
+  --second:  #A5A6B6;   /* secondary copy */
+  --ember:   #E85D2C;   /* THE brand mark colour — graphics only */
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  background: var(--ink-900);
+  color: var(--ink-050);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: geometricPrecision;
+}
+
+/* Each artboard is an exact-size stage; the build script sizes the viewport
+   to match so the screenshot is 1:1 with the Figma frame. */
+.stage {
+  position: relative;
+  overflow: hidden;
+  background: var(--ink-900);
+}
+
+/* The inset hairline that frames the header and hero artboards. */
+.inset {
+  position: absolute;
+  border: 1px solid var(--border);
+  pointer-events: none;
+}
+
+/* ── ambient glow ──────────────────────────────────────────────────────────
+   Figma layer-blur + layer-opacity, restated as a blurred radial gradient.  */
+.glow { position: absolute; pointer-events: none; }
+
+.mark { display: block; }
+.mark .ijam { fill: var(--ember); }   /* the إعجام dot — the only warm element */
+
+/* ── shared type ─────────────────────────────────────────────────────────── */
+.ar-display { font-family: 'Cairo', sans-serif; font-weight: 800; color: var(--ink-050); }
+.en-word    { font-family: 'Cairo', sans-serif; font-weight: 700; }
+.tag-en     { font-family: 'Almarai', sans-serif; font-weight: 400; }
+.tag-ar     { font-family: 'Cairo', sans-serif; font-weight: 400; }
+.mono       { font-family: 'JetBrains Mono', monospace; }
+
+.col   { display: flex; flex-direction: column; align-items: center; }
+.row   { display: flex; flex-direction: row; align-items: center; }
+
+/* ── status badges (hero) ────────────────────────────────────────────────── */
+.badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 400;
+  font-size: 11px;
+  line-height: 15px;
+  color: var(--ink-050);
+  background: var(--ink-700);
+  border: 1px solid #ADAEBD;
+  border-radius: 20px;
+  padding: 6px 14px;
+}
+
+/* ── rule under the wordmark ─────────────────────────────────────────────── */
+.rule { width: 40px; height: 2px; background: var(--ember); }

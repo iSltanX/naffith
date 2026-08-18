@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ar" dir="ltr">
+<head>
+<meta charset="utf-8">
+<title>naffith · social preview</title>
+<link rel="stylesheet" href="assets.css">
+<style>
+  /* Figma: social-preview-og — 1280×640, VERTICAL, padding 60, CENTER,
+     itemSpacing 56 over focus-column and bottom-ribbon.
+     1280×640 is GitHub's social-preview size; the composition is centred so it
+     survives the 1.91:1 crop some surfaces apply. */
+  .stage { width: 1280px; height: 640px; padding: 60px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 56px; }
+
+  /* ambient-glow: 600×600 at (380,60), radial ember .12 → .05@.5 → 0,
+     layer blur 120, layer opacity .2 */
+  .glow {
+    left: 380px; top: 60px; width: 600px; height: 600px;
+    background: radial-gradient(closest-side, rgba(232,92,43,.12) 0%, rgba(232,92,43,.05) 50%, rgba(15,15,31,0) 100%);
+    filter: blur(120px); opacity: .2;
+  }
+
+  /* focus-column: VERTICAL, CENTER, itemSpacing 28 */
+  .focus { display: flex; flex-direction: column; align-items: center; gap: 28px; position: relative; }
+
+  /* typography-core: VERTICAL, CENTER, itemSpacing 10 */
+  .core { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .core .ar { font-size: 56px; line-height: 74px; }
+  .core .en { font-size: 24px; line-height: 37px; letter-spacing: 6px; color: var(--ink-050); }
+
+  .tagline { font-size: 16px; line-height: 18px; color: var(--second); }
+
+  /* bottom-ribbon: HORIZONTAL, CENTER, itemSpacing 24 */
+  .ribbon { display: flex; align-items: center; gap: 24px; position: relative; }
+  .ribbon span { font-size: 11px; line-height: 16px; letter-spacing: 1px; font-weight: 500; color: var(--muted); }
+  .ribbon i { width: 4px; height: 4px; border-radius: 2px; background: var(--ember); display: block; }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="glow"></div>
+
+  <div class="focus">
+    <svg class="mark" viewBox="4 10 54 48" width="95" height="84" xmlns="http://www.w3.org/2000/svg">
+      <g fill="#FAF8F5">
+        <rect x="52" y="10" width="6" height="19"/>
+        <rect x="40" y="10" width="6" height="19"/>
+        <rect x="28" y="10" width="6" height="19"/>
+        <rect x="20" y="29" width="38" height="6"/>
+      </g>
+      <path fill="#FAF8F5" d="M20 29 L26 29 L26 49 C26 55 23 58 17 58 L13 58 C7 58 4 55 4 49 L4 42 L10 42 L10 49 C10 51 11 52 13 52 L17 52 C19 52 20 51 20 49 L20 29 Z"/>
+      <rect class="ijam" x="12" y="19" width="6" height="6"/>
+    </svg>
+
+    <div class="core">
+      <span class="ar-display ar">نَفِّذ</span>
+      <span class="en-word en">NAFFITH</span>
+    </div>
+
+    <div class="tag-en tagline">Arabic-first command execution for macOS</div>
+  </div>
+
+  <div class="ribbon mono">
+    <span>OPEN SOURCE</span><i></i>
+    <span>macOS</span><i></i>
+    <span>TAURI</span><i></i>
+    <span>RUST</span>
+  </div>
+</div>
+</body>
+</html>
