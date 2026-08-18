@@ -12,60 +12,111 @@
 
 ---
 
-## Overview / نظرة عامة
+## ما هو نفّذ؟ — What is Naffith?
 
-**نَفِّذ** (*Naffith* — "execute") is an Arabic-first macOS utility that turns everyday
-system work into reviewable commands. It shows you the **command**, not a black box:
-every operation is planned, displayed, and only then run.
+**نَفِّذ** *(Naffith — "execute")* أداةٌ أصيلة لنظام macOS، تحوّل مهامّ النظام
+اليومية — نقل ملف، ضغط مجلد، فحص عملية Git، معرفة المساحة الحرة — من أوامر
+تُكتب في الطرفية إلى عملياتٍ تُختار بالاسم من قائمة، بواجهةٍ عربية من اليمين
+إلى اليسار أولًا، ودعمٍ إنجليزي كامل إلى جانبها.
 
-> أداة تنفيذ متقدمة لنظام ماك — واجهة عربية أولًا، تعرض الأمر قبل تنفيذه.
+المشكلة التي يحلّها بسيطة: كثيرٌ من مهام macOS اليومية لا طريق إليها إلا
+الطرفية (Terminal) — حفظُ صيغة أمرٍ، وحروف flags لا تُذكر، وواجهةٌ لا تتحدّث
+العربية أصلًا. نفّذ يضع بينك وبين النظام طبقةً هادئة: تختار ما تريد بالاسم لا
+بالأمر، ويبقى الأمر نفسه معروضًا أمامك قبل أن يعمل — لا صندوقًا أسود.
 
-The interface is right-to-left Arabic by default with a full English surface alongside
-it. The core is Rust; the shell is React inside Tauri 2.
+> افعلْ ما تريد، وافهمْ ما فعلت.
+
+تطبيقٌ macOS أصيل بالكامل — نواته Rust وواجهته React داخل Tauri 2 — يعمل على
+جهازك مباشرةً، ولا يعتمد على أي خادمٍ خلفي. الاتصال بالشبكة يحدث فقط حين
+تختار أنت عمليةً تطلبه صراحةً — كفحص عنوانٍ أو تنزيل ملف.
 
 ---
 
-## Features / الميزات
+## ماذا يمكنك أن تفعل به؟ — What can it do?
 
-| | English / العربية | |
+**٤٨ عمليةً حقيقية عبر تسعة أقسام**، كلٌّ منها اسمٌ تختاره لا أمرٌ تحفظه:
+
+- **الملفات والمجلدات** — نسخ ونقل وإنشاء، وبحثٌ عن الكبير والقديم، وقياسُ ما يشغل المساحة.
+- **الضغط وفكّ الضغط** — أرشفة ZIP وTAR.GZ، وفكّها في مجلد جديد، وفحصُ محتوياتها قبل ذلك.
+- **الصور** — تحويل الصيغة وتغيير الأبعاد والتدوير، وقراءةُ خصائص الصورة.
+- **النصوص والمستندات** — دمج وتقسيم، وتحويل الترميز إلى UTF-8، ومقارنةٌ وبحثٌ داخل الملفات.
+- **الأقراص ومساحة التخزين** — المساحة الحرة، وبصمات SHA-256، ومقارنةُ ملفين، والأقراص المتصلة.
+- **الشبكة والاتصال** — اختبار الوصول وفحص DNS والمنافذ المستمعة، وتنزيلٌ من رابط.
+- **الأمان والصلاحيات** — قراءة الصلاحيات والسمات الممتدّة والتواقيع. قراءةٌ فقط — لا يُعدَّل شيء.
+- **Git ومستودعات الشفرة** — إنشاء مستودع، وحالته، وتسجيل commit، ومقارنةُ التغييرات وأرشفتها.
+- **النظام والصيانة الدورية** — العمليات الأعلى استهلاكًا، ومعلومات النظام، وتفريغ ذاكرة DNS.
+
+والتفصيل الكامل — كل عمليةٍ باسمها — في **«العمليات المتاحة»** أدناه.
+
+---
+
+## كيف يعمل؟ — How it works
+
+> طبقة هادئة بينك وبين النظام. تختار ما تريد، ونتكفّل نحن بالأمر — ويبقى الأمر
+> معروضًا أمامك متى أردت أن تعرف ما الذي جرى.
+
+أربع خطوات، لا أكثر:
+
+1. **اختر العملية** — تفتح القائمة فترى كل ما يستطيع نفّذ تنفيذه، وتختار بالاسم لا بالأمر.
+2. **أدخل القيم وراجع المعاينة** — تملأ حقلًا أو حقلين، فتظهر معاينةٌ تقول بالضبط ما الذي سيحدث قبل أن يحدث.
+3. **شاهد الأمر في سَطْر** — الأمر نفسه، مكتوبًا ومشروحًا كلمةً كلمة، إن أردت أن تفهمه — وتتجاهله إن لم ترد.
+4. **نفّذ، وشاهد النتيجة** — بعد تأكيدٍ (اختياري من الإعدادات) يُنفَّذ الأمر، وتظهر النتيجة مُهيكلة — جداول وحالة — لا نصًّا خامًا يحتاج قراءةً متأنية.
+
+---
+
+## أهم المزايا — Key features
+
+| الميزة | Feature | الوصف |
 |---|---|---|
-| **Operations** | العمليات | Execute system commands with structured parameters and real-time output streaming. |
-| **Result View** | ResultContract | Rich result rendering with formatted output, data tables and status indicators. |
-| **RTL Arabic** | واجهة عربية | Full right-to-left interface with self-hosted bilingual Cairo / Almarai typography. |
-| **Security** | الأمان | Sandboxed execution with restrictive permission controls and an audited run journal. |
-| **Developer Tools** | أدوات المطورين | Built-in debugging, process inspection and development utilities. |
-| **Git Operations** | عمليات Git | Repository management, branching, atomic commits and diff review. |
-| **System Utilities** | أدوات النظام | Disk layout, network ports and host process diagnosis. |
-| **Appearance** | المظهر | Dark and light modes with system-adaptive theme switching. |
+| واجهة عربية RTL أصيلة | Native RTL Arabic UI | خطوط Cairo وAlmarai محمَّلة محليًا بلا اتصال، وواجهة إنجليزية كاملة إلى جانبها. |
+| الأمر ظاهرٌ قبل التنفيذ | Command shown before it runs | كل عمليةٍ تُعرض كأمرٍ صريح مشروح — لا أسطر مخفية، لا مفاجآت. |
+| عرض نتائج مُهيكل | Structured result view | نتائج بجداول وملخّصات وحالة، لا نصّ خامًا يُقرأ سطرًا سطرًا. |
+| سجلّ العمليات السابقة | Run history | كل عمليةٍ سابقة مسجّلة بوقتها ونتيجتها، وتُعاد بالقيم نفسها بضغطة. |
+| عمليات الأمان قراءةٌ فقط | Security ops are read-only | الصلاحيات والتواقيع وGatekeeper — تُقرأ ولا تُعدَّل أبدًا. |
+| مظهرٌ متكيّف | Adaptive appearance | داكن وفاتح، بحسب النظام أو باختيارك. |
 
 ---
 
-## Operations / العمليات
+## العمليات المتاحة — Available operations
 
-**48 operations across 10 categories.** The count is read from the catalogue, never
-hand-maintained — `cargo run --example dump_catalogue` prints the authoritative list.
+**٤٨ عمليةً عبر عشرة أقسام.** العدد يُقرأ من الفهرس لا يُكتب يدويًا —
+`cargo run --example dump_catalogue` يطبع القائمة الرسمية.
 
-| Category | القسم | Ops |
+| القسم | Category | العمليات |
 |---|---|---|
-| `files` | الملفات | 8 |
-| `compress` | الضغط | 7 |
-| `git` | Git | 6 |
-| `text` | النصوص | 5 |
-| `network` | الشبكة | 5 |
-| `system` | النظام | 5 |
-| `images` | الصور | 4 |
-| `disk` | القرص | 4 |
-| `security` | الأمان | 4 |
-| `history` | السجل | sourced from the run log |
+| الملفات والمجلدات | `files` | 8 |
+| الضغط وفكّ الضغط | `compress` | 7 |
+| Git ومستودعات الشفرة | `git` | 6 |
+| النصوص والمستندات | `text` | 5 |
+| الشبكة والاتصال | `network` | 5 |
+| النظام والصيانة الدورية | `system` | 5 |
+| الصور | `images` | 4 |
+| الأقراص ومساحة التخزين | `disk` | 4 |
+| الأمان والصلاحيات | `security` | 4 |
+| سجلّ العمليات السابقة | `history` | يُقرأ من سجلّ التشغيل |
 
-Remaining gaps — batch plans, multi-path inputs and tool-output parsing — are named
-and costed in [`docs/roadmap.md`](docs/roadmap.md).
+الفجوات المتبقّية — كتنفيذ عدة ملفات دفعةً واحدة، أو قراءة مخرجات أدوات
+خارجية — فجواتٌ بنيوية معروفة، مشروحة ومقدَّرة الكلفة في
+[`docs/roadmap.md`](docs/roadmap.md).
 
 ---
 
-## Installation / التثبيت
+## الأمان — Security
 
-**Requirements:** macOS 12 or later (Apple Silicon & Intel), Node.js, and a Rust toolchain.
+نفّذ لا يشغّل نصًّا حرًّا في صدفةٍ خفية (shell). كل عمليةٍ أمرٌ واحدٌ محدَّد
+الشكل، مدخلاته من حقولٍ مفحوصة لا من نصٍّ حر، ويُعرض عليك كاملًا قبل أن يُنفَّذ.
+
+- **لا صدفة، لا حقن.** كل عملية `PlannedCommand` واحد — برنامجٌ ووسائطه — لا سلاسل نصية تُمرَّر إلى shell.
+- **مدخلاتٌ مفحوصة.** كل حقلٍ نوعُه معروف (`InputKind`) ويُتحقَّق منه قبل بناء أي أمر.
+- **ترقيةٌ آمنة.** الشروط المسبقة تُبصَم وقت التخطيط، والنواتج تُثبَّت دفعةً واحدة لا خطوةً خطوة.
+- **سجلٌّ للمراجعة.** كل تشغيلٍ مسجَّلٌ في دفتر العمليات، فيمكن مراجعته لاحقًا.
+- **عمليات الأمان قراءةٌ فقط.** فحص الصلاحيات والتواقيع وGatekeeper لا يُعدِّل شيئًا أبدًا.
+
+---
+
+## التثبيت — Installation
+
+**المتطلبات:** macOS 12 أو أحدث (‏Apple Silicon أو Intel)، مع Node.js وأدوات Rust مثبّتة.
 
 ```bash
 git clone https://github.com/iSltanX/naffith.git
@@ -73,99 +124,92 @@ cd naffith
 npm install
 ```
 
-Build a signed-less local `.dmg` / `.app` bundle:
+لبناء نسخة `.dmg` / `.app` محلية (بلا توقيع):
 
 ```bash
 npm run build
 ```
 
-> The macOS icon set is assembled, not derived — never run `tauri icon`.
-> See [`src-tauri/icons/README.md`](src-tauri/icons/README.md) for why.
+> مجموعة أيقونات macOS مُجمَّعةٌ لا مُشتقَّة — لا تُشغِّل `tauri icon` أبدًا.
+> التفصيل في [`src-tauri/icons/README.md`](src-tauri/icons/README.md).
 
 ---
 
-## Usage / الاستخدام
+## الاستخدام — Usage
 
 ```bash
-npm run dev          # run the app (Tauri + Vite)
-npm run dev:web      # browser-only shell, no Rust core
+npm run dev          # التطبيق الكامل (Tauri + Vite)
+npm run dev:web      # الواجهة فقط في المتصفح، بلا نواة Rust
 ```
 
-Pick a category, choose an operation, fill its typed inputs — نَفِّذ builds the command,
-shows it to you in full, and runs it only when you confirm.
+اختر قسمًا، فعمليةً، فاملأ حقولها — يبني نفّذ الأمر، ويعرضه عليك كاملًا، ولا
+يُنفِّذه إلا بعد موافقتك.
 
 ---
 
-## Security / الأمان
+## الإعدادات — Settings
 
-- Every run is a single, fully-formed `PlannedCommand` — no shell string interpolation.
-- Inputs are typed (`InputKind`) and validated before a command is ever constructed.
-- Preconditions are fingerprinted at plan time; outputs are promoted atomically.
-- Each run is recorded in the journal so it can be audited after the fact.
-
----
-
-## Result View / ResultView
-
-Results travel over a typed `ResultContract` rather than raw text, so the UI renders
-structured sections — summaries, tables, diffs and status — instead of parsing stdout
-in the view layer.
+- **المظهر** — داكن / فاتح / حسب النظام.
+- **اللغة** — عربية أو إنجليزية للواجهة.
+- **مسارا الأدوات** — تحديد يدوي لمسار Node.js وCargo إن لم يُكتشفا تلقائيًا.
+- **تأكيدٌ قبل التنفيذ** — طلب تأكيدٍ صريح قبل العمليات الحسّاسة أو غير القابلة للتراجع.
+- **صوت الإشعارات** — عند انتهاء عمليةٍ طويلة.
+- **مسار العمل الافتراضي** — المجلد الذي تبدأ منه العمليات.
+- **شاشة الترحيب** — يمكن عرضها مجددًا من هنا في أي وقت.
 
 ---
 
-## Settings / الإعدادات
+## أدوات المطورين — Developer tools
 
-Theme (dark / light / system), interface language, Node.js and Cargo tool paths,
-notification sound and updater state.
-
----
-
-## Developer Tools / أدوات المطورين
+للمساهمين — أوامر الفحص والاختبار قبل أي تعديل:
 
 ```bash
-npm run typecheck    # tsc, app + tests
-npm run lint         # eslint, zero warnings
-npm run test:ui      # vitest
-npm run test:core    # cargo test
-npm run lint:core    # cargo clippy, warnings denied
+npm run typecheck    # tsc، للتطبيق والاختبارات
+npm run lint         # eslint بلا أي تحذير
+npm run test:ui      # اختبارات الواجهة (vitest)
+npm run test:core    # اختبارات النواة (cargo test)
+npm run lint:core    # cargo clippy، بمنع كل تحذير
 npm run fmt:core     # cargo fmt --check
 ```
 
----
-
-## Screenshots / لقطات الشاشة
-
-Application screenshots are not committed yet. The identity file carries five
-presentation frames — single, side-by-side, theme comparison, feature focus and
-premium terminal — on page **21 — GitHub & Repository Assets**, so captures can be
-dropped straight into a consistent frame.
+**ملاحظة معمارية:** النتائج تنتقل بين النواة والواجهة عبر عقدٍ نمطي
+(‏`ResultContract`) لا نصٍّ خام، فتُرسم في الواجهة أقسامًا مُهيكلة — ملخّصات
+وجداول وحالة — لا تحليل stdout في طبقة العرض.
 
 ---
 
-## Contributing / المساهمة
+## لقطات الشاشة — Screenshots
 
-`docs/` is a **read-only** mirror of the identity project — nothing there is edited by
-hand. Brand corrections belong upstream and are then re-copied.
+لقطات التطبيق لم تُرفع بعد. يحمل ملف الهوية خمسة أطر عرضٍ جاهزة — لقطة
+مفردة، جنبًا إلى جنب، مقارنة سمتين، تركيزٌ على ميزة، وطرفيّةٌ مميّزة — على
+صفحة **‏21 — GitHub & Repository Assets**، فتُلتقط الصور وتوضع مباشرةً في
+إطارٍ واحد متّسق.
 
-The one exception is [`docs/brand/github/`](docs/brand/github/), which is generated:
+---
+
+## المساهمة — Contributing
+
+`docs/` نسخةٌ للقراءة فقط من مشروع الهوية — لا يُعدَّل شيء فيها يدويًا.
+تصحيحات الهوية مكانها المشروع الأصل، ثم تُنسخ من جديد.
+
+الاستثناء الوحيد [`docs/brand/github/`](docs/brand/github/)، وهو مُولَّد:
 
 ```bash
 ./docs/brand/github/_render/build.sh
 ```
 
-That rebuilds the header, hero and social-preview PNGs from the checked-in HTML
-sources using the repository's own self-hosted fonts — no network, no Figma round-trip.
+يعيد بناء صور الرأس والبطل والمعاينة الاجتماعية من ملفات HTML المحفوظة،
+باستخدام خطوط المشروع نفسها المحمَّلة محليًا — بلا اتصال، وبلا عودة إلى Figma.
 
-Before opening a pull request, run the full gate: `typecheck`, `lint`, `test:ui`,
-`test:core`, `lint:core`, `fmt:core`.
+قبل فتح طلب سحب، شغّل البوّابة الكاملة: `typecheck`، `lint`، `test:ui`،
+`test:core`، `lint:core`، `fmt:core`.
 
 ---
 
-## License / الترخيص
+## الترخيص — License
 
-**No licence file has been committed yet.** Until `LICENSE` exists, all rights are
-reserved by default and the badge is intentionally omitted. Add the licence you intend
-and the badge can go back.
+**لم يُرفع ملف ترخيص بعد.** إلى أن يوجد `LICENSE`، كل الحقوق محفوظةٌ افتراضيًا
+والشارة محذوفةٌ عمدًا. أضِف الترخيص الذي تريده وتعود الشارة معه.
 
 ---
 
