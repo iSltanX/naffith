@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="ar" dir="ltr">
+<head>
+<meta charset="utf-8">
+<title>naffith · repo header</title>
+<link rel="stylesheet" href="assets.css">
+<style>
+  /* Figma: github-repository-header — 1280×320, VERTICAL, padding 32,
+     SPACE_BETWEEN over center-identity (241, centred) and footer-meta (15). */
+  .stage { width: 1280px; height: 320px; padding: 32px; display: flex; flex-direction: column; justify-content: space-between; }
+  .inset { inset: 12px; border-radius: 8px; }
+
+  /* ambient-glow: 520×520 at (380,-110), radial ember .12 → .05@.52 → 0,
+     layer blur 120, layer opacity .2 */
+  .glow {
+    left: 380px; top: -110px; width: 520px; height: 520px;
+    background: radial-gradient(closest-side, rgba(232,93,44,.12) 0%, rgba(232,93,44,.05) 52%, rgba(232,93,44,0) 100%);
+    filter: blur(120px); opacity: .2;
+  }
+
+  .identity { height: 241px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; position: relative; }
+  .text-stack { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+
+  /* title-row: HORIZONTAL, gap 16, BASELINE aligned */
+  .title-row { display: flex; align-items: baseline; gap: 16px; }
+  .title-row .ar { font-size: 36px; line-height: 67px; }
+  .title-row .en { font-size: 20px; line-height: 34px; letter-spacing: 3px; color: var(--ember); }
+
+  .tagline { font-size: 14px; line-height: 16px; color: var(--muted); }
+
+  /* footer-meta: 1216 wide, 16px inner padding, SPACE_BETWEEN */
+  .footer { display: flex; justify-content: space-between; align-items: center; padding: 0 16px; height: 15px; position: relative; }
+  .footer .left  { font-size: 11px; line-height: 15px; letter-spacing: 1px; font-weight: 500; color: var(--muted); }
+  .footer .right { font-size: 11px; line-height: 15px; font-weight: 700; color: var(--ember); }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="glow"></div>
+  <div class="inset"></div>
+
+  <div class="identity">
+    <svg class="mark" viewBox="4 10 54 48" width="61" height="54" xmlns="http://www.w3.org/2000/svg">
+      <g fill="#FAF8F5">
+        <rect x="52" y="10" width="6" height="19"/>
+        <rect x="40" y="10" width="6" height="19"/>
+        <rect x="28" y="10" width="6" height="19"/>
+        <rect x="20" y="29" width="38" height="6"/>
+      </g>
+      <path fill="#FAF8F5" d="M20 29 L26 29 L26 49 C26 55 23 58 17 58 L13 58 C7 58 4 55 4 49 L4 42 L10 42 L10 49 C10 51 11 52 13 52 L17 52 C19 52 20 51 20 49 L20 29 Z"/>
+      <rect class="ijam" x="12" y="19" width="6" height="6"/>
+    </svg>
+
+    <div class="text-stack">
+      <div class="title-row">
+        <span class="ar-display ar">نَفِّذ</span>
+        <span class="en-word en">NAFFITH</span>
+      </div>
+      <div class="tag-en tagline">Arabic-first macOS command execution utility</div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <span class="mono left">macOS · TAURI · RUST · REACT</span>
+    <span class="mono right">v0.2.0</span>
+  </div>
+</div>
+</body>
+</html>

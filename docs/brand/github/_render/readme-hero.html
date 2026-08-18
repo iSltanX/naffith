@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ar" dir="ltr">
+<head>
+<meta charset="utf-8">
+<title>naffith · readme hero</title>
+<link rel="stylesheet" href="assets.css">
+<style>
+  /* Figma: readme-hero — 1280×640, VERTICAL, padding 64, CENTER, itemSpacing 44
+     over brand-mark-focus (108×96) / text-center-stack / status-badge-row. */
+  .stage { width: 1280px; height: 640px; padding: 64px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 44px; }
+  .inset { inset: 16px; border-radius: 12px; }
+
+  /* hero-ambient-glow: 600×400 at (340,0), radial ember .22 → transparent @.8 */
+  .glow {
+    left: 340px; top: 0; width: 600px; height: 400px;
+    background: radial-gradient(closest-side, rgba(232,93,44,.22) 0%, rgba(15,15,30,0) 80%);
+  }
+
+  /* text-center-stack: VERTICAL, CENTER, itemSpacing 22 */
+  .text-stack { display: flex; flex-direction: column; align-items: center; gap: 22px; position: relative; }
+
+  /* wordmark-lockup: VERTICAL, CENTER, itemSpacing 0 */
+  .lockup { display: flex; flex-direction: column; align-items: center; gap: 0; }
+  .lockup .ar { font-size: 72px; line-height: 92px; }
+  .lockup .en { font-size: 28px; line-height: 34px; letter-spacing: 8px; color: var(--ink-050); }
+
+  /* tagline-pair: VERTICAL, CENTER, itemSpacing 4 */
+  .taglines { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .taglines .en { font-size: 18px; line-height: 20px; color: var(--second); }
+  .taglines .ar { font-size: 16px; line-height: 30px; color: var(--muted); }
+
+  /* status-badge-row: HORIZONTAL, CENTER, itemSpacing 12 */
+  .badges { display: flex; gap: 12px; position: relative; }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="glow"></div>
+  <div class="inset"></div>
+
+  <svg class="mark" viewBox="4 10 54 48" width="108" height="96" xmlns="http://www.w3.org/2000/svg" style="position:relative">
+    <g fill="#FAF8F5">
+      <rect x="52" y="10" width="6" height="19"/>
+      <rect x="40" y="10" width="6" height="19"/>
+      <rect x="28" y="10" width="6" height="19"/>
+      <rect x="20" y="29" width="38" height="6"/>
+    </g>
+    <path fill="#FAF8F5" d="M20 29 L26 29 L26 49 C26 55 23 58 17 58 L13 58 C7 58 4 55 4 49 L4 42 L10 42 L10 49 C10 51 11 52 13 52 L17 52 C19 52 20 51 20 49 L20 29 Z"/>
+    <rect class="ijam" x="12" y="19" width="6" height="6"/>
+  </svg>
+
+  <div class="text-stack">
+    <div class="lockup">
+      <span class="ar-display ar">نَفِّذ</span>
+      <span class="en-word en">NAFFITH</span>
+    </div>
+    <div class="rule"></div>
+    <div class="taglines">
+      <span class="tag-en en">Execute with precision. Arabic-first macOS utility.</span>
+      <span class="tag-ar ar">أداة تنفيذ متقدمة لنظام ماك</span>
+    </div>
+  </div>
+
+  <div class="badges">
+    <span class="badge">v0.2.0</span>
+    <span class="badge">macOS</span>
+    <span class="badge">Tauri 2.0</span>
+  </div>
+</div>
+</body>
+</html>
