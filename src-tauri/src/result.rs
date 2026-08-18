@@ -1092,6 +1092,16 @@ fn parse_git_status(lines: Vec<&str>, notices: Vec<OutputNotice>) -> Option<Resu
     let mut rows = Vec::with_capacity(lines.len());
     for line in lines {
         let status = line.get(..2)?;
+        // سطر رأس الفرع الذي تضيفه `--branch` (`## main...origin/main
+        // [ahead 1]`) — يظهر أوّل سطرٍ **دائمًا**، حتى في مستودعٍ نظيف بلا أي
+        // تغيير (انظر `git_status.rs` لسبب طلب الراية). ليس تغييرًا فيُعدّ
+        // صفًّا؛ تجاهله هنا هو الفارق بين مستودعٍ نظيف يُقرأ «لا تغييرات»
+        // ومستودعٍ نظيف يُقرأ «تغييرٌ واحد، حالته ‎##‎» — وهذا كان العطل
+        // بعينه. اسم الفرع نفسه لا يُعرض في هذا الجدول اليوم: عرضه يحتاج شكل
+        // عرضٍ غير صفّي «الحالة/المسار»، ولم يُصمَّم بعد.
+        if status == "##" {
+            continue;
+        }
         let separator = line.as_bytes().get(2)?;
         let path = line.get(3..)?.trim();
         if *separator != b' ' || path.is_empty() || !valid_git_status(status) {
@@ -1099,9 +1109,10 @@ fn parse_git_status(lines: Vec<&str>, notices: Vec<OutputNotice>) -> Option<Resu
         }
         rows.push(row([status, path]));
     }
-    if rows.is_empty() {
-        return None;
-    }
+    // صفر صفوفٍ بعد تجاهل رأس الفرع إجابةٌ مشروعة — مستودعٌ نظيف — لا فشل
+    // تحليل، فلا يُرَدّ `None` هنا. نفس منطق `files.list`/`git.show.file`
+    // أعلاه: كل سطرٍ وصل هذا الموضع فُهم (رأسًا يُتجاهل أو صفًّا صحيحًا)،
+    // فلا داعي لسقفٍ يقول «صفرٌ يعني اشتباهًا في التحليل».
     Some(collection(
         CollectionKind::GitStatus,
         &["result.column.git.status", "result.column.path"],
@@ -1111,8 +1122,9 @@ fn parse_git_status(lines: Vec<&str>, notices: Vec<OutputNotice>) -> Option<Resu
 }
 
 fn valid_git_status(status: &str) -> bool {
-    status == "##"
-        || status == "??"
+    // `##` تُعالَج أعلاه بتجاهلٍ صريح قبل هذا الفحص، فلا حاجة لقبولها هنا —
+    // وقبولها هنا كان هو العطل بعينه: يجعلها صفًّا مزيَّفًا لا رأسًا يُتجاهل.
+    status == "??"
         || status == "!!"
         || status
             .bytes()
@@ -1554,6 +1566,28 @@ enum ExitSemantics {
     /// red; treating it as `NoMatches` would have claimed "nothing found"
     /// over a list that found something. Anything above 1 is still failure.
     PartialLookup,
+    /// `unzip -t`: a corrupt archive is a Verdict — "this archive is
+    /// damaged" — not a tool malfunction. Standard's default (only exit 0 is
+    /// an answer, everything else is Failure) made every corrupt archive
+    /// render as a red execution error, so the one answer this operation
+    /// exists to give ("is this archive intact?") could never be negative.
+    ///
+    /// Info-ZIP's documented exit codes (`man unzip`, DIAGNOSTICS) name nine
+    /// distinct integrity/content problems: 1 (files skipped — unsupported
+    /// method or unknown password), 2 (generic zip-format error), 3 (severe
+    /// zip-format error), 9 (archive not found), 11 (no matching files), 50
+    /// (disk full during test), 51 (archive truncated), 81 (unsupported
+    /// compression/decryption), 82 (bad decryption password). All nine are
+    /// genuine answers about the archive, so all map to `Rejected`. Measured
+    /// directly against real archives: an intact archive exits 0, a
+    /// CRC-corrupted one exits 51, and a truncated or non-zip file exits 9.
+    ///
+    /// Left unmapped on purpose — memory-allocation failures (4, 5, 6, 7),
+    /// invalid CLI usage (10), and a user abort (80) are failures of the
+    /// tool or its environment, not answers about the archive, so they fall
+    /// through to the catch-all `Failure` below rather than being reported
+    /// as a verdict.
+    ArchiveIntegrity,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1600,7 +1634,8 @@ const MAPPINGS: &[OperationResultSpec] = &[
     OperationResultSpec::new("compress.folder.zip", Artifact),
     OperationResultSpec::new("compress.zip.list", Collection),
     OperationResultSpec::new("compress.zip.extract", Artifact),
-    OperationResultSpec::new("compress.zip.test", Verdict),
+    OperationResultSpec::new("compress.zip.test", Verdict)
+        .with_exit(ExitSemantics::ArchiveIntegrity),
     OperationResultSpec::new("compress.tar.create", Artifact),
     OperationResultSpec::new("compress.tar.extract", Artifact),
     OperationResultSpec::new("compress.tar.list", Collection),
@@ -1728,6 +1763,10 @@ pub fn classify_exit(op_id: &str, code: Option<i32>) -> ExitMeaning {
         (ExitSemantics::CodeIntegrity, Some(0)) => Answer(Accepted),
         (ExitSemantics::CodeIntegrity, Some(1)) => Answer(Rejected),
         (ExitSemantics::PartialLookup, Some(0 | 1)) => Answer(Completed),
+        (ExitSemantics::ArchiveIntegrity, Some(0)) => Answer(Accepted),
+        (ExitSemantics::ArchiveIntegrity, Some(1 | 2 | 3 | 9 | 11 | 50 | 51 | 81 | 82)) => {
+            Answer(Rejected)
+        }
         (_, Some(0)) => Answer(Completed),
         _ => Failure,
     }
@@ -1942,6 +1981,44 @@ mod tests {
             classify_exit("system.process.open_files", Some(1)),
             ExitMeaning::Answer(ResultSemantic::NoMatches)
         );
+    }
+
+    /// H-2 regression: `unzip -t`'s documented integrity-failure codes must
+    /// all become a `Rejected` verdict, not a red execution failure. The
+    /// two codes measured directly against real archives — 51 for a
+    /// CRC-corrupted archive, 9 for a truncated or non-zip file — anchor
+    /// the set; the rest come from Info-ZIP's own exit-code table
+    /// (`man unzip`, DIAGNOSTICS) for the same reason: they are all answers
+    /// about the archive, not tool malfunctions.
+    #[test]
+    fn a_corrupt_archive_is_a_rejected_verdict_not_an_execution_failure() {
+        assert_eq!(
+            classify_exit("compress.zip.test", Some(0)),
+            ExitMeaning::Answer(ResultSemantic::Accepted),
+            "an intact archive"
+        );
+        for code in [1, 2, 3, 9, 11, 50, 51, 81, 82] {
+            assert_eq!(
+                classify_exit("compress.zip.test", Some(code)),
+                ExitMeaning::Answer(ResultSemantic::Rejected),
+                "unzip -t exit {code} must be a rejected verdict, not a failure"
+            );
+        }
+    }
+
+    /// Codes that describe a tool/environment problem — not a fact about
+    /// the archive — must still fail closed to a red execution error, the
+    /// same as any operation whose exit semantics do not cover a code.
+    #[test]
+    fn a_tool_level_zip_test_failure_still_fails_closed() {
+        for code in [4, 5, 6, 7, 10, 80] {
+            assert_eq!(
+                classify_exit("compress.zip.test", Some(code)),
+                ExitMeaning::Failure,
+                "unzip -t exit {code} must not be read as an archive verdict"
+            );
+        }
+        assert_eq!(classify_exit("compress.zip.test", None), ExitMeaning::Failure);
     }
 
     /// `system.process.kill` وحدها هنا: رمزٌ غير صفريّ يعني «لا عملية بهذا
@@ -2594,6 +2671,55 @@ mod tests {
             panic!("files.list did not produce a structured (if empty) collection")
         };
         assert_eq!(rows, Vec::new());
+    }
+
+    /// H-3 regression: a clean repository is not "no changes" to `git
+    /// status --short --branch` — the branch header line (`## main`) is
+    /// *always* the first line, clean or not. Before the fix, that header
+    /// satisfied `valid_git_status` (it accepted `"##"`) and became a
+    /// fabricated one-row "change" whose status read `##` and whose path
+    /// read the branch name. A clean repo must produce zero rows, not one.
+    #[test]
+    fn a_clean_repository_reports_zero_changes_not_a_fabricated_branch_row() {
+        let result = ResultContract::for_operation(
+            "git.status",
+            ResultSemantic::Completed,
+            None,
+            vec![RawOutputLine::Stdout("## main".into())],
+            None,
+        );
+        let ResultPayload::Collection { rows, .. } = result.payload else {
+            panic!("git.status did not produce a structured (if empty) collection")
+        };
+        assert_eq!(rows, Vec::new(), "the branch header must never become a change row");
+    }
+
+    /// The same header line must also disappear when real changes are
+    /// present alongside it — only the genuine changes become rows.
+    #[test]
+    fn a_dirty_repository_reports_only_its_real_changes_not_the_branch_header_too() {
+        let result = ResultContract::for_operation(
+            "git.status",
+            ResultSemantic::Completed,
+            None,
+            vec![
+                RawOutputLine::Stdout("## main...origin/main [ahead 1]".into()),
+                RawOutputLine::Stdout(" M src/result.rs".into()),
+                RawOutputLine::Stdout("?? new_file.txt".into()),
+            ],
+            None,
+        );
+        let ResultPayload::Collection { rows, .. } = result.payload else {
+            panic!("git.status did not produce a structured collection")
+        };
+        assert_eq!(
+            rows.iter().map(|r| r.cells.clone()).collect::<Vec<_>>(),
+            vec![
+                vec![" M".to_owned(), "src/result.rs".to_owned()],
+                vec!["??".to_owned(), "new_file.txt".to_owned()],
+            ],
+            "the header must be skipped, and only real changes must remain"
+        );
     }
 
     /// `git blame --line-porcelain` in fact repeats the full metadata block

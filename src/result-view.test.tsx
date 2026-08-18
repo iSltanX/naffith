@@ -232,7 +232,7 @@ describe("عائلات النتيجة المهيكلة", () => {
     const cases: ResultContract[] = [
       { ...FAMILY_RESULTS.diff_search, semantic: "no_matches", items: [] },
       { ...FAMILY_RESULTS.comparison, semantic: "no_differences", equal: true },
-      { ...FAMILY_RESULTS.verdict, semantic: "rejected", value: "rejected" },
+      { ...FAMILY_RESULTS.verdict, kind: "gatekeeper", semantic: "rejected", value: "rejected" },
       { ...FAMILY_RESULTS.verdict, semantic: "unsigned", value: "unsigned" },
     ];
     for (const result of cases) {
@@ -240,6 +240,55 @@ describe("عائلات النتيجة المهيكلة", () => {
       expect(rendered.container.querySelector(".result-status--danger")).toBeNull();
       rendered.unmount();
     }
+  });
+
+  /**
+   * H-1 regression: the same `ResultSemantic` value must render different
+   * copy depending on `kind` — a macOS *policy* decision (Gatekeeper) reads
+   * nothing like a *cryptographic* integrity check (codesign --verify) or
+   * an *archive* integrity check (unzip -t), even though all three can
+   * carry `accepted`/`rejected`. Before the fix, every kind shared one
+   * generic string, so a validly-signed-but-unnotarised binary — or an
+   * intact ZIP — displayed "مقبول وفق سياسة macOS" (accepted per macOS
+   * policy), which is not what either tool actually checked.
+   */
+  it("يفرد لكل نوع حكمٍ نصّه الخاص، لا نصّ Gatekeeper العام للجميع", () => {
+    // النصّ يظهر مرّتين على الشاشة (شارة الرأس ومحتوى البطاقة معًا)، تمامًا
+    // كما تفعل بقيّة العائلات — لذلك `getAllByText` لا `getByText`.
+    const gatekeeper = view({
+      ...FAMILY_RESULTS.verdict,
+      kind: "gatekeeper",
+      semantic: "accepted",
+      value: "accepted",
+    });
+    expect(
+      screen.getAllByText(AR["result.semantic.gatekeeper.accepted"]).length,
+    ).toBeGreaterThan(0);
+    gatekeeper.unmount();
+
+    const codeIntegrity = view({
+      ...FAMILY_RESULTS.verdict,
+      kind: "code_integrity",
+      semantic: "accepted",
+      value: "accepted",
+    });
+    expect(
+      screen.getAllByText(AR["result.semantic.code_integrity.accepted"]).length,
+    ).toBeGreaterThan(0);
+    expect(screen.queryByText(AR["result.semantic.gatekeeper.accepted"])).toBeNull();
+    codeIntegrity.unmount();
+
+    const archiveIntegrity = view({
+      ...FAMILY_RESULTS.verdict,
+      kind: "archive_integrity",
+      semantic: "rejected",
+      value: "rejected",
+    });
+    expect(
+      screen.getAllByText(AR["result.semantic.archive_integrity.rejected"]).length,
+    ).toBeGreaterThan(0);
+    expect(screen.queryByText(AR["result.semantic.gatekeeper.rejected"])).toBeNull();
+    archiveIntegrity.unmount();
   });
 });
 

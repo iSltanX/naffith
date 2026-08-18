@@ -112,6 +112,10 @@ mod tests {
         assert_eq!(cmd.reveal_target.as_deref(), Some(project.as_path()));
     }
 
+    /// انحدارٌ مباشر لـC-1: `npm` تشغّل نصوص `package.json` عبر `sh` — تستدعيه
+    /// بالاسم المجرّد لا بمسارٍ مطلق، فتحتاج أن تجده عبر `PATH` هي نفسها.
+    /// اسم الاختبار كان يَعِد بأدلّة النظام قبل هذا الإصلاح، ولم تكن هناك:
+    /// هذا التأكيد وحده هو ما يجعل الاسم صادقًا الآن.
     #[test]
     fn the_child_path_is_exactly_the_node_directory_plus_system_dirs() {
         let s = Scratch::new("npm-typecheck-path").unwrap();
@@ -119,7 +123,50 @@ mod tests {
         let node = node_stub(&s);
 
         let cmd = plan_with(&project, &node).unwrap();
-        assert_eq!(cmd.extra_path, vec![node.parent().unwrap().to_path_buf()]);
+        assert_eq!(
+            cmd.extra_path,
+            vec![
+                node.parent().unwrap().to_path_buf(),
+                PathBuf::from("/usr/bin"),
+                PathBuf::from("/bin"),
+                PathBuf::from("/usr/sbin"),
+                PathBuf::from("/sbin"),
+            ]
+        );
+    }
+
+    /// الاختبار السلوكي لـC-1: نصّ `npm` وهميّ يستدعي `sh` **بالاسم
+    /// المجرّد**، تمامًا كما تفعل `npm` الحقيقية داخليًا عند تشغيل أي سكربت.
+    /// قبل الإصلاح كان هذا يفشل بخروجٍ غير صفري لأن `PATH` لا يحمل `/bin`
+    /// (حيث `sh`)؛ هذا الاختبار يُشغّل الأمر المخطَّط فعليًا عبر المنفِّذ
+    /// الحقيقي — لا يكتفي بفحص قائمة `extra_path` بنيويًا — فيثبت الأثر لا
+    /// شكله فقط.
+    #[tokio::test]
+    async fn a_script_that_shells_out_to_sh_by_bare_name_actually_runs() {
+        let s = Scratch::new("npm-typecheck-sh-lookup").unwrap();
+        let project = s.dir("مشروع");
+        let bin = s.dir("bin");
+        let node = bin.join("node");
+        std::fs::write(&node, b"#!/bin/sh\nexit 0\n").unwrap();
+        // نصّ `npm` الوهمي هذا **هو** الحالة قيد الاختبار: يستدعي `sh` بالاسم
+        // المجرّد، محاكيًا `child_process.spawn('sh', …)` التي تجريها `npm`
+        // الحقيقية لتشغيل أي سكربت في `package.json`.
+        let npm = bin.join("npm");
+        std::fs::write(&npm, b"#!/bin/sh\nsh -c 'exit 0'\n").unwrap();
+        for p in [&node, &npm] {
+            let mut perm = std::fs::metadata(p).unwrap().permissions();
+            std::os::unix::fs::PermissionsExt::set_mode(&mut perm, 0o755);
+            std::fs::set_permissions(p, perm).unwrap();
+        }
+
+        let cmd = plan_with(&project, &node).unwrap();
+        let (tx, mut rx) = tokio::sync::mpsc::channel(64);
+        let (_cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
+        let task = tokio::spawn(crate::executor::run(cmd, tx, cancel_rx));
+        while rx.recv().await.is_some() {}
+        let outcome = task.await.unwrap();
+
+        assert!(outcome.is_success(), "the bare `sh` lookup must succeed now: {outcome:?}");
     }
 
     #[test]

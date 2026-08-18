@@ -106,7 +106,16 @@ export default function RunStream({
   const presentation = streamPresentation(lines, phase);
   const headerTitle = t(`stream.state.${presentation}.title`);
   const headerMeta = t(`stream.state.${presentation}.meta`);
-  const showLines = presentation === 'stdout' || presentation === 'stderr' || presentation === 'truncated';
+  // ‏`dropped` هنا أيضًا: الإسقاط يعني أن **بعض** الأسطر ضاعت — من مقدّمة ما
+  // حفظته الواجهة، أو بعلامة `omitted` وسط المجرى — لا أن كل ما وصل ضاع.
+  // إخفاء الذيل المحفوظ بالكامل عند أي إسقاط كان يعني أن أطول التشغيلات
+  // إخراجًا (‏`cargo build`، `npm test`) — وهي أكثرها حاجةً إلى أن يُقرأ خرجها
+  // — تعرض لا شيء إطلاقًا.
+  const showLines =
+    presentation === 'stdout' ||
+    presentation === 'stderr' ||
+    presentation === 'truncated' ||
+    presentation === 'dropped';
 
   return (
     <section
@@ -134,34 +143,39 @@ export default function RunStream({
             </div>
         ) : presentation === 'silent' ? (
           <p className="stream__state-copy">{t('stream.state.silent.body')}</p>
-        ) : presentation === 'dropped' ? (
-          <p className="stream__state-copy">{t('stream.state.dropped.body')}</p>
         ) : showLines ? (
-          /* المجرى سجلٌّ قابل للمراجعة لا منطقةٌ حيّة عملاقة. حالة التشغيل
-             الموجزة تُعلنها `RunningState`؛ أمّا إعلان كل سطرٍ يصل فيقاطع قارئ
-             الشاشة بلا انتهاء، خصوصًا مع أوامر البحث والتقارير الطويلة. */
-          <ol className="stream__lines">
-            {lines.map(({ seq, event }) => (
-              <li key={seq} className={`stream__line stream__line--${event.stream}`}>
-                {event.stream === 'truncated' || event.stream === 'omitted' ? (
-                  <span className="t-caption stream__notice">
-                    {t(event.stream === 'omitted' ? 'stream.omitted' : 'stream.truncated')}{' '}
-                    <bdi className="num">{event.line.dropped}</bdi>
-                  </span>
-                ) : (
-                  <>
-                    <span className="stream__tag t-caption" aria-hidden="true">
-                      {t(event.stream === 'stderr' ? 'stream.stderr' : 'stream.stdout')}
+          <>
+            {/* الإسقاط يفسَّر فوق الذيل المحفوظ، لا بدلًا منه — انظر توثيق
+                `showLines` أعلاه. */}
+            {presentation === 'dropped' && (
+              <p className="stream__state-copy">{t('stream.state.dropped.body')}</p>
+            )}
+            {/* المجرى سجلٌّ قابل للمراجعة لا منطقةٌ حيّة عملاقة. حالة التشغيل
+                الموجزة تُعلنها `RunningState`؛ أمّا إعلان كل سطرٍ يصل فيقاطع قارئ
+                الشاشة بلا انتهاء، خصوصًا مع أوامر البحث والتقارير الطويلة. */}
+            <ol className="stream__lines">
+              {lines.map(({ seq, event }) => (
+                <li key={seq} className={`stream__line stream__line--${event.stream}`}>
+                  {event.stream === 'truncated' || event.stream === 'omitted' ? (
+                    <span className="t-caption stream__notice">
+                      {t(event.stream === 'omitted' ? 'stream.omitted' : 'stream.truncated')}{' '}
+                      <bdi className="num">{event.line.dropped}</bdi>
                     </span>
-                    {/* نصُّ الأداة كما هو: خطٌّ أحادي، اتجاهٌ LTR، ومسافاته
-                        محفوظة. و`overflow-wrap: normal` في الأنماط كي لا يُشقّ
-                        مسارٌ في منتصفه — القاعدة نفسها التي يتبعها الأمر. */}
-                    <code className="stream__text">{event.line}</code>
-                  </>
-                )}
-              </li>
-            ))}
-          </ol>
+                  ) : (
+                    <>
+                      <span className="stream__tag t-caption" aria-hidden="true">
+                        {t(event.stream === 'stderr' ? 'stream.stderr' : 'stream.stdout')}
+                      </span>
+                      {/* نصُّ الأداة كما هو: خطٌّ أحادي، اتجاهٌ LTR، ومسافاته
+                          محفوظة. و`overflow-wrap: normal` في الأنماط كي لا يُشقّ
+                          مسارٌ في منتصفه — القاعدة نفسها التي يتبعها الأمر. */}
+                      <code className="stream__text">{event.line}</code>
+                    </>
+                  )}
+                </li>
+              ))}
+            </ol>
+          </>
         ) : null}
 
         {(presentation === 'truncated' || presentation === 'dropped') && (

@@ -8,8 +8,26 @@ import type {
   ResultContract,
   ResultSemantic,
   StructuredLine,
+  VerdictKind,
 } from "./ipc";
 import "./result-view.css";
+
+/**
+ * The i18n key for a verdict's headline/body — scoped by `kind`, not just by
+ * `value`.
+ *
+ * The same `ResultSemantic` means something different depending on which
+ * tool produced it: `accepted`/`rejected` from `security.gatekeeper` is a
+ * macOS *policy* decision, while the same two values from
+ * `security.codesign.verify` are a *cryptographic* integrity check, and from
+ * `compress.zip.test` they describe an archive, not a signed binary at all.
+ * Rendering one generic string for every kind was the bug — see H-1 in the
+ * branch audit — so every verdict site must key its copy by `(kind, value)`,
+ * never by `value` alone.
+ */
+function verdictSemanticKey(kind: VerdictKind, value: ResultSemantic): string {
+  return `result.semantic.${kind}.${value}`;
+}
 
 export type { ResultCategory, ResultContract } from "./ipc";
 
@@ -147,7 +165,7 @@ function copyText(result: ResultContract): string {
         .filter(Boolean)
         .join("\n");
     case "verdict":
-      return [t(`result.semantic.${result.value}`), structuredText(result.details)]
+      return [t(verdictSemanticKey(result.kind, result.value)), structuredText(result.details)]
         .filter(Boolean)
         .join("\n");
     case "diff_search":
@@ -281,11 +299,20 @@ function statusPresentation(
   }
 
   const tone = SEMANTIC_TONE[result.semantic];
+  // Verdict copy is kind-scoped — see `verdictSemanticKey`. `result.semantic`
+  // and `result.value` are the same value for every verdict (the wire
+  // contract's own deserializer rejects a payload where they differ), so
+  // reading `result.semantic` here is exactly the value the inner content
+  // renders too.
+  const semanticKey =
+    result.type === "verdict"
+      ? verdictSemanticKey(result.kind, result.semantic)
+      : `result.semantic.${result.semantic}`;
   return {
     tone,
     icon: SEMANTIC_ICON[result.semantic],
-    titleKey: `result.semantic.${result.semantic}`,
-    bodyKey: `result.semantic.${result.semantic}.body`,
+    titleKey: semanticKey,
+    bodyKey: `${semanticKey}.body`,
     badgeKey: STATUS_LABEL[tone],
     eyebrowKey: "result.heading",
   };
@@ -659,14 +686,16 @@ function ResultBodyContent({
         </>
       );
     }
-    case "verdict":
+    case "verdict": {
+      const semanticKey = verdictSemanticKey(result.kind, result.value);
       return (
         <div className={`result-verdict result-verdict--${SEMANTIC_TONE[result.value]}`}>
-          <strong>{t(`result.semantic.${result.value}`)}</strong>
-          <p>{t(`result.semantic.${result.value}.body`)}</p>
+          <strong>{t(semanticKey)}</strong>
+          <p>{t(`${semanticKey}.body`)}</p>
           <StructuredLines lines={result.details} />
         </div>
       );
+    }
     case "diff_search":
       return result.items.length === 0 ? (
         <EmptyResult semantic={result.semantic} />

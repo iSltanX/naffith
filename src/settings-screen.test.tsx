@@ -275,6 +275,37 @@ describe('شاشة الإعدادات — حول', () => {
   });
 
   /**
+   * H-7 regression: a successful install must reach a terminal state, not
+   * stay on "جارٍ تنزيل التحديث…" (downloading…) forever. Before the fix,
+   * `install()` had no state transition after `downloadAndInstallUpdate`
+   * resolved, so the screen was stuck on the in-progress copy even though
+   * nothing was still happening.
+   */
+  it('يعرض حالة «ثُبِّت التحديث» بعد نجاح التثبيت، لا «جارٍ التنزيل» إلى الأبد', async () => {
+    vi.mocked(checkForUpdate).mockResolvedValue({
+      rid: 9,
+      currentVersion: '9.9.9',
+      version: '10.0.0',
+    });
+    vi.mocked(downloadAndInstallUpdate).mockResolvedValue(undefined);
+    view({ autoUpdate: false });
+    await openTab('about');
+
+    await userEvent.click(screen.getByRole('button', { name: t('settings.update.check') }));
+    const download = await screen.findByRole('button', { name: t('settings.update.download') });
+    await userEvent.click(download);
+
+    await waitFor(() => expect(screen.getByText(t('settings.update.installed'))).toBeDefined());
+    expect(screen.getByText(t('settings.update.installed.hint'))).toBeDefined();
+    expect(screen.queryByText(t('settings.update.installing'))).toBeNull();
+
+    // وزرّ الفحص لا يعرض «سؤالًا جديدًا»: التطبيق ما زال يشغّل النسخة القديمة.
+    expect(screen.getByRole('button', { name: t('settings.update.check') }).hasAttribute('disabled')).toBe(
+      true,
+    );
+  });
+
+  /**
    * الحالة التي يشحن بها المنتج اليوم: لا وجهة تحديث مضبوطة.
    *
    * الرسالة يجب أن تقول ذلك لا أن تنصح بفحص الاتصال، ويجب ألّا تدّعي الشاشة

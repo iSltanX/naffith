@@ -6,8 +6,33 @@
 //! ## الصيغة
 //!
 //! ```text
-//! /usr/bin/git -C <المستودع> diff --stat --exit-code <من> <إلى>
+//! /usr/bin/git -C <المستودع> diff --stat --exit-code -- <من> <إلى>
 //! ```
+//!
+//! ## لماذا `--` قبل المرجعين
+//!
+//! `checked_revision` ترفض ما يبدأ بشرطة، فلا مرجعٌ يُقرأ رايةً. لكنها لا
+//! تمنع مرجعًا **يوافق أيضًا اسم مسارٍ حقيقي** في المستودع — وهذا مقصود:
+//! فحص وجود المرجع يحتاج تشغيل `git`، والتخطيط لا يشغّل شيئًا (انظر أعلاه).
+//! وبلا `--`، `git diff` نفسها تحسم الغموض — لا برفضٍ، بل بإعادة تفسيرٍ
+//! صامتة: قيمةٌ تطابق مسارًا قائمًا في شجرة العمل تُقرأ *مسارًا يُقيَّد به*
+//! الفرق لا *طرفًا ثانيًا للمقارنة*. أُثبت هذا تجريبيًا:
+//!
+//! ```text
+//! $ git diff --stat --exit-code HEAD package.json   # بلا --
+//! $ echo $?
+//! 0                                                 # «لا فروق» — مضلِّل:
+//!                                                    # لم تُقارَن نقطتان قط
+//! $ git diff --stat --exit-code HEAD package.json -- # مع --
+//! fatal: bad revision 'package.json'                # رفضٌ صادق
+//! ```
+//!
+//! فبلا `--`، مرجعٌ ثانٍ يطابق ملفًّا حقيقيًا (اسمٌ شائعٌ كـ`package.json` أو
+//! `README.md`) يُنتج جوابًا ناجحًا زائفًا — «لا فروق» — رغم أن الأمر لم
+//! يقارن الإيداعين المطلوبين إطلاقًا. هذا أخطر من رمز خروجٍ لا يُفسَّر: نتيجة
+//! **خاطئة** تُعرض بثقة نتيجةٍ صحيحة. و`--` تقفل البابين معًا: `git` تتوقّف
+//! عن قراءة أي شيءٍ بعدها رايةً *أو* مسارًا، فيبقى `from`/`to` مرجعين لا غير
+//! — يُقبلان أو يُرفضان بصفتهما هذه وحدها.
 //!
 //! ## بم تختلف هذه عن `git.diff`
 //!
@@ -88,6 +113,10 @@ fn plan(inputs: &Inputs) -> Result<PlannedCommand> {
         // لا نقرأ نص الخرج لنستنتج الدلالة. Git تعرّف 0 = لا فروق و1 = توجد
         // فروق حين تُطلب هذه الراية، والنواة تحوّل الرمزين إلى جوابين ناجحين.
         .flag("--exit-code", "explain.git.diff.exit_code")
+        // بلا هذه، مرجعٌ يطابق اسم مسارٍ حقيقي في المستودع يُقرأ *مسارًا* لا
+        // *مرجعًا* — فتُقيَّد به المقارنة صامتًا بدل أن تُقارَن نقطتان.
+        // انظر رأس الملفّ للتوثيق الكامل بالمثال المُثبَت تجريبيًا.
+        .end_of_flags()
         // مُتحقَّق أعلاه أنهما لا يبدآن بشرطة؛ و`Argv::explained_value` تفحص
         // ذلك ثانيةً ولا تعتمد على المتصل بها.
         .explained_value(from, "explain.git.diff.from")
@@ -256,18 +285,39 @@ mod tests {
         let args = args_of(&cmd);
 
         assert_eq!(cmd.program, Path::new("/usr/bin/git"));
-        assert_eq!(args.len(), 7);
+        assert_eq!(args.len(), 8);
         assert_eq!(args[0], "-C");
         assert_eq!(Path::new(&args[1]), repo.as_path());
         assert_eq!(args[2], "diff");
         assert_eq!(args[3], "--stat");
         assert_eq!(args[4], "--exit-code");
-        assert_eq!(args[5], "main");
-        assert_eq!(args[6], "feature");
+        assert_eq!(args[5], "--");
+        assert_eq!(args[6], "main");
+        assert_eq!(args[7], "feature");
 
         assert!(cmd.artifact.is_none());
         assert!(cmd.cwd.is_none(), "the repository is named in the argv, not behind it");
         assert_eq!(cmd.reveal_target.as_deref(), Some(repo.as_path()));
+    }
+
+    /// انحدارٌ مباشر لـH-10: بلا `--`، مرجعٌ يوافق اسم مسارٍ حقيقي كان
+    /// يُعاد تفسيره صامتًا، فتُقيَّد به المقارنة بدل أن يُرفض أو يُقارَن.
+    /// انظر توثيق الفاصل في `plan()` وفي رأس الملفّ.
+    #[test]
+    fn the_terminator_sits_right_before_the_two_revisions_closing_the_pathspec_ambiguity() {
+        let s = Scratch::new("git-diff-commits-terminator").unwrap();
+        // اسمٌ يوافق ملفًّا حقيقيًا شائعًا، ليصف الحالة التي يصلحها الفاصل
+        // بدقّة — لا مجرّد مرجعٍ اعتباطي.
+        let Some(repo) = repo_in(&s, "مستودع") else { return };
+
+        let cmd = plan_with(&repo, "HEAD", "package.json").unwrap();
+        let args = args_of(&cmd);
+        let separator = args.iter().position(|a| a == "--").expect("-- must be present");
+        assert_eq!(
+            &args[separator..],
+            ["--", "HEAD", "package.json"],
+            "the terminator must sit immediately before both revisions: {args:?}"
+        );
     }
 
     #[test]
@@ -311,7 +361,7 @@ mod tests {
         for name in shellish {
             let Some(repo) = repo_in(&s, name) else { return };
             let cmd = plan_with(&repo, "main", "feature").unwrap();
-            assert_eq!(cmd.args.len(), 7, "{name:?} must not add arguments");
+            assert_eq!(cmd.args.len(), 8, "{name:?} must not add arguments");
             assert_eq!(Path::new(&cmd.args[1]), repo.as_path());
         }
     }
@@ -322,8 +372,8 @@ mod tests {
         let Some(repo) = repo_in(&s, "م") else { return };
 
         let cmd = plan_with(&repo, "refs/tags/v1.0", "refs/heads/main").unwrap();
-        assert_eq!(cmd.args[5].to_string_lossy(), "refs/tags/v1.0");
-        assert_eq!(cmd.args[6].to_string_lossy(), "refs/heads/main");
+        assert_eq!(cmd.args[6].to_string_lossy(), "refs/tags/v1.0");
+        assert_eq!(cmd.args[7].to_string_lossy(), "refs/heads/main");
     }
 
     #[test]
@@ -465,8 +515,8 @@ mod tests {
         let Some(repo) = repo_in(&s, "م") else { return };
 
         let cmd = plan_with(&repo, "  v1.0  ", "  v2.0  ").unwrap();
-        assert_eq!(cmd.args[5].to_string_lossy(), "v1.0");
-        assert_eq!(cmd.args[6].to_string_lossy(), "v2.0");
+        assert_eq!(cmd.args[6].to_string_lossy(), "v1.0");
+        assert_eq!(cmd.args[7].to_string_lossy(), "v2.0");
     }
 
     #[test]

@@ -24,6 +24,7 @@ pub const SPEC: OperationSpec = OperationSpec {
     inputs: &[
         InputSpec::new("project", InputKind::ExistingDir),
         InputSpec::new("node_path", InputKind::ExistingFile),
+        InputSpec::new("cargo_path", InputKind::ExistingFile),
     ],
     sort_order: 70,
     search_terms: &["tauri", "build", "npm", "node", "بناء", "إصدار", "rust", "cargo", "مشروع"],
@@ -33,7 +34,8 @@ pub const SPEC: OperationSpec = OperationSpec {
 fn plan(inputs: &Inputs) -> Result<PlannedCommand> {
     let project = inputs.dir("project")?;
     let node_path = inputs.file("node_path")?;
-    tauri_cli(node_path, project).value("build").reveal(project).read_only()
+    let cargo_path = inputs.file("cargo_path")?;
+    tauri_cli(node_path, cargo_path, project).value("build").reveal(project).read_only()
 }
 
 #[cfg(test)]
@@ -54,6 +56,16 @@ mod tests {
         p
     }
 
+    fn cargo_stub(s: &Scratch) -> PathBuf {
+        let bin = s.dir("cargo-bin");
+        let p = bin.join("cargo");
+        std::fs::write(&p, b"#!/bin/sh\nexit 0\n").unwrap();
+        let mut perm = std::fs::metadata(&p).unwrap().permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut perm, 0o755);
+        std::fs::set_permissions(&p, perm).unwrap();
+        p
+    }
+
     fn project_with_tauri_cli(s: &Scratch) -> PathBuf {
         let project = s.dir("مشروع");
         let bin = project.join("node_modules").join(".bin");
@@ -66,10 +78,11 @@ mod tests {
         project
     }
 
-    fn plan_with(project: &Path, node: &Path) -> Result<PlannedCommand> {
+    fn plan_with(project: &Path, node: &Path, cargo_path: &Path) -> Result<PlannedCommand> {
         let raw = BTreeMap::from([
             ("project".to_owned(), RawValue::Path(project.display().to_string())),
             ("node_path".to_owned(), RawValue::Path(node.display().to_string())),
+            ("cargo_path".to_owned(), RawValue::Path(cargo_path.display().to_string())),
         ]);
         plan(&crate::value::validate(&SPEC, &raw)?)
     }
@@ -87,9 +100,36 @@ mod tests {
         let s = Scratch::new("tauri-build").unwrap();
         let project = project_with_tauri_cli(&s);
         let node = node_stub(&s);
-        let cmd = plan_with(&project, &node).unwrap();
+        let cargo_path = cargo_stub(&s);
+        let cmd = plan_with(&project, &node, &cargo_path).unwrap();
         assert_eq!(cmd.program, project.join("node_modules/.bin/tauri"));
         let args: Vec<String> = cmd.args.iter().map(|a| a.to_string_lossy().into_owned()).collect();
         assert_eq!(args, vec!["build"]);
+    }
+
+    /// انحدارٌ مباشر لـC-3: بلا `cargo_path`، `tauri build` كانت تفشل عند
+    /// أوّل استدعاءٍ لـ`cargo` داخليًا — دليلها غائبٌ عن `PATH` كاملًا.
+    #[test]
+    fn the_child_path_carries_the_cargo_directory_too() {
+        let s = Scratch::new("tauri-build-path").unwrap();
+        let project = project_with_tauri_cli(&s);
+        let node = node_stub(&s);
+        let cargo_path = cargo_stub(&s);
+        let cmd = plan_with(&project, &node, &cargo_path).unwrap();
+        assert!(
+            cmd.extra_path.contains(&cargo_path.parent().unwrap().to_path_buf()),
+            "cargo's directory must be on PATH: {:?}",
+            cmd.extra_path
+        );
+    }
+
+    #[test]
+    fn a_cargo_path_outside_the_allowed_roots_is_refused() {
+        let s = Scratch::new("tauri-build-cargo-outside").unwrap();
+        let project = project_with_tauri_cli(&s);
+        let node = node_stub(&s);
+        let err = plan_with(&project, &node, Path::new("/etc/hosts")).unwrap_err();
+        assert_eq!(err.key(), "err.path.outside");
+        assert_eq!(err.input(), Some("cargo_path"));
     }
 }

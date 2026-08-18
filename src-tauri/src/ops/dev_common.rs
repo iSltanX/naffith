@@ -31,8 +31,21 @@ pub fn node_bin_dir(node_path: &Path) -> &Path {
 
 /// ‏`PATH` الذي تحتاجه أداةٌ تُستدعى بشِبَنغ `#!/usr/bin/env node` — وهذا شكل
 /// `npm` نفسها، وحزم npm القابلة للتنفيذ محليًا (`node_modules/.bin/*`) كلّها.
+///
+/// **دليل Node وحده لا يكفي.** `npm` تشغّل نصوص `package.json` عبر `sh` —
+/// تستدعيه بالاسم المجرّد (`spawn("sh", …)`) لا بمسارٍ مطلق، فتحتاج أن تجده
+/// عبر `PATH` هي نفسها، تمامًا كما احتاج المفسِّر الخارجي أن يجد `npm`.
+/// أُثبت هذا تجريبيًا: `npm run <سكربت>` ببيئةٍ ممسوحة ودليل Node وحده في
+/// `PATH` تفشل بـ«‏spawn sh ENOENT» فورًا، وتنجح حين يُضاف `/bin` (حيث `sh`).
+/// فتُضاف أدلّة النظام الأربعة كاملة — نفس المجموعة المضمونة الملكية
+/// والمحمية بـSIP التي تستعملها عمليات `cargo` أصلًا (`SYSTEM_TOOLCHAIN_DIRS`
+/// أدناه) — لا `/bin` وحدها: أي نصّ سكربتٍ يستدعي أداة نظامٍ أخرى بالاسم
+/// المجرّد (‏`env`، `xargs`، …) يحتاج الحماية نفسها، لا فقط ما أثبته الاختبار
+/// اليوم.
 pub fn node_path_env(node_path: &Path) -> Vec<PathBuf> {
-    vec![node_bin_dir(node_path).to_path_buf()]
+    let mut dirs = vec![node_bin_dir(node_path).to_path_buf()];
+    dirs.extend(SYSTEM_TOOLCHAIN_DIRS.iter().map(PathBuf::from));
+    dirs
 }
 
 /// يبني `npm` وحدها لمشروعٍ ومسار Node تحقّقت منه `plan()` بالفعل، جاهزةً
@@ -73,20 +86,26 @@ pub fn tauri_cli_path(project: &Path) -> PathBuf {
 }
 
 /// ‏`PATH` الذي تحتاجه `tauri dev`/`tauri build`: دليل Node (فـ`tauri.js`
-/// نفسها شِبَنغ `#!/usr/bin/env node`) ثم أدلّة نظام `cargo` — كلتا الحاجتين
-/// معًا لا إحداهما، لأن الأمر يستدعي الاثنين.
-pub fn tauri_path_env(node_path: &Path) -> Vec<PathBuf> {
+/// نفسها شِبَنغ `#!/usr/bin/env node`)، ثم أدلّة نظام `cargo` (`node_path_env`
+/// تحملها أصلًا الآن)، ثم **دليل `cargo` نفسها**: الأمر يستدعي `cargo`
+/// داخليًا لبناء طرف Rust، وهي أداةٌ اختارها المستخدم في الإعداد لا أداة
+/// نظامٍ ثابتة كـ`cc`، فمسارها لا يقع تحت `SYSTEM_TOOLCHAIN_DIRS`. أُثبت
+/// غيابها تجريبيًا: `command -v cargo` ببيئةٍ من أدلّة النظام وحدها لا يجد
+/// شيئًا، فيفشل `tauri dev`/`tauri build` عند أول استدعاءٍ لـ`cargo`.
+pub fn tauri_path_env(node_path: &Path, cargo_path: &Path) -> Vec<PathBuf> {
     let mut dirs = node_path_env(node_path);
-    dirs.extend(SYSTEM_TOOLCHAIN_DIRS.iter().map(PathBuf::from));
+    if let Some(cargo_dir) = cargo_path.parent() {
+        dirs.push(cargo_dir.to_path_buf());
+    }
     dirs
 }
 
-/// يبني أمر Tauri CLI لمشروعٍ ومسار Node تحقّقت منه `plan()` بالفعل، جاهزًا
-/// لإضافة الوسيط الخاص (`dev` أو `build`) وإنهائه.
-pub fn tauri_cli(node_path: &Path, project: &Path) -> Argv {
+/// يبني أمر Tauri CLI لمشروعٍ ومساري Node وCargo تحقّقت منهما `plan()`
+/// بالفعل، جاهزًا لإضافة الوسيط الخاص (`dev` أو `build`) وإنهائه.
+pub fn tauri_cli(node_path: &Path, cargo_path: &Path, project: &Path) -> Argv {
     let cli = tauri_cli_path(project);
     Argv::resolved_tool("tauri", &cli, "explain.tauri.tool")
-        .with_extra_path(tauri_path_env(node_path))
+        .with_extra_path(tauri_path_env(node_path, cargo_path))
         .in_directory(project)
 }
 

@@ -287,6 +287,61 @@ function operationBack(): HTMLElement {
 
 type User = ReturnType<typeof userEvent.setup>;
 
+/**
+ * H-9 regression: `persist()` must read `saveSettings`'s return value and
+ * surface a failed write to the user, not discard it silently. Before the
+ * fix, a `localStorage.setItem` throw (quota exceeded, a value another tab
+ * corrupted, private-mode restrictions engaging mid-session) left the
+ * change applied in memory with no indication it would not survive a
+ * restart — the exact failure class `saveSettings`'s own doc comment says
+ * it exists to report (`يعيد false إن فشلت الكتابة ولا يرمي`).
+ */
+describe('فشل الكتابة الفعلي في التخزين', () => {
+  async function openSettings(user: User) {
+    render(<App />);
+    await screen.findByRole('heading', { name: AR['lib.heading'] });
+    await user.click(screen.getByRole('button', { name: AR['nav.settings'] }));
+    await screen.findByRole('switch', { name: AR['settings.sound.title'] });
+  }
+
+  it('كتابةٌ تعطب فعليًا تُظهر تحذير التخزين، لا مجرّد صمت', async () => {
+    const user = userEvent.setup();
+    await openSettings(user);
+    expect(screen.queryByText(AR['settings.storage.unavailable.title'])).toBeNull();
+
+    const setItem = vi
+      .spyOn(Storage.prototype, 'setItem')
+      .mockImplementationOnce(() => {
+        throw new DOMException('quota exceeded', 'QuotaExceededError');
+      });
+
+    await user.click(screen.getByRole('switch', { name: AR['settings.sound.title'] }));
+
+    expect(await screen.findByText(AR['settings.storage.unavailable.title'])).toBeTruthy();
+    setItem.mockRestore();
+  });
+
+  it('تنجح الكتابة التالية فيختفي التحذير من تلقاء نفسه', async () => {
+    const user = userEvent.setup();
+    await openSettings(user);
+
+    const setItem = vi
+      .spyOn(Storage.prototype, 'setItem')
+      .mockImplementationOnce(() => {
+        throw new DOMException('quota exceeded', 'QuotaExceededError');
+      });
+    await user.click(screen.getByRole('switch', { name: AR['settings.sound.title'] }));
+    await screen.findByText(AR['settings.storage.unavailable.title']);
+    setItem.mockRestore();
+
+    await user.click(screen.getByRole('switch', { name: AR['settings.sound.title'] }));
+
+    await waitFor(() => {
+      expect(screen.queryByText(AR['settings.storage.unavailable.title'])).toBeNull();
+    });
+  });
+});
+
 describe('البؤرة عند تبدّل الشاشة', () => {
   // تبديل الشاشة في تطبيق صفحةٍ واحدة لا يحرّك التركيز من تلقائه: الزرّ الذي
   // ضُغط يُنزع من الشجرة فتسقط البؤرة إلى `body`، ويستأنف Tab من رأس المستند.
@@ -498,6 +553,56 @@ describe('حوار المغادرة أثناء تشغيل', () => {
     // إلى القسم الذي فُتحت العملية منه، لا إلى الجذر. انظر `origin` في `nav.ts`.
     const heading = await screen.findByRole('heading', { name: AR['cat.compress.title'] });
     expect(document.activeElement).toBe(heading);
+  });
+
+  /**
+   * H-4 regression: leaving an operation mid-run must not leave that run's
+   * result pending to be shown under a different operation opened
+   * afterward. Before the fix, `go()`/`confirmLeave` never cleared the live
+   * run state on this path, and the global `onRunFinished` listener applied
+   * whatever finished event arrived next to whichever screen happened to be
+   * open — regardless of which run it belonged to.
+   */
+  it('نتيجة التشغيل المُغادَر لا تظهر تحت عمليةٍ ثانية تُفتَح بعد المغادرة', async () => {
+    const SECOND_OP: OperationSummary = {
+      id: 'compress.zip.list',
+      title_key: 'op.compress.zip.list.title',
+      description_key: 'op.compress.zip.list.description',
+      category: 'compress',
+      danger: 'safe',
+      conflict: 'no_artifact',
+      tool: 'unzip',
+      availability: { state: 'available' },
+      sort_order: 20,
+      search_terms: ['unzip', 'list'],
+      inputs: [{ id: 'archive', required: true, kind: 'existing_file' }],
+    };
+    vi.mocked(listOperations).mockResolvedValue([COMPRESS, SECOND_OP]);
+    vi.mocked(listCategories).mockResolvedValue([
+      { ...COMPRESS_CATEGORY, operation_count: 2, available_count: 2 },
+    ]);
+    const user = userEvent.setup();
+    await openDialog(user);
+
+    // المغادرة أثناء التشغيل — التشغيل الأوّل يستمرّ في الخلفية.
+    await user.click(screen.getByRole('button', { name: AR['nav.leave.busy.leave'] }));
+    await screen.findByRole('heading', { name: AR['cat.compress.title'] });
+
+    // فتح عمليةٍ ثانية من نفس القسم.
+    await user.click(
+      screen.getByRole('button', { name: new RegExp('^' + AR['op.compress.zip.list.title']) }),
+    );
+    await screen.findByRole('heading', { name: AR['op.compress.zip.list.title'] });
+
+    // نتيجة التشغيل الأوّل — الذي غادره المستخدم فعلًا — تصل الآن.
+    const done = emitter<RunFinishedEvent>(vi.mocked(onRunFinished));
+    done({ run_id: 'run-1', status: 'success', result: ARTIFACT_RESULT });
+
+    // يجب ألّا يظهر ناتج التشغيل الأوّل على شاشة العملية الثانية، ويجب أن
+    // تبقى العملية الثانية في حالتها الخاملة العادية — لا زرّ إلغاءٍ معلَّق
+    // لتشغيلٍ لم تبدأه هي.
+    expect(screen.queryByText('Reports.zip')).toBeNull();
+    expect(screen.queryByRole('button', { name: AR['satr.action.cancel'] })).toBeNull();
   });
 });
 

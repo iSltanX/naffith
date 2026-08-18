@@ -133,7 +133,21 @@ export default function App() {
   // تشغيل هو أول ما يراه المستخدم من التطبيق.
   const storage = useMemo(() => browserStorage(), []);
   const [settings, setSettings] = useState<Settings>(() => loadSettings(storage).settings);
-  const storageAvailable = storage !== null;
+
+  /**
+   * هل آخر محاولة كتابةٍ عبر `persist` نجحت؟ `true` مبدئيًا: لا كتابة وقعت
+   * بعد فتشمل الحالة الابتدائية «لا شيء فشل»، لا «كل شيء فشل».
+   *
+   * `saveSettings` تعيد `false` لسببين مختلفين — لا مخزن أصلًا (وضع خصوصية)،
+   * أو مخزنٌ موجود رمى عند الكتابة فعليًا (حصّة ممتلئة، قيمة أخرى تعبث به) —
+   * وكلاهما يعني الشيء نفسه للمستخدم: ما غيّره الآن لن يبقى بعد إغلاق
+   * التطبيق. القيمة العائدة كانت تُهمَل هنا صامتًا: `persist` تستدعي
+   * `saveSettings` ولا تقرأ ما تعيده، فمحاولة كتابةٍ فشلت فعليًا لا تظهر في
+   * أي مكان — لا تحذيرٌ، ولا استثناء، فقط تفضيلٌ يختفي بصمتٍ في التشغيل
+   * القادم.
+   */
+  const [lastPersistSucceeded, setLastPersistSucceeded] = useState(true);
+  const storageAvailable = storage !== null && lastPersistSucceeded;
 
   const [screen, setScreen] = useState<Screen>(() =>
     initialScreen(shouldShowOnboarding(loadSettings(storage).settings)),
@@ -249,16 +263,41 @@ export default function App() {
     notificationSoundRef.current = settings.notificationSound;
   }, [settings.notificationSound]);
 
+  /**
+   * مرآةٌ لآخر `runId` — نفس منطق `notificationSoundRef` تمامًا وللسبب نفسه:
+   * هذا المستمع يُسجَّل مرّةً عند التركيب ولا يُعاد تسجيله، فقراءة `runId`
+   * من إغلاقه مباشرةً كانت تُجمِّد القيمة عند لحظة التسجيل الأولى.
+   *
+   * وهنا الحاجة أدقّ من الصوت: هذا المرجع هو حارس H-4 — تسرّب نتيجة تشغيلٍ
+   * غادره المستخدم إلى شاشة عمليةٍ فتحها بعده. `run://finished` مستمعٌ
+   * عامٌّ واحد بلا تصفية من النواة (خانة تشغيلٍ واحدة، فلا تعدّد ليُصفّى)،
+   * فالتصفية تقع هنا: يصل الحدث ويُقارَن بمعرّف التشغيل الذي **تعرضه هذه
+   * الشاشة الآن**؛ فإن غادرها المستخدم — `clearRun` تُصفِّر `runId` إلى
+   * `null` عند كل مغادرة، انظر توثيقها — فلن يطابقه حدثٌ لاحق، ولن تُفرَض
+   * نتيجةٌ متروكة على عمليةٍ لا صلة لها بها.
+   */
+  const runIdRef = useRef(runId);
+  useEffect(() => {
+    runIdRef.current = runId;
+  }, [runId]);
+
   useEffect(() => {
     onRunFinished((event) => {
+      // السجلّ صار فيه قيدٌ جديد، و«المستخدَمة حديثًا» تُقرأ منه — بلا شرط:
+      // تشغيلٌ غادره المستخدم لا يزال ركضه حقيقيًا ويستحقّ قيدًا في السجلّ،
+      // حتى إن لم تعرضه هذه الشاشة بعد الآن.
+      loadJournal();
+
+      // انظر توثيق `runIdRef` أعلاه: نتيجة تشغيلٍ غادَره المستخدم تُسجَّل ولا
+      // تُعرَض على شاشةٍ لا تخصّه.
+      if (event.run_id !== runIdRef.current) return;
+
       setOutcome(event);
       // نهاية التشغيل هي الحالة الأحدث. خطأُ محاولة إلغاءٍ سابقة لا يبقى
       // معلّقًا تحت ResultView بعد أن وصلت النتيجة الفعلية.
       setError(null);
       setPhase('finished');
       setRunId(null);
-      // السجلّ صار فيه قيدٌ جديد، و«المستخدَمة حديثًا» تُقرأ منه.
-      loadJournal();
       // ‏`status` هنا مستوى النقل — «نجح التشغيل كعملية» — لا تفسير جوابها:
       // بحثٌ بلا نتائج أو عملية `unsigned` كلاهما `success` أيضًا، وكلاهما
       // يستحقّ النغمة. الفشل والإشارة والإلغاء وحدها لا تُشغِّلها.
@@ -434,7 +473,18 @@ export default function App() {
     }
   }, [outcome]);
 
-  /** يعيد شاشة العملية إلى الخمول بعد تشغيل انتهى. */
+  /**
+   * يعيد شاشة العملية إلى الخمول، ويتخلّى عن تتبّع تشغيلٍ لا تعرضه هذه
+   * الشاشة بعد الآن.
+   *
+   * `runId` تُصفَّر هنا أيضًا — لا فقط الحقول المرئية — وهذا هو الحارس ضدّ
+   * تسرّب نتيجة تشغيلٍ إلى عمليةٍ أخرى: `run://finished` يصل مستمعًا عامًّا
+   * واحدًا بلا تصفية بمعرّف التشغيل (انظر توثيقه أعلاه)، فيقارنه بـ`runId`
+   * ليقرّر أهو يخصّ ما تعرضه هذه الشاشة أم تشغيلًا غادرَته. تشغيلٌ جارٍ في
+   * الخلفية يستمرّ فعلًا — المغادرة لا تُلغيه — لكن نتيجته حين تصل تُسجَّل في
+   * السجلّ (يبقى `loadJournal` غير مشروط) ولا تُفرَض على شاشةٍ فتحها
+   * المستخدم بعده.
+   */
   const clearRun = useCallback(() => {
     setOutcome(null);
     setPlan(null);
@@ -442,6 +492,7 @@ export default function App() {
     setStream([]);
     setError(null);
     setPhase('idle');
+    setRunId(null);
   }, []);
 
   const onReset = useCallback(() => {
@@ -497,14 +548,17 @@ export default function App() {
           setOrigin(screen);
         }
         setScreen(result.screen);
-        // تشغيلٌ انتهى وغادر المستخدم شاشته: لا يبقى ناتجه معلّقًا على شاشة
-        // عمليةٍ أخرى يفتحها بعد قليل.
-        if (phase === 'finished') clearRun();
+        // مغادرةٌ من شاشة عمليةٍ تتخلّى عن تتبّع تشغيلها — منتهيًا كان أو
+        // جاريًا في الخلفية. لا شرط على `phase` هنا: تشغيلٌ جارٍ يُغادَر عبر
+        // حوار «busy» (انظر `confirmLeave` أدناه لمساره) لا عبر هذا الفرع
+        // مباشرةً، لكن مغادرةً بلا حوار — نتيجةٌ وصلت للتوّ، أو نموذجٌ نظيف —
+        // يجب أن تمحو العرض دائمًا، لا حين تصادف أن التشغيل انتهى بالضبط.
+        clearRun();
       } else if (result.kind === 'confirm') {
         setPending({ screen: result.pending, reason: result.reason });
       }
     },
-    [screen, exitCost, phase, clearRun, origin],
+    [screen, exitCost, clearRun, origin],
   );
 
   const confirmLeave = useCallback(() => {
@@ -517,14 +571,21 @@ export default function App() {
       });
     }
     const result = confirmNavigation(pending.screen);
-    if (result.kind === 'navigate') setScreen(result.screen);
+    if (result.kind === 'navigate') {
+      setScreen(result.screen);
+      // نفس منطق `go` أعلاه بالضبط: هذا مسار المغادرة أثناء تشغيلٍ جارٍ
+      // («busy» في حوار Page 18) — وهو بالضبط الحالة التي كانت تُغفَل، فتصل
+      // نتيجة التشغيل المتروك لاحقًا فتُعرض تحت عمليةٍ فتحها المستخدم بعده.
+      clearRun();
+    }
     setPending(null);
-  }, [pending, operation]);
+  }, [pending, operation, clearRun]);
 
   const persist = useCallback(
     (next: Settings) => {
       setSettings(next);
-      saveSettings(storage, next);
+      // القيمة العائدة تُقرأ الآن — انظر توثيق `lastPersistSucceeded` أعلاه.
+      setLastPersistSucceeded(saveSettings(storage, next));
     },
     [storage],
   );

@@ -505,7 +505,23 @@
     --focus-ring-width: 3px;
     --command-comment: #9B9CAB;
   }
-  :root[data-theme="dark"],
+  /* التفضيل الصريح للسمة الداكنة يعمل حتى على نظامٍ فاتح — نفس سبب تكرار
+     كتلة السمة الداكنة الرئيسية أعلاه حرفيًا، لا تداخلًا معها. */
+  :root[data-theme="dark"] {
+    --text-muted: #C2C3D0;
+    --text-disabled: #9B9CAB;
+    --border-subtle: #4A4B58;
+    --border-default: #6E6F7F;
+    --border-strong: #9B9CAB;
+  }
+}
+
+/* حالة النظام الافتراضية (`system`) لا تكتب `data-theme` أصلًا — انظر
+   `theme.ts` — فـ`:not([data-theme="light"])` وحدها كانت تطابق نظامًا فاتحًا
+   أيضًا، فتُطبَّق قيم التباين العالي الداكنة على خلفيةٍ شبه بيضاء: تباين
+   القياس ١٫٦:١ حيث تشترط WCAG AA على الأقل ٤٫٥:١. هذه الكتلة تُقيَّد بطلب
+   النظام الداكن فعلًا، لا بغياب تفضيلٍ فاتح صريح وحده.*/
+@media (prefers-contrast: more) and (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --text-muted: #C2C3D0;
     --text-disabled: #9B9CAB;

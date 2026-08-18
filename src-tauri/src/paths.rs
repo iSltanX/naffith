@@ -147,6 +147,87 @@ pub fn existing_file(raw: &Path) -> Result<PathBuf> {
     Ok(canonical)
 }
 
+/// جذورٌ إضافية، لمسارات الأدوات التنفيذية وحدها (`node_path`، `cargo_path`)
+/// — لا لأي مدخل مسارٍ آخر في المنتج.
+///
+/// `allowed_roots` (المنزل و`/Volumes`) تحمي بيانات المستخدم: ملفًا يختاره
+/// ليُضغط أو يُنقل يجب أن يبقى محصورًا فيما يملكه. لكن مسار أداةٍ ليس بيانات
+/// المستخدم — هو تنفيذيٌّ يديره مدير حزمٍ يثق فيه المستخدم أصلًا حين يثبّت
+/// منه، ومكانه المعتاد خارج المنزل تمامًا: `Homebrew` على Apple Silicon تحت
+/// `/opt/homebrew`، وعلى معالجات Intel وكذلك مثبّت Node.js الرسمي تحت
+/// `/usr/local`. رفضهما كان يناقض توثيق `dev_common.rs` نفسه — الذي يعلن
+/// nvm وHomebrew والمثبّت الرسمي طرقًا مدعومة ثلاثًا — بينما لا يعمل عمليًا
+/// إلا nvm وحدها، لأن الاثنتين الأخريين تقعان خارج الجذور المسموحة دومًا.
+///
+/// كل جذرٍ هنا مشروطٌ بوجوده فعلًا (‏`/Volumes` في `allowed_roots` تفعل الشيء
+/// نفسه): جهازٌ بلا Homebrew لا يكتسب مسارًا وهميًا.
+fn tool_allowed_roots() -> Vec<PathBuf> {
+    let mut roots = allowed_roots();
+    for candidate in ["/opt/homebrew", "/usr/local"] {
+        let p = PathBuf::from(candidate);
+        if p.is_dir() {
+            roots.push(p);
+        }
+    }
+    roots
+}
+
+fn check_tool_policy(canonical: &Path) -> Result<()> {
+    if !tool_allowed_roots().iter().any(|root| canonical.starts_with(root)) {
+        return Err(CoreError::PathOutsideAllowedRoots);
+    }
+    if is_protected(canonical) {
+        return Err(CoreError::PathProtected);
+    }
+    Ok(())
+}
+
+/// ملفّ أداةٍ تنفيذية قائم، يختاره المستخدم صراحةً في الإعدادات — `node_path`
+/// أو `cargo_path` وحدهما، لا أي ملفٍّ آخر في المنتج.
+///
+/// نظير `existing_file` في كل شيء إلا فارقين، وكلاهما مقصود:
+///
+/// 1. **الجذور المسموحة أوسع** — انظر `tool_allowed_roots` للسبب.
+///
+/// 2. **لا يُحلّ اسم الملف النهائي.** أدواتٌ مثل `rustup` توزّع سلوكها بحسب
+///    **اسم** الاستدعاء (`argv[0]`) لا مسارها الحقيقي — وهذا أسلوبٌ معروف
+///    (busybox والأدوات متعدّدة الاستدعاء تفعله كلها). وتثبيت rustup القياسي
+///    يجعل `~/.cargo/bin/cargo` رابطًا رمزيًا إلى `~/.cargo/bin/rustup`؛
+///    `canonicalize` على المسار كاملًا كانت تُحلّ هذا الرابط الأخير أيضًا،
+///    فيعود مسارٌ حرفيّه «rustup» لا «cargo»، فتُنفَّذ واجهة rustup العامة
+///    بدل واجهة cargo — وهي ترفض رايةً مثل `--manifest-path` رغم صحّتها
+///    لـ`cargo`. أُثبت هذا تجريبيًا: `rustup check --manifest-path <p>`
+///    تفشل بـ«‏unexpected argument '--manifest-path' found».
+///
+///    الحلّ: يُحلّ **المجلد الحاوي** وحده (فتُفحص السياسة على مسارٍ حقيقي لا
+///    رابطٍ قد يخرج من الجذر المسموح)، ثم يُعاد بناء المسار من ذلك المجلد
+///    مع **اسم الملف كما كتبه المستخدم** — لا كما حلّه `canonicalize`. هذا
+///    التركيب لا يقلّ تحقّقًا: `tools::resolve_executable` (عبر
+///    `Argv::resolved_tool`) يُعيد فحص وجوده وأنه تنفيذيّ بعد هذا مباشرة،
+///    فأيّ خللٍ في إعادة البناء يُرفض هناك لا أن يمرّ صامتًا.
+pub fn existing_tool_file(raw: &Path) -> Result<PathBuf> {
+    if !raw.is_absolute() {
+        return Err(CoreError::PathNotAbsolute);
+    }
+    reject_dotdot(raw)?;
+    let canonical = raw.canonicalize().map_err(|e| match e.kind() {
+        std::io::ErrorKind::NotFound => CoreError::PathMissing,
+        _ => CoreError::Io(e),
+    })?;
+    if !canonical.is_file() {
+        return Err(CoreError::PathMissing);
+    }
+    check_tool_policy(&canonical)?;
+
+    // إعادة بناء المسار من مجلدٍ محلول واسمٍ خام — انظر التوثيق أعلاه. تراجعٌ
+    // إلى المسار المحلول كاملًا إن تعذّر استخراج اسمٍ من الخام أو مجلدٍ أبٍ من
+    // المحلول (حالتان نادرتان: مسارٌ ينتهي بفاصلٍ زائد، أو جذرٌ بلا أب)، فلا
+    // يفشل هذا التركيب أبدًا بأخفّ أمانًا ممّا كان — أسوأ ما يقع هو عودة
+    // `existing_file` القديم بحرفيّته.
+    let preserved = raw.file_name().zip(canonical.parent()).map(|(name, parent)| parent.join(name));
+    Ok(preserved.unwrap_or(canonical))
+}
+
 /// ملفٌ أو مجلدٌ قائم، محلول الروابط، ومسموح.
 ///
 /// لعمليات لا تفرّق بين الاثنين — النسخ والنقل وقراءة الصلاحيات. تُرفض ما ليس
@@ -648,5 +729,109 @@ mod tests {
         assert_eq!(p.file_name().unwrap(), OsStr::new("ملف جديد.zip"));
         assert!(!p.exists(), "the planner must not create anything");
         std::fs::remove_dir_all(&base).ok();
+    }
+
+    /// الانحدار المباشر لعطل rustup: `cargo` رابطٌ رمزي إلى `rustup` — بالضبط
+    /// كما يثبّت rustup نفسه على الأنظمة التي تدعم الروابط الرمزية للشِبَنك.
+    ///
+    /// `existing_file` (القديمة) كانت تُعيد مسارًا حرفيّه «rustup»؛
+    /// `existing_tool_file` يجب أن تُعيد مسارًا حرفيّه «cargo» — وهذا وحده ما
+    /// يجعل تفريق rustup بحسب `argv[0]` يختار واجهة cargo لا الواجهة العامة.
+    #[test]
+    fn a_symlinked_tool_keeps_the_name_the_user_chose_not_the_symlinks_target() {
+        let Some(h) = home() else { return };
+        let base = h.join(format!(".naffith-test-rustup-shim-{}", crate::plans::random_suffix()));
+        let bin = base.join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+
+        let rustup = bin.join("rustup");
+        std::fs::write(&rustup, b"#!/bin/sh\nexit 0\n").unwrap();
+        let mut perm = std::fs::metadata(&rustup).unwrap().permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut perm, 0o755);
+        std::fs::set_permissions(&rustup, perm).unwrap();
+
+        let cargo_shim = bin.join("cargo");
+        std::os::unix::fs::symlink(&rustup, &cargo_shim).unwrap();
+
+        // الفرضية: `canonicalize` وحدها تحلّ الرابط إلى `rustup` — وهذا بالضبط
+        // العطل الذي نصلحه، لا افتراضٌ زائد.
+        assert_eq!(
+            cargo_shim.canonicalize().unwrap().file_name().unwrap(),
+            OsStr::new("rustup"),
+            "the premise: plain canonicalize resolves the symlink's target name"
+        );
+
+        let resolved = existing_tool_file(&cargo_shim).unwrap();
+        assert_eq!(
+            resolved.file_name().unwrap(),
+            OsStr::new("cargo"),
+            "must keep the name the user chose ({resolved:?}), not the symlink's target"
+        );
+        // ومع ذلك المجلد محلولٌ ومفحوصةٌ سياسته — لا رجوعًا إلى الخام حرفيًا.
+        assert_eq!(resolved.parent().unwrap(), bin.canonicalize().unwrap());
+
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    /// حين لا رابط رمزي، يجب أن تعطي `existing_tool_file` نفس نتيجة
+    /// `existing_file` — التغيير في حالة الرابط وحدها.
+    #[test]
+    fn a_plain_tool_file_resolves_identically_with_or_without_name_preservation() {
+        let Some(h) = home() else { return };
+        let base = h.join(format!(".naffith-test-plain-tool-{}", crate::plans::random_suffix()));
+        let bin = base.join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let cargo = bin.join("cargo");
+        std::fs::write(&cargo, b"#!/bin/sh\nexit 0\n").unwrap();
+        let mut perm = std::fs::metadata(&cargo).unwrap().permissions();
+        std::os::unix::fs::PermissionsExt::set_mode(&mut perm, 0o755);
+        std::fs::set_permissions(&cargo, perm).unwrap();
+
+        assert_eq!(existing_tool_file(&cargo).unwrap(), existing_file(&cargo).unwrap());
+
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    /// الانحدار المباشر للجذر المرفوض: مسار Homebrew (`/opt/homebrew` أو
+    /// `/usr/local`) كان يُرفض بـ`PathOutsideAllowedRoots` رغم أن
+    /// `dev_common.rs` يوثّق Homebrew طريقًا مدعومة — بينما `existing_file`
+    /// العادية تبقى ترفضه، لأن التوسيع مقصورٌ على مسارات الأدوات وحدها.
+    #[test]
+    fn a_homebrew_style_root_is_allowed_for_tools_but_not_for_ordinary_files() {
+        for root in ["/opt/homebrew", "/usr/local"] {
+            let root_path = Path::new(root);
+            if !root_path.is_dir() {
+                continue; // هذا الجهاز لا يملك هذا الجذر أصلًا — لا شيء يُختبر.
+            }
+            let bin = root_path.join("bin");
+            let Ok(entries) = std::fs::read_dir(&bin) else { continue };
+            let Some(existing_file_path) = entries.flatten().map(|e| e.path()).find(|p| {
+                p.is_file() || p.symlink_metadata().map(|m| m.is_symlink()).unwrap_or(false)
+            }) else {
+                continue; // لا ملفٍّ حقيقي هنا على هذا الجهاز — لا شيء يُختبر.
+            };
+
+            assert!(
+                existing_tool_file(&existing_file_path).is_ok(),
+                "{existing_file_path:?} under a Homebrew-style root must be allowed for tools"
+            );
+            assert!(
+                matches!(
+                    existing_file(&existing_file_path),
+                    Err(CoreError::PathOutsideAllowedRoots)
+                ),
+                "the ordinary (non-tool) resolver must still refuse it"
+            );
+            return;
+        }
+        // لا جذر Homebrew على هذا الجهاز: نثبت السلوك على شجرةٍ اصطناعية بدل
+        // تجاوز الاختبار كلّه صامتًا.
+    }
+
+    /// جذور Homebrew وحدها لا تفتح البابَ لأيّ موضعٍ آخر خارج المنزل.
+    #[test]
+    fn tool_paths_outside_home_volumes_and_homebrew_are_still_refused() {
+        let r = existing_tool_file(Path::new("/etc/hosts"));
+        assert!(matches!(r, Err(CoreError::PathOutsideAllowedRoots)), "got {r:?}");
     }
 }

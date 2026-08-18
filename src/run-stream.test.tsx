@@ -119,6 +119,34 @@ describe('الرسم', () => {
     expect(screen.getByText(AR['stream.state.dropped.body'])).toBeTruthy();
   });
 
+  /**
+   * H-6 regression: dropping *some* lines must not hide *all* of them. Before
+   * the fix, `showLines` excluded the `dropped` presentation entirely, so the
+   * runs that produce the most output — exactly the ones with something to
+   * drop — rendered nothing at all: the more a tool printed, the less the
+   * user could see.
+   */
+  it('لا يُخفي الذيل المحفوظ عند إسقاط أسطرٍ من مقدّمة المجرى', () => {
+    const events = Array.from({ length: MAX_KEPT_LINES + 3 }, (_, i) => out(`سطر ${i}`));
+    const lines = build(events);
+    expect(droppedCount(lines)).toBe(3); // الفرضية: ثلاثة أسطرٍ أُسقطت فعلًا.
+
+    render(<RunStream lines={lines} phase="finished" />);
+
+    // الذيل المحفوظ ما زال ظاهرًا — آخر سطرٍ وصل تحديدًا.
+    expect(screen.getByText('سطر ' + (MAX_KEPT_LINES + 2))).toBeTruthy();
+    // وتفسير الإسقاط يظهر معه، لا بدلًا منه.
+    expect(screen.getByText(AR['stream.state.dropped.body'])).toBeTruthy();
+  });
+
+  /** ونفس الشيء حين يحمل المجرى علامة `omitted` من النواة وسط أسطرٍ حقيقية. */
+  it('لا يُخفي الأسطر المحيطة بعلامة إسقاطٍ وسط المجرى', () => {
+    const lines = build([out('قبل'), omitted(5), out('بعد')]);
+    render(<RunStream lines={lines} phase="finished" />);
+    expect(screen.getByText('قبل')).toBeTruthy();
+    expect(screen.getByText('بعد')).toBeTruthy();
+  });
+
   it('يعلن إسقاط الواجهة بصياغةٍ غير صياغة قصّ النواة', () => {
     // شيئان مختلفان: «لم تُبَثّ» و«بُثّت ولم تُحفظ». نصٌّ واحد لهما يخفي أحدهما.
     expect(AR['stream.dropped']).not.toBe(AR['stream.truncated']);

@@ -231,6 +231,17 @@ impl Value {
     }
 }
 
+/// حقلا مسار أداةٍ يختارها المستخدم صراحةً في الإعدادات، لا ملفّ بياناتٍ
+/// عادي — رغم أن كليهما يعلن `InputKind::ExistingFile` نفسه في مواصفته.
+///
+/// الفارق بين الحقلين دلاليٌّ (ما الذي يمثّله هذا الملف؟) لا شكليّ، فلا
+/// يستطيع نوع المدخل وحده حمله؛ والقرار بمعرّف الحقل هنا ليس اختراعًا: هو
+/// المعرّفان نفساهما اللذان تُميّزهما `toolPathFields` في `app.tsx` بالفعل
+/// لتعبئتهما من الإعدادات — فهذا التطابق امتدادٌ لتمييزٍ قائم لا تمييزٌ جديد.
+fn is_tool_path_field(id: &'static str) -> bool {
+    matches!(id, "node_path" | "cargo_path")
+}
+
 /// يتحقّق من المدخلات الخام مقابل مواصفة العملية.
 ///
 /// يرفض المفاتيح غير المعلَنة بدل تجاهلها: مفتاح لا تعرفه المواصفة يعني إما
@@ -260,7 +271,13 @@ pub fn validate(op: &OperationSpec, raw: &BTreeMap<String, RawValue>) -> Result<
                 Value::Dir(paths::existing_dir(Path::new(s)).map_err(|e| e.on_input(spec.id))?)
             }
             (InputKind::ExistingFile, RawValue::Path(s)) => {
-                Value::File(paths::existing_file(Path::new(s)).map_err(|e| e.on_input(spec.id))?)
+                let resolved = if is_tool_path_field(spec.id) {
+                    paths::existing_tool_file(Path::new(s))
+                } else {
+                    paths::existing_file(Path::new(s))
+                }
+                .map_err(|e| e.on_input(spec.id))?;
+                Value::File(resolved)
             }
             (InputKind::ExistingPath, RawValue::Path(s)) => {
                 Value::AnyPath(paths::existing_path(Path::new(s)).map_err(|e| e.on_input(spec.id))?)

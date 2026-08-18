@@ -228,6 +228,12 @@ export const AR = {
   'settings.update.unconfigured.hint': 'ستعمل تلقائيًا فور ضبط وجهة التحديث ومفتاح التوقيع.',
   'settings.update.failed.network': 'تحقق من اتصالك بالإنترنت وحاول مرة أخرى.',
   'settings.update.installing': 'جارٍ تنزيل التحديث…',
+  // H-7: كانت الشاشة تبقى على «جارٍ تنزيل التحديث…» إلى الأبد بعد نجاح
+  // التثبيت فعليًا — لا حالة نهائية كانت تعقب `installing`. هذه هي تلك
+  // الحالة: تُعرض بعد أن ينجح `downloadAndInstallUpdate` فعلًا، وتقول ما
+  // يفعله المستخدم بعدها — إذ لا وسيلة في هذا الإصدار لإعادة التشغيل تلقائيًا.
+  'settings.update.installed': 'ثُبِّت التحديث',
+  'settings.update.installed.hint': 'أعد تشغيل نَفِّذ لتبدأ النسخة الجديدة.',
 
   // ── سجلّ التشغيل ─────────────────────────────────────────────────────
   'log.title': 'سجلّ التشغيل',
@@ -780,14 +786,36 @@ export const AR = {
   'result.semantic.differences.body': 'اكتملت المقارنة وحددت الأداة فروقًا بين الطرفين.',
   'result.semantic.no_differences': 'لا توجد فروق',
   'result.semantic.no_differences.body': 'اكتملت المقارنة ولم تجد الأداة فرقًا بين الطرفين.',
-  'result.semantic.accepted': 'مقبول وفق سياسة macOS',
-  'result.semantic.accepted.body': 'سمحت سياسة النظام بالعنصر الذي جرى تقييمه.',
-  'result.semantic.rejected': 'مرفوض وفق سياسة macOS',
-  'result.semantic.rejected.body': 'رفضت سياسة النظام العنصر الذي جرى تقييمه.',
-  'result.semantic.signed': 'التوقيع موجود وصالح للقراءة',
-  'result.semantic.signed.body': 'أعادت أداة النظام معلومات توقيع العنصر.',
-  'result.semantic.unsigned': 'لا يوجد توقيع صالح',
-  'result.semantic.unsigned.body': 'اكتمل الفحص ولم تجد أداة النظام توقيعًا صالحًا.',
+  // نصوص الأحكام (`Verdict`) مصنَّفةٌ بمعرّف نوعها (`VerdictKind`) لا بقيمتها
+  // وحدها: نفس القيمة `accepted`/`rejected` تعني قرار سياسة macOS من
+  // `security.gatekeeper`، وتعني تحقّقًا تشفيريًا من `security.codesign.verify`،
+  // وتعني سلامة أرشيفٍ من `compress.zip.test` — ثلاثة معانٍ لا معنًى واحد.
+  // نصٌّ عامٌّ واحد لكل القيم كان يعرض «مقبول وفق سياسة macOS» عن أرشيفٍ سليم
+  // وعن توقيعٍ صالحٍ تشفيريًا معًا — راجع H-1 في تدقيق الفرع.
+  'result.semantic.gatekeeper.accepted': 'مقبول وفق سياسة macOS',
+  'result.semantic.gatekeeper.accepted.body': 'سمحت سياسة النظام بالعنصر الذي جرى تقييمه.',
+  'result.semantic.gatekeeper.rejected': 'مرفوض وفق سياسة macOS',
+  'result.semantic.gatekeeper.rejected.body': 'رفضت سياسة النظام العنصر الذي جرى تقييمه.',
+  'result.semantic.code_signature.signed': 'التوقيع موجود وصالح للقراءة',
+  'result.semantic.code_signature.signed.body': 'أعادت أداة النظام معلومات توقيع العنصر.',
+  'result.semantic.code_signature.unsigned': 'لا يوجد توقيع صالح',
+  'result.semantic.code_signature.unsigned.body':
+    'اكتمل الفحص ولم تجد أداة النظام توقيعًا صالحًا.',
+  // `security.codesign.verify` فحصٌ تشفيري — هل يطابق التوقيع محتوى العنصر
+  // فعلًا؟ — لا تقييم سياسة، ولذلك نصّه مختلفٌ عمدًا عن نصّ Gatekeeper أعلاه
+  // رغم مشاركتهما القيمتين `accepted`/`rejected` نفسيهما.
+  'result.semantic.code_integrity.accepted': 'التوقيع صالحٌ وسليم',
+  'result.semantic.code_integrity.accepted.body':
+    'تحقّقت أداة النظام من مطابقة التوقيع لمحتوى العنصر، ولم تجد فيه تلاعبًا.',
+  'result.semantic.code_integrity.rejected': 'التوقيع غير سليم',
+  'result.semantic.code_integrity.rejected.body':
+    'لم تتحقّق أداة النظام من مطابقة التوقيع لمحتوى العنصر — قد يكون معطوبًا، أو عُدِّل العنصر بعد توقيعه.',
+  'result.semantic.archive_integrity.accepted': 'الأرشيف سليم',
+  'result.semantic.archive_integrity.accepted.body':
+    'اختبرت الأداة كل عنصرٍ داخل الأرشيف ولم تجد فيه عطبًا.',
+  'result.semantic.archive_integrity.rejected': 'الأرشيف تالف',
+  'result.semantic.archive_integrity.rejected.body':
+    'وجدت الأداة عطبًا في الأرشيف أثناء اختباره — قد يكون غير مكتمل أو معطوب البيانات.',
   'result.semantic.failed': 'تعذر إكمال العملية',
   'result.semantic.failed.body': 'راجع التشخيص ثم صحّح المدخلات أو أعد التشغيل.',
   'result.semantic.cancelled': 'أُلغيت العملية',

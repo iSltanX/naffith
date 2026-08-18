@@ -81,6 +81,10 @@ type UpdateState =
   | { k: 'uptodate' }
   | { k: 'available'; info: UpdateInfo }
   | { k: 'installing' }
+  // ‏H-7: الحالة النهائية بعد نجاح `downloadAndInstallUpdate` فعلًا — بدونها
+  // كانت الشاشة تبقى على `installing` («جارٍ تنزيل التحديث…») إلى الأبد،
+  // فلا شيء يقول للمستخدم إن التحديث انتهى أو أنه بحاجة لإعادة التشغيل.
+  | { k: 'installed' }
   | { k: 'error' };
 
 /** مفتاح تبديل — نفس هندسة `Switch` في التصميم (٤٤×٢٤، المقبض ٢٠). */
@@ -237,6 +241,8 @@ export default function SettingsScreen(props: {
     setUpdate({ k: 'installing' });
     try {
       await downloadAndInstallUpdate(info.rid);
+      // نجح التثبيت فعليًا — حالةٌ نهائية تقوله، لا بقاءٌ على «جارٍ التنزيل».
+      setUpdate({ k: 'installed' });
     } catch {
       setUpdate({ k: 'error' });
     }
@@ -444,7 +450,13 @@ export default function SettingsScreen(props: {
               <button
                 type="button"
                 className="btn btn--outline"
-                disabled={update.k === 'checking' || update.k === 'installing'}
+                // ‏`installed` أيضًا: التطبيق ما زال يشغّل الثنائيّة القديمة
+                // حتى تُعاد تشغيله، فسؤالٌ جديد الآن يقارن بنفس الإصدار القديم.
+                disabled={
+                  update.k === 'checking' ||
+                  update.k === 'installing' ||
+                  update.k === 'installed'
+                }
                 onClick={() => void runCheck()}
               >
                 {/* «إعادة المحاولة» تَعِد بأن التكرار قد ينجح — وهو صحيحٌ في
@@ -498,6 +510,24 @@ function UpdateBadge({ state }: { state: UpdateState }): JSX.Element | null {
       <p className="update-badge update-badge--warning" role="status">
         {tFormat('settings.update.available', { version: state.info.version })}
       </p>
+    );
+  }
+
+  // ‏H-7: حالةٌ نهائية إيجابية — التحديث ثُبِّت فعلًا — لا تختلط بـ`uptodate`
+  // (لم يوجد تحديثٌ أصلًا) رغم مشاركتهما النبرة: الرسالتان مختلفتان، والثانية
+  // وحدها تحتاج تلميحًا بإعادة التشغيل.
+  if (state.k === 'installed') {
+    return (
+      <>
+        <p className="update-badge update-badge--ok" role="status">
+          {t('settings.update.installed')}
+        </p>
+        {/* `--neutral` لا اللون الافتراضي: ذاك أحمر مصمَّمٌ لتلميحٍ يتبع خطأً
+            («تحقّق من اتصالك»)، وهذا تعليمات متابعةٍ بعد نجاحٍ لا إنذار. */}
+        <p className="update-badge__hint update-badge__hint--neutral">
+          {t('settings.update.installed.hint')}
+        </p>
+      </>
     );
   }
 
