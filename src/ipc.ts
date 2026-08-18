@@ -10,7 +10,7 @@
  *
  * و`reveal` يأخذ معرّف تشغيل لا مسارًا: النواة تُخرج المسار من سجلّها هي.
  */
-import { invoke } from '@tauri-apps/api/core';
+import { Channel, invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
 
@@ -550,4 +550,56 @@ export async function pickDirectory(): Promise<string | null> {
 export async function pickFile(): Promise<string | null> {
   const chosen = await openDialog({ directory: false, multiple: false });
   return typeof chosen === 'string' ? chosen : null;
+}
+
+// ── التحديث ────────────────────────────────────────────────────────────
+//
+// أوامر إضافة التحديث ليست من أوامر هذا التطبيق: هي أوامر مُلحقةٍ تُسجَّل
+// باسمٍ مُنَطَّق (`plugin:updater|…`) خارج `generate_handler!` في `lib.rs`.
+// ولذلك يبقى سطح أوامر التطبيق تسعةً كما يثبته `security.rs` — الإضافة توسّع
+// الصلاحيات (‏`updater:default` في ملف القدرات) لا قائمةَ الأوامر.
+
+/** رقم إصدار التطبيق، محقونًا وقت البناء من `package.json`. */
+export const APP_VERSION: string = __APP_VERSION__;
+
+/**
+ * هل ضُبطت وجهة التحديث ومفتاح التوقيع في هذا البناء؟
+ *
+ * تُقرأ من `tauri.conf.json` وقت البناء. حين تكون `false` لا تُسأل النواة
+ * أصلًا: الجواب معروفٌ سلفًا، وسؤالٌ يُعرف فشله قبل طرحه يُنتج انتظارًا ثم
+ * رسالةَ خطأ عن شيءٍ لم ينكسر.
+ */
+export const UPDATER_CONFIGURED: boolean = __UPDATER_CONFIGURED__;
+
+/** ما تعيده إضافة التحديث حين يوجد تحديث. `null` يعني «لا جديد». */
+export interface UpdateInfo {
+  /** معرّف المورد في النواة. يُمرَّر إلى التنزيل، ولا معنى له خارج الجلسة. */
+  rid: number;
+  currentVersion: string;
+  version: string;
+  date?: string | null;
+  body?: string | null;
+}
+
+/**
+ * يسأل عن وجود تحديث. يرمي إن تعذّر السؤال.
+ *
+ * **الرمي حالةٌ متوقّعة لا خلل**: ما دامت `endpoints` فارغة في
+ * `tauri.conf.json` — وهي كذلك حتى تُضبط نقطة التحديث الحقيقية ومفتاح
+ * التوقيع — فستُعيد النواة `Updater does not have any endpoints set`. الشاشة
+ * تعرض ذلك بوصفه حالة «تعذّر التحقّق» المرسومة في التصميم، ولا تدّعي أن
+ * النسخة محدَّثة. أن يقول المنتج «لا أعرف» أصدقُ من أن يقول «أنت على أحدث
+ * إصدار» وهو لم يسأل أحدًا.
+ */
+export const checkForUpdate = () => invoke<UpdateInfo | null>('plugin:updater|check');
+
+/**
+ * ينزّل التحديث ويثبّته. لا يُستدعى إلا بعد `checkForUpdate` ناجحة.
+ *
+ * `onEvent` قناةٌ تطلبها النواة ولو لم نقرأها: توقيع الأمر يشترطها، وتمريرُ
+ * قناةٍ صامتة أصدق من ادّعاء تقدّمٍ لا نعرضه.
+ */
+export async function downloadAndInstallUpdate(rid: number): Promise<void> {
+  const onEvent = new Channel<unknown>();
+  await invoke<void>('plugin:updater|download_and_install', { rid, onEvent });
 }

@@ -82,6 +82,28 @@
   border-inline-end: var(--border-hairline) solid var(--border-subtle);
 }
 
+/* حجم أيقونات الشريط الجانبي — إعداد «حجم الأيقونات في الشريط الجانبي».
+   متغيّران فقط يُعاد تعريفهما هنا، ويقرأهما `.app-nav__item`/`svg` بقيمةٍ
+   افتراضية تساوي المقاس الحالي، فبناءٌ لم يُمرَّر له صنفٌ (اختبارٌ قديم، أو
+   استدعاءٌ نسي الخاصية) يُعرض تمامًا كما كان قبل هذا الإعداد — لا قفزة
+   بصرية لأحد لم يغيّر شيئًا.
+
+   والفجوة تتحرّك مع المقاس لا تبقى ثابتة: أيقونةٌ أصغر بفجوةٍ أكبر تبدو
+   عائمة عن نصّها، وأيقونةٌ أكبر بفجوةٍ أصغر تلاصقه — «متوازن» يعني أن نسبة
+   الفراغ إلى الحجم تبقى قريبة عبر الدرجات الثلاث، لا أن الفجوة رقمٌ واحد. */
+.app-nav--icon-small {
+  --nav-icon-size: var(--icon-xs);
+  --nav-icon-gap: var(--space-8);
+}
+.app-nav--icon-medium {
+  --nav-icon-size: var(--icon-sm);
+  --nav-icon-gap: var(--space-10);
+}
+.app-nav--icon-large {
+  --nav-icon-size: var(--icon-md);
+  --nav-icon-gap: var(--space-12);
+}
+
 .app-nav__brand {
   min-height: var(--space-56);
   display: flex;
@@ -111,9 +133,13 @@
   flex-direction: column;
   margin-block-start: var(--space-12);
 }
+/* لا تمرير داخلي: القائمة قصيرةٌ بما يكفي لتظهر كاملة عند ارتفاع النافذة
+   المرسوم (٦٤٠)، وشريطُ تمريرٍ داخل شريط تنقّلٍ من ثلاثة عشر عنصرًا يخفي
+   «الإعدادات» و«سجل التشغيل» تحت الحافة — وهما آخر ما يبحث عنه المستخدم.
+   الارتفاع يُضبط في `--control-h-nav-category` كي تتّسع القائمة، لا هنا
+   بإخفاء ما لا يتّسع. */
 .app-nav__categories {
   min-height: 0;
-  overflow-y: auto;
   padding-block-start: var(--space-8);
 }
 .app-nav__utility { margin-block-start: auto; display: grid; gap: var(--space-12); }
@@ -124,7 +150,7 @@
   height: var(--control-h-nav);
   display: flex;
   align-items: center;
-  gap: var(--space-10);
+  gap: var(--nav-icon-gap, var(--space-10));
   padding-inline: var(--space-12);
   border: 0;
   border-inline-start: var(--border-accent) solid transparent;
@@ -151,8 +177,8 @@
 }
 
 .app-nav__item svg {
-  width: var(--icon-sm);
-  height: var(--icon-sm);
+  width: var(--nav-icon-size, var(--icon-sm));
+  height: var(--nav-icon-size, var(--icon-sm));
   flex: none;
   color: var(--text-muted);
   transition: color var(--duration-fast) var(--ease-standard);

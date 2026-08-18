@@ -2,12 +2,16 @@ import type { ReactNode } from 'react';
 import { t } from './i18n';
 import type { CategoryCard } from './library';
 import type { Screen } from './nav';
+import type { SidebarIconSize } from './settings';
 
 interface AppShellProps {
   screen: Screen;
   categories: CategoryCard[];
   activeCategoryId?: string | undefined;
   viewportMode?: 'scroll' | 'fixed';
+  /** إعداد «حجم الأيقونات في الشريط الجانبي». `medium` هو مقاس اليوم قبل
+   *  هذا الإعداد — فمن لم يمرّره لا يرى تغييرًا. */
+  iconSize?: SidebarIconSize;
   onOpenLibrary: () => void;
   onOpenCategory: (categoryId: string) => void;
   onOpenLog: () => void;
@@ -41,6 +45,7 @@ export default function AppShell({
   categories,
   activeCategoryId,
   viewportMode = 'scroll',
+  iconSize = 'medium',
   onOpenLibrary,
   onOpenCategory,
   onOpenLog,
@@ -59,7 +64,7 @@ export default function AppShell({
         <div className={`app-frame__viewport app-frame__viewport--${viewportMode}`}>{children}</div>
       </div>
 
-      <aside className="app-nav" aria-label={t('nav.operations')}>
+      <aside className={`app-nav app-nav--icon-${iconSize}`} aria-label={t('nav.operations')}>
         {/* اسم المنتج وحده. و«سَطْر» ليس جزءًا منه: هو اسم لوحة الأوامر،
             ويظهر حيث تظهر تلك اللوحة لا في علامة التطبيق. */}
         <div className="app-nav__brand" aria-hidden="true">

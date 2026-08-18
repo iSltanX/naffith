@@ -1,3 +1,15 @@
+/* شاشة الإعدادات — أربعة ألسنة، صفحة ٢٠ في ملف الهوية.
+ *
+ * كل قياس هنا مشتقٌّ من رموز التصميم لا مكتوبًا بالبكسل: عمود المحتوى ٦٨٨ =
+ * ‏`--width-base - --space-32`، وبطاقة المسار ١٠٢ = `--space-96 + --space-6`،
+ * وهما ما يفحصه `run-log.source.test.ts` حرفًا حرفًا. كتابةُ الرقم مباشرةً
+ * كانت ستنجح اليوم وتنفصل عن المقياس أول ما يتغيّر رمزٌ واحد.
+ *
+ * ولا محدّدات الأصل الشرطية ولا دوال مزج الألوان ولا وحدات الحاويات: أرضية
+ * المنتج WebKit على macOS 12، وثلاثتها تسقط فيه صامتةً. يفحص ذلك حارسٌ في
+ * `run-log.source.test.ts` — وهو يقرأ هذا الملف نصًّا، فذكرُ أسمائها هنا حتى
+ * في تعليق كان يُسقطه. */
+
 .settings-screen {
   inline-size: 100%;
   max-inline-size: calc(var(--width-base) + var(--space-56));
@@ -5,41 +17,397 @@
   gap: var(--space-24);
 }
 
-.settings-screen .screen__head {
-  gap: var(--space-12);
-}
-
-.settings-screen__subtitle { margin: 0; }
-
-.settings-screen__card {
+/* الترويسة: العنوان وحده، فوق مساحة المحتوى كلها. */
+.settings-screen__head {
   inline-size: 100%;
   max-inline-size: calc(var(--width-base) - var(--space-32));
-  min-block-size: calc(var(--space-96) + var(--space-96) - var(--space-8));
+  margin-inline: auto;
+}
+
+.settings-screen__title {
+  margin: 0;
+}
+
+/* ── الجسم: أقسامٌ يمينًا ومحتوًى يسارًا ─────────────────────────────── */
+
+.settings-screen__body {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-24);
+  inline-size: 100%;
+  max-inline-size: calc(var(--width-base) - var(--space-32));
+  margin-inline: auto;
+}
+
+/* أضيق من تنقّل التطبيق (٢٣٢) بمقدار `--space-80`، وأخفّ منه: بلا أيقونات،
+   وبخطٍّ أصغر، وبلا سطحٍ خاص. الفرق مقصود — هذا تنقّلٌ داخل شاشة، وذاك تنقّل
+   المنتج كله، وتساويهما بصريًا كان يجعل الشاشة تبدو نافذتين. */
+.settings-screen__sections {
+  flex: none;
+  inline-size: calc(var(--sidebar-w) - var(--space-80));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.settings-screen__section {
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+  block-size: var(--control-h-nav-category);
+  display: flex;
+  align-items: center;
+  padding-inline: var(--space-12);
+  border: 0;
+  /* نفس علامة تنقّل التطبيق: شريطٌ على حافة البداية — واليمين في RTL. */
+  border-inline-start: var(--border-accent) solid transparent;
+  border-radius: var(--radius-control);
+  font-family: var(--font-display);
+  font-size: var(--fs-label);
+  line-height: var(--lh-label);
+  color: var(--text-secondary);
+  text-align: start;
+}
+
+.settings-screen__section:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.settings-screen__section:active {
+  background: var(--bg-active);
+}
+
+.settings-screen__section.is-current {
+  background: var(--bg-selected);
+  border-inline-start-color: var(--action-primary);
+  color: var(--text-accent);
+  font-weight: var(--fw-bold);
+}
+
+.settings-screen__panel {
+  flex: 1;
+  min-inline-size: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+}
+
+/* ── البطاقات ────────────────────────────────────────────────────────── */
+
+.settings-screen__card {
+  display: flex;
+  flex-direction: column;
+  inline-size: 100%;
+  max-inline-size: calc(var(--width-base) - var(--space-32));
+  min-block-size: calc(var(--space-96) + var(--space-6));
   margin-inline: auto;
   gap: var(--space-12);
+  padding: var(--space-16);
+  border: var(--border-hairline) solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
 }
 
-.settings-screen__replay {
-  inline-size: var(--sidebar-w);
-  block-size: var(--control-h-md);
-  justify-content: center;
+/* بطاقة الصفوف لا حشوة لها: كل صفٍّ يحمل حشوته وفاصله السفلي. */
+.settings-screen__card--rows {
+  padding: 0;
+  gap: 0;
 }
 
-/* قسمُ مسار أداةٍ — Node.js وCargo كلاهما. المسار لاتينيّ الاتجاه دائمًا
-   (`dir="ltr"` في العنصر نفسه)، فيُقصّ من البداية اللاتينية لا النهاية حين
-   يطول — ‏`text-overflow` وحدها تقصّ من النهاية، فالسطر يُلفّ بدل أن يُقصّ كي
-   يبقى المسار كاملًا مقروءًا. */
+.settings-screen__card-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--fs-body-secondary);
+  line-height: var(--lh-body-secondary);
+  font-weight: var(--fw-bold);
+  color: var(--text-primary);
+}
+
+.settings-screen__card-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-16);
+}
+
+/* ── صفّ التبديل ─────────────────────────────────────────────────────── */
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-16);
+  padding-block: var(--space-12);
+  padding-inline: var(--space-16);
+  border-block-end: var(--border-hairline) solid var(--border-subtle);
+}
+
+/* آخر صفٍّ لا فاصل تحته: الفاصل يفصل بين اثنين، وتحت الأخير حافةُ البطاقة. */
+.settings-row:last-child {
+  border-block-end: 0;
+}
+
+.settings-row__labels {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-inline-size: 0;
+  text-align: start;
+}
+
+.settings-row__title {
+  font-family: var(--font-display);
+  font-size: var(--fs-body-secondary);
+  line-height: var(--lh-body-secondary);
+  font-weight: var(--fw-bold);
+  color: var(--text-primary);
+}
+
+.settings-row__body {
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--text-muted);
+}
+
+/* ── المفتاح ─────────────────────────────────────────────────────────── */
+
+.switch {
+  appearance: none;
+  flex: none;
+  inline-size: var(--control-h-nav);
+  block-size: var(--space-24);
+  padding: var(--space-2);
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--border-default);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.switch--on {
+  background: var(--action-primary);
+  justify-content: flex-end;
+}
+
+.switch__knob {
+  inline-size: var(--space-20);
+  block-size: var(--space-20);
+  border-radius: var(--radius-full);
+  background: var(--ink-000);
+}
+
+/* ── المسارات ────────────────────────────────────────────────────────── */
+
+.settings-screen__card-actions {
+  display: flex;
+  gap: var(--space-8);
+  flex: none;
+}
+
+.settings-screen__path {
+  margin: 0;
+  min-inline-size: 0;
+  text-align: end;
+  font-size: var(--fs-label);
+  line-height: var(--lh-label);
+  color: var(--text-muted);
+}
+
+/* المسار لاتينيّ الاتجاه دائمًا، ويُلفّ بدل أن يُقصّ كي يبقى كاملًا مقروءًا. */
 .settings-screen__path-value {
   overflow-wrap: anywhere;
   font-family: var(--font-mono);
-  font-size: var(--fs-caption);
   color: var(--text-secondary);
 }
 
-.settings-screen__path-actions {
+/* ── المظهر ──────────────────────────────────────────────────────────── */
+
+/* العيّنات الثلاث متوسّطةٌ في البطاقة كما في التصميم، لا ملتصقةً بحافة
+   البداية — والبداية في RTL هي اليمين، فتركُها على الافتراضي كان يكدّسها
+   تحت العنوان مباشرةً. */
+.theme-grid {
   display: flex;
+  justify-content: center;
+  gap: var(--space-16);
+}
+
+.theme-option {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   gap: var(--space-8);
 }
+
+.theme-option__specimen {
+  inline-size: var(--space-96);
+  block-size: var(--space-80);
+  border-radius: var(--radius-md);
+  border: var(--border-thin) solid var(--border-subtle);
+  display: block;
+}
+
+.theme-option__specimen--light { background: var(--ink-050); }
+.theme-option__specimen--dark  { background: var(--ink-900); }
+
+/* «تلقائي» تعرض الحالتين معًا لأنها ليست لونًا ثالثًا بل اتّباعًا لما يقرّره
+   النظام — نصفان يقولان ذلك بلا نص. */
+/* الاتجاه فيزيائي لا منطقي عن قصد: العيّنة صورةٌ للسمتين كما رُسمت في
+   الهوية — الفاتح يسارًا والداكن يمينًا — ولا تنقلب بانقلاب اتجاه القراءة،
+   تمامًا كما لا تنقلب لقطةُ شاشة. */
+.theme-option__specimen--system {
+  background: linear-gradient(to right, var(--ink-050) 0 50%, var(--ink-900) 50% 100%);
+}
+
+.theme-option.is-current .theme-option__specimen {
+  border-color: var(--action-primary);
+  border-width: var(--border-thick);
+}
+
+.theme-option__label {
+  font-family: var(--font-display);
+  font-size: var(--fs-label);
+  line-height: var(--lh-label);
+  color: var(--text-secondary);
+}
+
+.theme-option.is-current .theme-option__label {
+  color: var(--text-accent);
+  font-weight: var(--fw-bold);
+}
+
+.settings-select {
+  appearance: none;
+  flex: none;
+  block-size: var(--control-h-sm);
+  padding-inline: var(--space-16);
+  border: var(--border-hairline) solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: var(--bg-canvas);
+  color: var(--text-primary);
+  font-family: var(--font-display);
+  font-size: var(--fs-label);
+  cursor: pointer;
+}
+
+/* ── حول ─────────────────────────────────────────────────────────────── */
+
+.about {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-16);
+  text-align: center;
+}
+
+.about__mark {
+  inline-size: var(--space-64);
+  block-size: var(--space-64);
+  border-radius: var(--radius-xl);
+  background: var(--action-primary);
+  color: var(--text-on-action);
+  font-family: var(--font-display);
+  font-size: var(--fs-section-title);
+  font-weight: var(--fw-bold);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.about__name {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--fs-section-title);
+  line-height: var(--lh-section-title);
+  font-weight: var(--fw-bold);
+  color: var(--text-primary);
+}
+
+.about__version {
+  margin: 0;
+  font-size: var(--fs-label);
+  color: var(--text-muted);
+}
+
+.update-badge {
+  margin: 0;
+  padding-block: var(--space-6);
+  padding-inline: var(--space-16);
+  border-radius: var(--radius-full);
+  font-family: var(--font-display);
+  font-size: var(--fs-label);
+  line-height: var(--lh-label);
+  font-weight: var(--fw-bold);
+}
+
+.update-badge--ok {
+  background: var(--status-success-tint);
+  color: var(--status-success-text);
+}
+
+.update-badge--warning {
+  background: var(--bg-surface);
+  border: var(--border-hairline) solid var(--status-warning-border);
+  color: var(--status-warning-text);
+}
+
+.update-badge--danger {
+  background: var(--bg-surface);
+  border: var(--border-hairline) solid var(--status-danger-border);
+  color: var(--status-danger-text);
+}
+
+.update-badge--neutral {
+  background: var(--bg-inset);
+  color: var(--text-secondary);
+}
+
+.update-badge__hint {
+  margin: 0;
+  font-size: var(--fs-caption);
+  color: var(--status-danger-text);
+}
+
+/* شرحُ حالةٍ محايدة لا يُكتب بلون الخطر: «غير مهيأة بعد» خبرٌ لا إنذار. */
+.update-badge__hint--neutral {
+  color: var(--text-muted);
+}
+
+.about__toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-16);
+}
+
+.about__toggle-label {
+  font-family: var(--font-display);
+  font-size: var(--fs-label);
+  color: var(--text-secondary);
+}
+
+.about__rule {
+  inline-size: 100%;
+  block-size: 0;
+  margin: 0;
+  border: 0;
+  border-block-start: var(--border-hairline) solid var(--border-subtle);
+}
+
+.about__description,
+.about__credit {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+}
+
+/* ── التنبيه ─────────────────────────────────────────────────────────── */
 
 .settings-screen > .notice {
   inline-size: 100%;
@@ -67,6 +435,31 @@
 
 .settings-screen__notice-copy p {
   color: var(--text-secondary);
+}
+
+/* الاستجابة في المحور والفراغ لا في المقاس — وهو قانون `screens.source.test`.
+   تحت ‎900px‎ ينقلب الجسم عمودًا: الأقسام صفٌّ أفقيّ يمتدّ عرضَه (‏`auto` رفعٌ
+   للقيد لا مقاسٌ جديد) أسفل العنوان مباشرةً، فلا تزاحمه ولا تنقلب قراءتها. */
+@media (max-width: 899px) {
+  .settings-screen__body {
+    flex-direction: column;
+  }
+
+  .settings-screen__sections {
+    flex-direction: row;
+    inline-size: auto;
+    gap: var(--space-4);
+    overflow-x: auto;
+  }
+
+  .settings-screen__section {
+    border-inline-start: 0;
+    border-block-end: var(--border-accent) solid transparent;
+  }
+
+  .settings-screen__section.is-current {
+    border-block-end-color: var(--action-primary);
+  }
 }
 
 @media (max-width: 759px) {

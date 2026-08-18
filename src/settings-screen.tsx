@@ -1,128 +1,266 @@
 /**
- * الإعدادات.
+ * الإعدادات — أربعة أقسام في شاشة واحدة.
  *
- * ## لماذا شاشةٌ فيها خيارٌ واحد — سابقًا
+ * ## لماذا ألسنة لا شاشات
  *
- * «شاشة الترحيب تُعرض مرّةً واحدة» وعدٌ قطعه `onboarding.once`، ووعدٌ كهذا لا
- * يجوز أن يكون طريقًا ذا اتجاه واحد: من أغلقها في ثانيته الأولى قبل أن يقرأ
- * فقد ما لا يستطيع استعادته. فوجودُ هذه الشاشة هو ما يجعل ذلك الوعد صادقًا لا
- * محبِسًا.
+ * الأقسام الأربعة (عام، المظهر، أدوات المطوّرين، حول) تشترك في ترويسةٍ واحدة
+ * وتُقرأ في جلسةٍ واحدة: من يفتح الإعدادات ليضبط السمة قد يضبط بعدها مسار
+ * Node. جعلُها أربع وجهات في `nav.ts` كان يعني أربعة مسارات رجوع وأربعة
+ * عناوين في السجل من أجل تنقّلٍ داخل شاشةٍ واحدة. اللسان حالةٌ محلّية هنا،
+ * والشاشة كلها وجهةٌ واحدة كما كانت.
  *
- * ومسارا Node.js وCargo أضيفا لسببٍ مختلف: أدواتٌ يثبّتها المستخدم بنفسه في
- * مسارٍ لا مسارٍ نظاميًّا ثابتًا (خلاف كل أداةٍ أخرى في هذا التطبيق)، فتُختار
- * مرّةً هنا — أو في أول عملية أدوات مطوّرين تحتاجها — وتُتذكَّر بعدها.
+ * ## لماذا `settings` كاملةً لا سبعة خصائص
  *
- * ## لماذا `storageAvailable` مُمرَّرة لا مقروءة هنا
+ * الشاشة صارت تقرأ تسعة حقول وتكتب ستّة. تمريرُها حقلًا حقلًا كان يعني ثمانية
+ * عشر خاصيّة عبر حدّ ملفّ، وكل حقلٍ جديد يمسّ ثلاثة مواضع. الشاشة تعرض ولا
+ * تحفظ: `onSettingsChange` هي الطريق الوحيد إلى المخزن، ومن يملكه هو `app.tsx`
+ * كما كان — وهذا هو نفس السبب الذي جعل `storageAvailable` مُمرَّرة لا مقروءة
+ * هنا.
  *
- * الشاشة تعرض ولا تفحص. من يملك المخزن هو من يقرأ الإعداد ويكتبه (`settings.ts`
- * ومن يستدعيه)، وسؤالُه مرّةً ثانيةً من هنا يفتح احتمال أن تقول الشاشة «محفوظ»
- * بينما تعرف الطبقة التي تحفظ أنه ليس كذلك. مصدرُ الحقيقة واحد، وهذه نافذةٌ
- * عليه.
+ * ## لماذا حالة التحديث محلّية
  *
- * وحين يتعذّر الحفظ لا يُعطَّل الزرّ: إعادة عرض الترحيب تعمل في هذه الجلسة
- * كاملةً، وكل ما يضيع أنها لن تُتذكَّر بعد الإغلاق. تعطيلُ فعلٍ يعمل عقوبةٌ على
- * عطلٍ ليس من صنع المستخدم.
+ * «جارٍ الفحص» و«تعذّر التحقّق» ليستا إعدادًا يُحفظ بل واقعةَ جلسة: من أغلق
+ * التطبيق وفتحه لا يجب أن يجد رسالة فشلٍ من الأمس. المحفوظ هو التفضيل وحده
+ * (`autoUpdate`)، والنتيجة تُعاد بالسؤال لا بالقراءة.
  */
-import { useEffect, useId, useRef } from 'react';
-import { t } from './i18n';
-import { pickFile } from './ipc';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { t, tFormat } from './i18n';
+import {
+  APP_VERSION,
+  checkForUpdate,
+  downloadAndInstallUpdate,
+  pickDirectory,
+  pickFile,
+  UPDATER_CONFIGURED,
+  type UpdateInfo,
+} from './ipc';
+import {
+  shouldShowOnboarding,
+  withAutoUpdate,
+  withCargoPath,
+  withConfirmBeforeExecute,
+  withDefaultWorkingPath,
+  withNodePath,
+  withNotificationSound,
+  withOnboardingCompleted,
+  withSidebarIconSize,
+  withTheme,
+  type Settings,
+  type SidebarIconSize,
+  type ThemePreference,
+} from './settings';
 import './utility-screen.css';
 import './settings-screen.css';
 
+export type SettingsTab = 'general' | 'appearance' | 'developer' | 'about';
+
+const TABS: readonly SettingsTab[] = ['general', 'appearance', 'developer', 'about'];
+
+/** عنوان القسم المعروض في الترويسة — واحد لكل لسان. */
+const TITLE_KEY: Record<SettingsTab, string> = {
+  general: 'settings.general.title',
+  appearance: 'settings.appearance.title',
+  developer: 'settings.developer.title',
+  about: 'settings.about.title',
+};
+
+const THEME_OPTIONS: readonly ThemePreference[] = ['light', 'dark', 'system'];
+const ICON_SIZES: readonly SidebarIconSize[] = ['small', 'medium', 'large'];
+
 /**
- * قسم مسار أداةٍ واحد — Node.js وCargo كلاهما نفس الشكل بالضبط: عرض المسار
- * المحفوظ أو «لم يُحدَّد بعد»، وزرّ اختيار/تغيير، وزرّ مسح يظهر حين توجد قيمة.
+ * حالة سؤال التحديث.
  *
- * مكوّنٌ داخليّ لا ملفٌّ مستقل: لا يُستعمل خارج هذه الشاشة، وفصله كان يعني
- * تمرير سبعة خصائص عبر حدّ ملفّ من أجل قسمٍ واحد يظهر مرّتين فقط.
+ * `unconfigured` حالةٌ قائمة بذاتها لا نوعٌ من الخطأ: لا شيء انكسر، ولم
+ * تُضبط وجهة التحديث في هذا البناء بعد. فصلُها يمنع عرض نبرة الخطر وزرّ
+ * «إعادة المحاولة» على شيءٍ لا تُصلحه إعادةُ محاولة.
  */
-function ToolPathSection({
+type UpdateState =
+  | { k: 'idle' }
+  | { k: 'unconfigured' }
+  | { k: 'checking' }
+  | { k: 'uptodate' }
+  | { k: 'available'; info: UpdateInfo }
+  | { k: 'installing' }
+  | { k: 'error' };
+
+/** مفتاح تبديل — نفس هندسة `Switch` في التصميم (٤٤×٢٤، المقبض ٢٠). */
+function Switch({
+  on,
+  onChange,
+  labelledBy,
+  describedBy,
+}: {
+  on: boolean;
+  onChange: (next: boolean) => void;
+  labelledBy: string;
+  describedBy?: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-labelledby={labelledBy}
+      aria-describedby={describedBy}
+      className={`switch${on ? ' switch--on' : ''}`}
+      onClick={() => onChange(!on)}
+    >
+      <span className="switch__knob" />
+    </button>
+  );
+}
+
+/** صفٌّ في بطاقة التفضيلات: عنوان وشرح على اليمين، ومفتاح على اليسار. */
+function ToggleRow({
   uid,
-  keyPrefix,
-  path,
+  name,
+  on,
   onChange,
 }: {
   uid: string;
-  keyPrefix: 'settings.node' | 'settings.cargo';
+  name: string;
+  on: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  const titleId = `${uid}-${name}-title`;
+  const bodyId = `${uid}-${name}-body`;
+  return (
+    // النصّ أوّلًا فيقع يمينًا، والمفتاح آخرًا فيقع يسارًا — كما في التصميم.
+    <div className="settings-row">
+      <div className="settings-row__labels">
+        <span id={titleId} className="settings-row__title">
+          {t(`settings.${name}.title`)}
+        </span>
+        <span id={bodyId} className="settings-row__body">
+          {t(`settings.${name}.body`)}
+        </span>
+      </div>
+      <Switch on={on} onChange={onChange} labelledBy={titleId} describedBy={bodyId} />
+    </div>
+  );
+}
+
+/**
+ * بطاقة مسار: عنوان، والمسار المحفوظ أو «لم يُحدَّد بعد»، وأزرار.
+ *
+ * تخدم مسار العمل الافتراضي (مجلد) ومساري Node وCargo (ملفّان)، والفرق بينها
+ * `pick` وحدها — فحوار المجلد وحوار الملف كلاهما يعيد نصًّا غير موثوق يفحصه
+ * النواة لاحقًا، ولا شيء في هذه الشاشة يعتمد على أيّهما كان.
+ */
+function PathCard({
+  uid,
+  name,
+  keyPrefix,
+  labelKey,
+  path,
+  pick,
+  onChange,
+}: {
+  uid: string;
+  name: string;
+  keyPrefix: string;
+  labelKey: string;
   path: string | null;
+  pick: () => Promise<string | null>;
   onChange: (path: string | null) => void;
 }) {
+  const titleId = `${uid}-${name}`;
   const browse = async () => {
-    const chosen = await pickFile();
+    const chosen = await pick();
     if (chosen) onChange(chosen);
   };
-
-  const key = (suffix: string): string => `${keyPrefix}.${suffix}`;
-
   return (
-    <section className="card screen__section settings-screen__card" aria-labelledby={`${uid}-${keyPrefix}`}>
-      <h3 id={`${uid}-${keyPrefix}`} className="t-card-title">
-        {t(key('title'))}
+    <section className="settings-screen__card" aria-labelledby={titleId}>
+      <h3 id={titleId} className="settings-screen__card-title">
+        {t(`${keyPrefix}.title`)}
       </h3>
-      <p className="t-body-sec">{t(key('body'))}</p>
-      <p className="t-body-sec settings-screen__path-value" dir="ltr">
-        <bdi>{path ?? t(key('unset'))}</bdi>
-      </p>
-      <div className="settings-screen__path-actions">
-        <button type="button" className="btn btn--primary" onClick={browse}>
-          {t(path ? key('change') : key('choose'))}
-        </button>
-        {path && (
-          <button type="button" className="btn btn--quiet" onClick={() => onChange(null)}>
-            {t(key('clear'))}
+      {/* المسار أوّلًا فيقع يمينًا، والأزرار آخرًا فتقع يسارًا. */}
+      <div className="settings-screen__card-row">
+        <p className="settings-screen__path">
+          <span className="settings-screen__path-label">{t(labelKey)}</span>{' '}
+          <bdi className="settings-screen__path-value" dir="ltr">
+            {path ?? t(`${keyPrefix}.unset`)}
+          </bdi>
+        </p>
+        <div className="settings-screen__card-actions">
+          <button type="button" className="btn btn--outline" onClick={browse}>
+            {t(path ? `${keyPrefix}.change` : `${keyPrefix}.choose`)}
           </button>
-        )}
+          {path && (
+            <button type="button" className="btn btn--quiet" onClick={() => onChange(null)}>
+              {t(`${keyPrefix}.clear`)}
+            </button>
+          )}
+        </div>
       </div>
     </section>
   );
 }
 
 export default function SettingsScreen(props: {
-  onBack: () => void;
-  onReplayOnboarding: () => void;
+  settings: Settings;
+  onSettingsChange: (next: Settings) => void;
   storageAvailable: boolean;
-  /** مسار Node.js المحفوظ، أو `null` إن لم يُختر بعد. */
-  nodePath: string | null;
-  /** `null` يمسح القيمة. الشاشة لا تتحقّق من المسار — ذاك عمل النواة وقت
-   *  التخطيط، لا عمل حوار اختيارٍ ولا شاشة إعداد. */
-  onNodePathChange: (path: string | null) => void;
-  /** مسار Cargo المحفوظ، أو `null`. نفس منطق `nodePath` بالضبط. */
-  cargoPath: string | null;
-  onCargoPathChange: (path: string | null) => void;
+  onReplayOnboarding: () => void;
 }): JSX.Element {
-  const {
-    onReplayOnboarding,
-    storageAvailable,
-    nodePath,
-    onNodePathChange,
-    cargoPath,
-    onCargoPathChange,
-  } = props;
+  const { settings, onSettingsChange, storageAvailable, onReplayOnboarding } = props;
 
   const uid = useId();
   const headingId = `${uid}-heading`;
   const heading = useRef<HTMLHeadingElement>(null);
+  const [tab, setTab] = useState<SettingsTab>('general');
+  const [update, setUpdate] = useState<UpdateState>(
+    UPDATER_CONFIGURED ? { k: 'idle' } : { k: 'unconfigured' },
+  );
 
-  // تبديل الشاشة في تطبيق صفحةٍ واحدة لا يحرّك التركيز من تلقائه: من يتنقّل
-  // بلوحة المفاتيح يبقى تركيزه على زرٍّ اختفى، فيستأنف Tab من رأس المستند.
-  // نقلُه إلى العنوان يجعل أول ما يُنطق اسمَ الشاشة، وأول ما يليه «رجوع».
+  // تبديل الشاشة في تطبيق صفحةٍ واحدة لا يحرّك التركيز من تلقائه.
   useEffect(() => {
     heading.current?.focus();
   }, []);
 
+  const runCheck = useCallback(async () => {
+    // بناءٌ بلا وجهة لا يسأل الشبكة: الجواب معروفٌ قبل السؤال.
+    if (!UPDATER_CONFIGURED) {
+      setUpdate({ k: 'unconfigured' });
+      return;
+    }
+    setUpdate({ k: 'checking' });
+    try {
+      const info = await checkForUpdate();
+      setUpdate(info ? { k: 'available', info } : { k: 'uptodate' });
+    } catch {
+      setUpdate({ k: 'error' });
+    }
+  }, []);
+
+  const install = useCallback(async (info: UpdateInfo) => {
+    setUpdate({ k: 'installing' });
+    try {
+      await downloadAndInstallUpdate(info.rid);
+    } catch {
+      setUpdate({ k: 'error' });
+    }
+  }, []);
+
+  // «التحديث التلقائي» تعني السؤال بلا أن يُطلب — وأوّل فرصةٍ لذلك هي فتح
+  // القسم الذي يعرض الجواب. لا تُسأل مرّتين: `idle` وحدها تسمح.
+  useEffect(() => {
+    if (tab === 'about' && settings.autoUpdate && update.k === 'idle') void runCheck();
+  }, [tab, settings.autoUpdate, update.k, runCheck]);
+
+  const showWelcome = shouldShowOnboarding(settings);
+
   return (
     <section className="screen settings-screen" aria-labelledby={headingId}>
-      <header className="screen__head">
-        {/* ‏h2 لا h1: هويّة المنتج تحمل h1 في ترويسة التطبيق الثابتة، وهذه
-            شاشةٌ داخلها. الطبقة `t-page-title` شكلٌ لا رتبة. */}
-        <h2 id={headingId} className="t-page-title screen__title" tabIndex={-1} ref={heading}>
-          {t('settings.title')}
+      {/* العنوان وحده فوق المحتوى: شريطُ أقسامٍ أفقيّ بجانبه كان ينازعه
+          الصدارة في نفس السطر. */}
+      <header className="settings-screen__head">
+        {/* ‏h2 لا h1: هويّة المنتج تحمل h1 في ترويسة التطبيق الثابتة. */}
+        <h2 id={headingId} className="t-page-title settings-screen__title" tabIndex={-1} ref={heading}>
+          {t(TITLE_KEY[tab])}
         </h2>
-        <p className="t-body-sec settings-screen__subtitle">{t('settings.subtitle')}</p>
       </header>
 
-      {/* التنبيه فوق الخيار الذي يعنيه لا تحته: من يقرأ «اعرضها الآن متى شئت»
-          ينبغي أن يكون قد عرف قبلها أن «متى شئت» لن يُحفظ. */}
       {!storageAvailable && (
         <div className="notice notice--warning settings-screen__storage-notice" role="status">
           <div className="settings-screen__notice-copy">
@@ -134,18 +272,245 @@ export default function SettingsScreen(props: {
         </div>
       )}
 
-      <section className="card screen__section settings-screen__card" aria-labelledby={`${uid}-onboarding`}>
-        <h3 id={`${uid}-onboarding`} className="t-card-title">
-          {t('settings.onboarding.title')}
-        </h3>
-        <p className="t-body-sec">{t('settings.onboarding.body')}</p>
-        <button type="button" className="btn btn--primary settings-screen__replay" onClick={onReplayOnboarding}>
-          {t('settings.onboarding.replay')}
-        </button>
-      </section>
+      {/* الأقسام أوّلًا فتقع يمينًا، والمحتوى بعدها فيقع يسارًا. وهي تنبع من
+          داخل مساحة الإعدادات لا من حافة النافذة، فتبقى مفصولةً بصريًا عن
+          تنقّل التطبيق الرئيسي الذي يسكن الحافة. */}
+      <div className="settings-screen__body">
+        <div
+          className="settings-screen__sections"
+          role="tablist"
+          aria-orientation="vertical"
+          aria-label={t('settings.tabs.label')}
+        >
+          {TABS.map((id) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              id={`${uid}-tab-${id}`}
+              aria-selected={tab === id}
+              aria-controls={`${uid}-panel-${id}`}
+              className={`settings-screen__section${tab === id ? ' is-current' : ''}`}
+              onClick={() => setTab(id)}
+            >
+              {t(`settings.tab.${id}`)}
+            </button>
+          ))}
+        </div>
 
-      <ToolPathSection uid={uid} keyPrefix="settings.node" path={nodePath} onChange={onNodePathChange} />
-      <ToolPathSection uid={uid} keyPrefix="settings.cargo" path={cargoPath} onChange={onCargoPathChange} />
+        <div
+          className="settings-screen__panel"
+          role="tabpanel"
+          id={`${uid}-panel-${tab}`}
+          aria-labelledby={`${uid}-tab-${tab}`}
+        >
+        {tab === 'general' && (
+          <>
+            <div className="settings-screen__card settings-screen__card--rows">
+              <ToggleRow
+                uid={uid}
+                name="welcome"
+                on={showWelcome}
+                onChange={(next) => {
+                  if (next) onReplayOnboarding();
+                  else onSettingsChange(withOnboardingCompleted(settings, new Date()));
+                }}
+              />
+              <ToggleRow
+                uid={uid}
+                name="sound"
+                on={settings.notificationSound}
+                onChange={(next) => onSettingsChange(withNotificationSound(settings, next))}
+              />
+              <ToggleRow
+                uid={uid}
+                name="confirm"
+                on={settings.confirmBeforeExecute}
+                onChange={(next) => onSettingsChange(withConfirmBeforeExecute(settings, next))}
+              />
+            </div>
+            <PathCard
+              uid={uid}
+              name="workpath"
+              keyPrefix="settings.workpath"
+              labelKey="settings.workpath.active"
+              path={settings.defaultWorkingPath}
+              pick={pickDirectory}
+              onChange={(p) => onSettingsChange(withDefaultWorkingPath(settings, p))}
+            />
+          </>
+        )}
+
+        {tab === 'appearance' && (
+          <>
+            <section className="settings-screen__card" aria-labelledby={`${uid}-theme`}>
+              <h3 id={`${uid}-theme`} className="settings-screen__card-title">
+                {t('settings.theme.title')}
+              </h3>
+              <div className="theme-grid" role="radiogroup" aria-labelledby={`${uid}-theme`}>
+                {THEME_OPTIONS.map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    role="radio"
+                    aria-checked={settings.theme === option}
+                    className={`theme-option${settings.theme === option ? ' is-current' : ''}`}
+                    onClick={() => onSettingsChange(withTheme(settings, option))}
+                  >
+                    <span className={`theme-option__specimen theme-option__specimen--${option}`} />
+                    <span className="theme-option__label">{t(`settings.theme.${option}`)}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+            <section className="settings-screen__card" aria-labelledby={`${uid}-iconsize`}>
+              {/* العنوان أوّلًا فيقع يمينًا، والقائمة آخرًا فتقع يسارًا. */}
+              <div className="settings-screen__card-row">
+                <h3 id={`${uid}-iconsize`} className="settings-screen__card-title">
+                  {t('settings.iconsize.title')}
+                </h3>
+                <select
+                  className="settings-select"
+                  aria-labelledby={`${uid}-iconsize`}
+                  value={settings.sidebarIconSize}
+                  onChange={(e) =>
+                    onSettingsChange(withSidebarIconSize(settings, e.target.value as SidebarIconSize))
+                  }
+                >
+                  {ICON_SIZES.map((size) => (
+                    <option key={size} value={size}>
+                      {t(`settings.iconsize.${size}`)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </section>
+          </>
+        )}
+
+        {tab === 'developer' && (
+          <>
+            <PathCard
+              uid={uid}
+              name="node"
+              keyPrefix="settings.node"
+              labelKey="settings.toolpath.selected"
+              path={settings.nodePath}
+              pick={pickFile}
+              onChange={(p) => onSettingsChange(withNodePath(settings, p))}
+            />
+            <PathCard
+              uid={uid}
+              name="cargo"
+              keyPrefix="settings.cargo"
+              labelKey="settings.toolpath.selected"
+              path={settings.cargoPath}
+              pick={pickFile}
+              onChange={(p) => onSettingsChange(withCargoPath(settings, p))}
+            />
+          </>
+        )}
+
+        {tab === 'about' && (
+          <div className="about">
+            <div className="about__mark" aria-hidden="true">
+              ن
+            </div>
+            <p className="about__name">نَفِّذ</p>
+            <p className="about__version">{tFormat('settings.about.version', { version: APP_VERSION })}</p>
+
+            <UpdateBadge state={update} />
+
+            <div className="about__toggle">
+              <Switch
+                on={settings.autoUpdate}
+                onChange={(next) => onSettingsChange(withAutoUpdate(settings, next))}
+                labelledBy={`${uid}-autoupdate`}
+              />
+              <span id={`${uid}-autoupdate`} className="about__toggle-label">
+                {t('settings.update.auto')}
+              </span>
+            </div>
+
+            {update.k === 'available' ? (
+              <button
+                type="button"
+                className="btn btn--primary"
+                onClick={() => void install(update.info)}
+              >
+                {t('settings.update.download')}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="btn btn--outline"
+                disabled={update.k === 'checking' || update.k === 'installing'}
+                onClick={() => void runCheck()}
+              >
+                {/* «إعادة المحاولة» تَعِد بأن التكرار قد ينجح — وهو صحيحٌ في
+                    فشل الشبكة، وكاذبٌ حين لا وجهة مضبوطة أصلًا. */}
+                {t(update.k === 'error' ? 'settings.update.retry' : 'settings.update.check')}
+              </button>
+            )}
+
+            <hr className="about__rule" />
+            <p className="about__description">{t('settings.about.description')}</p>
+            <p className="about__credit">{t('settings.about.credit')}</p>
+          </div>
+        )}
+        </div>
+      </div>
     </section>
+  );
+}
+
+/** شارة الحالة فوق زرّ الفحص — نبرتها من الحالة لا من نصّها. */
+function UpdateBadge({ state }: { state: UpdateState }): JSX.Element | null {
+  if (state.k === 'idle') return null;
+
+  // «غير مهيأة» حالةٌ محايدة لا خطر: لا شيء فشل، والوجهة لم تُضبط بعد.
+  if (state.k === 'unconfigured') {
+    return (
+      <>
+        <p className="update-badge update-badge--neutral" role="status">
+          {t('settings.update.unconfigured')}
+        </p>
+        <p className="update-badge__hint update-badge__hint--neutral">
+          {t('settings.update.unconfigured.hint')}
+        </p>
+      </>
+    );
+  }
+
+  if (state.k === 'error') {
+    return (
+      <>
+        <p className="update-badge update-badge--danger" role="status">
+          {t('settings.update.failed')}
+        </p>
+        <p className="update-badge__hint">{t('settings.update.failed.network')}</p>
+      </>
+    );
+  }
+
+  if (state.k === 'available') {
+    return (
+      <p className="update-badge update-badge--warning" role="status">
+        {tFormat('settings.update.available', { version: state.info.version })}
+      </p>
+    );
+  }
+
+  const tone = state.k === 'uptodate' ? 'ok' : 'neutral';
+  const key =
+    state.k === 'uptodate'
+      ? 'settings.update.uptodate'
+      : state.k === 'installing'
+        ? 'settings.update.installing'
+        : 'settings.update.checking';
+  return (
+    <p className={`update-badge update-badge--${tone}`} role="status">
+      {t(key)}
+    </p>
   );
 }

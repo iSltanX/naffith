@@ -18,6 +18,11 @@ tauri = { version = "2", features = [] }
 # `dialog:allow-open` فقط — لا حفظ ولا رسائل ولا تأكيد. المسار العائد من
 # الحوار يُعامل معاملة أي نص من الواجهة: غير موثوق، ويتحقّق منه paths.rs.
 tauri-plugin-dialog = "2"
+# فحص التحديثات وتثبيتها. أوامرها أوامرُ مُلحقة (`plugin:updater|…`) لا تدخل
+# `generate_handler!`، فسطح أوامر التطبيق يبقى تسعةً كما يثبته security.rs.
+# ما يتّسع هو الصلاحيات: `updater:default` في capabilities/default.json، وهي
+# أول صلاحية شبكة في هذا المنتج — انظر وصف ذلك الملف.
+tauri-plugin-updater = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"

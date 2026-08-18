@@ -206,7 +206,9 @@ function requestsFromUi(): Request[] {
     const text = readFileSync(file, 'utf8');
     const where = relative(APP_SRC, file);
     // ‏`(?<![\w$.])` يمنع التقاط `errorText(` و`.t(` ونحوهما.
-    for (const call of text.matchAll(/(?<![\w$.])(t|tFirst)\(/g)) {
+    // و`tFormat` مشمولة: مفتاحها نصٌّ حرفيّ كغيره، وإغفالها كان يعني أن نصوص
+    // «حول» ذات المواضع المسمّاة تعيش خارج الحارس.
+    for (const call of text.matchAll(/(?<![\w$.])(t|tFirst|tFormat)\(/g)) {
       const open = (call.index ?? 0) + call[0].length - 1;
       const args = argsAt(text, open);
       // مفتاحٌ يُبنى وقت التشغيل (قالبٌ نصّي أو متغيّر) لا يُقرأ من المصدر.
@@ -327,6 +329,82 @@ describe('t و errorText', () => {
  * التشغيل — `tOptional` تطويه بصمت — فالعمليةُ الجديدة تصل إلى الشاشة بلا
  * جوابٍ عن «ماذا سيحدث؟» ولا أحد يعلم. هذا الحارس هو ما يجعل الغياب مسموعًا.
  */
+/**
+ * عائلات مفاتيح الإعدادات المبنيّة وقت التشغيل.
+ *
+ * `settings-screen.tsx` يبني مفاتيحه بقوالب نصّية — `t(`${keyPrefix}.change`)`
+ * و`t(`settings.${name}.title`)` — والماسح أعلاه يتخطّى القوالب عمدًا لأنه لا
+ * يستطيع تقييمها. فمرّ مفتاحٌ ناقص (`settings.workpath.choose`) إلى الشاشة
+ * وظهر حرفيًّا للمستخدم. هذا الحارس يفتح تلك العائلات المغلقة صراحةً.
+ */
+describe('عائلات مفاتيح الإعدادات', () => {
+  it('كل بطاقة مسار تملك لواحقها الخمس', () => {
+    for (const prefix of ['settings.workpath', 'settings.node', 'settings.cargo']) {
+      for (const suffix of ['title', 'unset', 'choose', 'change', 'clear']) {
+        const key = `${prefix}.${suffix}`;
+        expect(AR, key).toHaveProperty(key);
+      }
+    }
+  });
+
+  it('كل صفّ تبديل يملك عنوانه ومتنه', () => {
+    for (const name of ['welcome', 'sound', 'confirm']) {
+      for (const suffix of ['title', 'body']) {
+        const key = `settings.${name}.${suffix}`;
+        expect(AR, key).toHaveProperty(key);
+      }
+    }
+  });
+
+  it('كل لسان يملك اسمه وعنوان قسمه', () => {
+    for (const tab of ['general', 'appearance', 'developer', 'about']) {
+      expect(AR, `settings.tab.${tab}`).toHaveProperty(`settings.tab.${tab}`);
+      expect(AR, `settings.${tab}.title`).toHaveProperty(`settings.${tab}.title`);
+    }
+  });
+
+  it('كل خيار سمة وحجم أيقونات يملك نصّه', () => {
+    for (const theme of ['system', 'light', 'dark']) {
+      expect(AR, `settings.theme.${theme}`).toHaveProperty(`settings.theme.${theme}`);
+    }
+    for (const size of ['small', 'medium', 'large']) {
+      expect(AR, `settings.iconsize.${size}`).toHaveProperty(`settings.iconsize.${size}`);
+    }
+  });
+});
+
+/**
+ * حوار تأكيد التنفيذ (إعداد «تأكيد قبل التنفيذ») يبني مفتاحه بقالبٍ نصّي —
+ * `t(`run.confirm.${danger}.title`)` في `app.tsx` — فيتخطّاه الماسح أعلاه
+ * كما يتخطّى عائلات الإعدادات. ثلاث درجات لا أربع: «قراءة فقط» لا تصل هذا
+ * الحوار أصلًا، فلا مفتاح لها هنا عمدًا.
+ */
+describe('عائلة مفاتيح تأكيد التنفيذ', () => {
+  it('كل درجة خطرٍ تُعدّل أو تتلف تملك عنوانها ومتنها', () => {
+    // القائمة تُقرأ من نوع `Danger` نفسه في ipc.ts لا تُكتب هنا يدويًا —
+    // كأخواتها في هذا الملف (`nav.leave.*` من nav.ts، `log.state.*` من
+    // journal.rs): درجة خطرٍ رابعة تُضاف يومًا هناك يجب أن تُفقد ترجمتها هنا
+    // لا أن تمرّ صامتة لأن أحدًا نسي تحديث قائمةٍ ثانية.
+    const ipc = readFileSync(join(APP_SRC, 'ipc.ts'), 'utf8');
+    const match = /export type Danger =([^;]+);/.exec(ipc);
+    expect(match, 'لم يُعثر على تعريف Danger في ipc.ts').toBeTruthy();
+    const allDangers = [...(match?.[1] ?? '').matchAll(/'([a-z]+)'/g)].map((m) => m[1] as string);
+    expect(allDangers.length, 'لم تُستخرج أي درجة من Danger').toBeGreaterThan(1);
+
+    // «قراءة فقط» لا تصل حوار التأكيد أصلًا — انظر توثيق `confirmBeforeExecute`
+    // في settings.ts — فلا مفتاح لها هنا عمدًا، لا سهوًا.
+    const gated = allDangers.filter((d) => d !== 'safe');
+    expect(gated).toEqual(['creates', 'modifies', 'destructive']);
+
+    for (const danger of gated) {
+      for (const suffix of ['title', 'body']) {
+        const key = `run.confirm.${danger}.${suffix}`;
+        expect(AR, key).toHaveProperty(key);
+      }
+    }
+  });
+});
+
 describe('سلّم نصّ العمليات', () => {
   // الشرطة السفلية جزءٌ من صنف المحارف لا زيادة: معرّفات مثل
   // `system.process.open_files` و`disk.directory.open_handles` تحملها، وكان

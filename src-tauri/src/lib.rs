@@ -474,6 +474,9 @@ pub fn run() {
             Ok(())
         })
         .plugin(tauri_plugin_dialog::init())
+        // لا تفشل التهيئة حين لا تكون نقطة التحديث مضبوطة: الإضافة تُسجَّل
+        // دائمًا، و`check` وحدها هي التي تُرجع خطأً صريحًا تعرضه الشاشة.
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(ipc_handler())
         .run(tauri::generate_context!())
         .expect("error while running naffith");

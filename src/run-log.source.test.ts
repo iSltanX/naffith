@@ -91,10 +91,17 @@ describe('هندسة History/Entry 109:642', () => {
   });
 });
 
-describe('هندسة إعدادات Page 18', () => {
-  it('توسّط بطاقة 688×184 في امتداد الصفحة 776px بلا ظل', () => {
+describe('هندسة إعدادات Page 20', () => {
+  /**
+   * ‏١٨٤ كان ارتفاع البطاقة الواحدة يوم كانت الشاشة قائمةَ بطاقاتٍ متشابهة.
+   * صفحة ٢٠ جعلتها أربعة ألسنة ببطاقتين مختلفتين: بطاقة مسارٍ ١٠٢ (‏`--space-96
+   * + --space-6`)، وبطاقة صفوفٍ يحدّد ارتفاعَها عددُ صفوفها لا رقمٌ مكتوب.
+   * فالحدّ الأدنى صار ارتفاع بطاقة المسار — وهو أصغر ما ترسمه الصفحة، وأي
+   * بطاقةٍ أقصر منه خطأُ تنفيذٍ لا خيارُ تصميم.
+   */
+  it('توسّط بطاقة 688×102 في امتداد الصفحة 776px بلا ظل', () => {
     expect(tokenPx('--width-base') - tokenPx('--space-32')).toBe(688);
-    expect(tokenPx('--space-96') + tokenPx('--space-96') - tokenPx('--space-8')).toBe(184);
+    expect(tokenPx('--space-96') + tokenPx('--space-6')).toBe(102);
     expect(tokenPx('--width-base') + tokenPx('--space-56')).toBe(776);
 
     expect(rule(SETTINGS, '.settings-screen')).toMatch(
@@ -107,7 +114,7 @@ describe('هندسة إعدادات Page 18', () => {
       /max-inline-size:\s*calc\(var\(--width-base\) - var\(--space-32\)\)/,
     );
     expect(card).toMatch(
-      /min-block-size:\s*calc\(var\(--space-96\) \+ var\(--space-96\) - var\(--space-8\)\)/,
+      /min-block-size:\s*calc\(var\(--space-96\) \+ var\(--space-6\)\)/,
     );
     expect(card).toMatch(/margin-inline:\s*auto/);
     expect(card).not.toMatch(/box-shadow/);

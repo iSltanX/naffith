@@ -149,6 +149,32 @@ describe('الإيقاع الرأسي للتنقّل', () => {
     expect(categoryY).toBe(140);
   });
 
+  /**
+   * الشريط يُقرأ كاملًا بلا تمرير داخلي.
+   *
+   * الفئات صارت عشرًا يوم أُضيفت «أدوات المطوّرين»، وعند ٤٠px للصفّ يتجاوز
+   * آخرُها ارتفاعَ النافذة المرسوم فيظهر شريط تمرير يُخفي «سجل التشغيل»
+   * و«الإعدادات» — وهما آخر ما يبحث عنه المستخدم. الحساب أدناه يثبت أن
+   * العشرة تتّسع، والحارس بعده يمنع عودة `overflow` بديلًا عن الاتّساع.
+   */
+  it('تتّسع الفئات العشر داخل 640px بلا تمرير داخلي', () => {
+    const categoryY = tokenPx('--space-20') + tokenPx('--space-56') + tokenPx('--space-12')
+      + tokenPx('--control-h-nav') + tokenPx('--space-8');
+    expect(categoryY).toBe(140);
+
+    const CATEGORIES = 10;
+    const categoriesBottom = categoryY + CATEGORIES * tokenPx('--control-h-nav-category');
+    // نفس النقطة التي كانت تنتهي عندها تسع فئات بأربعين: الإيقاع محفوظ.
+    expect(categoriesBottom).toBe(500);
+
+    // القاع: سجلّ التشغيل ثم الإعدادات ثم حشوة القاع.
+    const utility = tokenPx('--control-h-nav') + tokenPx('--space-12') + tokenPx('--control-h-nav');
+    const total = categoriesBottom + tokenPx('--space-16') + utility + tokenPx('--space-24');
+    expect(total).toBeLessThanOrEqual(640);
+
+    expect(rule(SHELL, '.app-nav__categories')).not.toMatch(/overflow/);
+  });
+
   it('يثبّت الإعدادات على 24px والسجل على 80px بفجوة 12px', () => {
     expect(rule(SHELL, '.app-nav__utility')).toMatch(/gap:\s*var\(--space-12\)/);
     const settingsBottom = tokenPx('--space-24');
@@ -238,5 +264,52 @@ describe('إشارات النافذة الأصلية', () => {
       TAURI.app.windows[0]?.trafficLightPosition,
       'إعادة `trafficLightPosition` تحت RTL تكسر ترتيب الأزرار — انظر توثيق الوصف أعلاه',
     ).toBeUndefined();
+  });
+});
+
+/**
+ * إعداد «حجم الأيقونات في الشريط الجانبي» (صفحة ٢٠) — الدرجات الثلاث
+ * يقرؤها `.app-nav__item svg`/`.app-nav__item` عبر `--nav-icon-size`/
+ * `--nav-icon-gap`، لا أرقامًا مكتوبة محليًا في كل صنف.
+ *
+ * `medium` يجب أن يساوي **حرفيًا** القيمتين اللتين كان الشريط يستعملهما قبل
+ * هذا الإعداد (`--icon-sm`، `--space-10`) — فمن لم يفتح شاشة الإعدادات قط
+ * لا يرى شريطه يتغيّر بصمت.
+ */
+describe('حجم أيقونات الشريط الجانبي', () => {
+  it('medium يطابق مقاس الشريط قبل هذا الإعداد بلا تغيير', () => {
+    expect(rule(SHELL, '.app-nav--icon-medium')).toMatch(
+      /--nav-icon-size:\s*var\(--icon-sm\)/,
+    );
+    expect(rule(SHELL, '.app-nav--icon-medium')).toMatch(
+      /--nav-icon-gap:\s*var\(--space-10\)/,
+    );
+  });
+
+  it('الدرجات الثلاث مرتّبة تصاعديًا في المقاس والفجوة معًا', () => {
+    const ICON = { small: tokenPx('--icon-xs'), medium: tokenPx('--icon-sm'), large: tokenPx('--icon-md') };
+    const GAP = { small: tokenPx('--space-8'), medium: tokenPx('--space-10'), large: tokenPx('--space-12') };
+    expect(ICON.small).toBeLessThan(ICON.medium);
+    expect(ICON.medium).toBeLessThan(ICON.large);
+    expect(GAP.small).toBeLessThan(GAP.medium);
+    expect(GAP.medium).toBeLessThan(GAP.large);
+
+    // «متوازن»: نسبة الفجوة إلى الأيقونة تبقى قريبة عبر الدرجات — لا فجوة
+    // ثابتة تصير فضفاضة مع أيقونةٍ صغيرة أو خانقة مع أيقونةٍ كبيرة.
+    const ratios = [GAP.small / ICON.small, GAP.medium / ICON.medium, GAP.large / ICON.large];
+    const spread = Math.max(...ratios) - Math.min(...ratios);
+    expect(spread).toBeLessThan(0.2);
+  });
+
+  it('يقرأ الأيقونة والفجوة من المتغيّرين لا من رمزٍ ثابت', () => {
+    expect(rule(SHELL, '.app-nav__item svg')).toMatch(
+      /width:\s*var\(--nav-icon-size,\s*var\(--icon-sm\)\)/,
+    );
+    expect(rule(SHELL, '.app-nav__item svg')).toMatch(
+      /height:\s*var\(--nav-icon-size,\s*var\(--icon-sm\)\)/,
+    );
+    expect(rule(SHELL, '.app-nav__item')).toMatch(
+      /gap:\s*var\(--nav-icon-gap,\s*var\(--space-10\)\)/,
+    );
   });
 });

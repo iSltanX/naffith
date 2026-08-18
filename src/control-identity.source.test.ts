@@ -13,6 +13,10 @@ const OPERATION = readFileSync(
 );
 const LOG = readFileSync(new URL('./run-log.css', import.meta.url).pathname, 'utf8');
 const RESULT = readFileSync(new URL('./result-view.css', import.meta.url).pathname, 'utf8');
+const SETTINGS = readFileSync(
+  new URL('./settings-screen.css', import.meta.url).pathname,
+  'utf8',
+);
 
 describe('production control identity', () => {
   it('select, text, URL, path, and number controls share one radius token', () => {
@@ -86,5 +90,29 @@ describe('production control identity', () => {
     expect(productionCss).not.toMatch(/:has\(/);
     expect(productionCss).not.toMatch(/color-mix\(/);
     expect(BASE).toMatch(/:focus\s*\{[^}]*outline:\s*var\(--focus-ring-width\)/s);
+  });
+
+  /**
+   * Every `.t-page-title` in production is a `tabIndex={-1}` mount-time
+   * `.focus()` target (library, category, run-log, settings) — never a Tab
+   * stop. Regression: it inherited the base `:focus`/`:focus-visible` ring
+   * meant for real controls, so an orange outline appeared around the
+   * heading whenever a screen mounted and vanished the moment focus moved
+   * on. `.page:focus` right above it in app-shell.css already sets the
+   * precedent for suppressing the ring on a programmatic-only focus target.
+   */
+  it('suppresses the focus ring on the programmatic-only page title', () => {
+    expect(BASE).toMatch(/\.t-page-title:focus\s*\{[^}]*outline:\s*none/s);
+  });
+
+  // Settings' own interactive controls (section rail, toggles, the icon-size
+  // select) must keep relying on the shared `:focus`/`:focus-visible` ring —
+  // none of them may quietly gain an `outline: none` of their own, which
+  // (unlike `.select__button`'s or `.number-field__input`'s deliberate
+  // outline→box-shadow / outline→wrapper-ring swaps elsewhere) would remove
+  // keyboard focus visibility with no replacement ring at all.
+  it('keeps focus visibility on every Settings control', () => {
+    expect(SETTINGS).not.toMatch(/outline:\s*none/);
+    expect(SETTINGS).not.toMatch(/outline:\s*0\b/);
   });
 });

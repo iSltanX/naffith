@@ -165,6 +165,70 @@ export const AR = {
   'settings.storage.unavailable.title': 'تعذّر حفظ الإعدادات على هذا الجهاز',
   'settings.storage.unavailable.body': 'لن تُحفظ هذه الخيارات بين التشغيلات.',
 
+  // ── الإعدادات · الألسنة ──────────────────────────────────────────────
+  'settings.tab.general': 'عام',
+  'settings.tab.appearance': 'المظهر',
+  'settings.tab.developer': 'أدوات المطوّرين',
+  'settings.tab.about': 'حول',
+  'settings.tabs.label': 'أقسام الإعدادات',
+
+  // ── الإعدادات · عام ──────────────────────────────────────────────────
+  'settings.general.title': 'الإعدادات العامة',
+  'settings.welcome.title': 'شاشة الترحيب',
+  'settings.welcome.body': 'عرض شاشة الترحيب وتلميحات البداية عند تشغيل التطبيق',
+  'settings.sound.title': 'صوت الإشعارات',
+  'settings.sound.body': 'تشغيل نغمة تنبيه لطيفة فور اكتمال معالجة العمليات بنجاح',
+  'settings.confirm.title': 'تأكيد قبل التنفيذ',
+  'settings.confirm.body':
+    'طلب تأكيد صريح قبل تنفيذ الأوامر والعمليات الحساسة أو غير القابلة للتراجع',
+  'settings.workpath.title': 'مسار العمل الافتراضي',
+  'settings.workpath.active': 'المجلد النشط:',
+  'settings.workpath.unset': 'لم يُحدَّد بعد',
+  'settings.workpath.choose': 'اختيار…',
+  'settings.workpath.change': 'تغيير…',
+  'settings.workpath.clear': 'مسح',
+
+  // ── الإعدادات · المظهر ───────────────────────────────────────────────
+  'settings.appearance.title': 'مظهر التطبيق',
+  'settings.theme.title': 'السمة العامة للواجهة',
+  'settings.theme.system': 'تلقائي',
+  'settings.theme.light': 'فاتح',
+  'settings.theme.dark': 'داكن',
+  'settings.iconsize.title': 'حجم الأيقونات في الشريط الجانبي',
+  'settings.iconsize.small': 'صغير',
+  'settings.iconsize.medium': 'متوسط',
+  'settings.iconsize.large': 'كبير',
+
+  // ── الإعدادات · أدوات المطوّرين ──────────────────────────────────────
+  'settings.developer.title': 'أدوات المطوّرين',
+  'settings.toolpath.selected': 'المسار المحدَّد:',
+
+  // ── الإعدادات · حول ──────────────────────────────────────────────────
+  'settings.about.title': 'حول نَفِّذ',
+  'settings.about.version': 'الإصدار {version}',
+  'settings.about.description': 'أداة تنفيذ عمليات macOS شاملة — ملفات، صور، أقراص، شبكة، وأكثر.',
+  'settings.about.credit': 'تطوير وتصميم سلطان',
+  'settings.update.auto': 'التحديث التلقائي',
+  'settings.update.check': 'فحص وجود تحديث',
+  'settings.update.retry': 'إعادة المحاولة',
+  'settings.update.download': 'تحميل التحديث',
+  'settings.update.idle': 'لم يُفحص بعد',
+  'settings.update.checking': 'جارٍ البحث عن تحديثات…',
+  'settings.update.uptodate': 'محدّث — لا توجد تحديثات جديدة',
+  'settings.update.available': 'تحديث متوفر — الإصدار {version}',
+  'settings.update.failed': 'تعذّر التحقق من التحديثات',
+  // حالتان لا واحدة، ولكلٍّ عنوانها ونبرتها:
+  //
+  // ‏«غير مهيأة» ليست فشلًا. لم تُضبط وجهةُ التحديث في هذا البناء بعد، فلا
+  // شيء انكسر ولا شيء يُعيد المستخدم محاولته — وعرضُها بلون الخطر ونصّ
+  // «تعذّر التحقق» كان يتّهم الشبكة بما لم تفعله ويدفع المستخدم إلى فحص
+  // اتصالٍ سليم. و«تعذّر التحقق» تبقى لما هو فشلٌ فعلًا: وجهةٌ مضبوطة لم
+  // تُبلَغ.
+  'settings.update.unconfigured': 'التحديثات غير مهيأة بعد',
+  'settings.update.unconfigured.hint': 'ستعمل تلقائيًا فور ضبط وجهة التحديث ومفتاح التوقيع.',
+  'settings.update.failed.network': 'تحقق من اتصالك بالإنترنت وحاول مرة أخرى.',
+  'settings.update.installing': 'جارٍ تنزيل التحديث…',
+
   // ── سجلّ التشغيل ─────────────────────────────────────────────────────
   'log.title': 'سجلّ التشغيل',
   'log.subtitle': 'آخر ٢٠٠ قيد كحد أقصى',
@@ -475,6 +539,19 @@ export const AR = {
   'summary.danger.creates': 'ينشئ عنصرًا جديدًا',
   'summary.danger.modifies': 'يعدّل محتوى قائمًا',
   'summary.danger.destructive': 'تغيير لا يمكن التراجع عنه',
+
+  // ── تأكيد التنفيذ (إعداد «تأكيد قبل التنفيذ») ──────────────────────────
+  // ثلاثةٌ لا أربعة: «قراءة فقط» لا تصل هذا الحوار أصلًا — انظر توثيق
+  // `confirmBeforeExecute` في settings.ts. الأزرار تستعير `action.execute`
+  // و`action.cancel` نفسيهما، فلا صياغة ثانية لفعلٍ واحد.
+  'run.confirm.creates.title': 'تأكيد الإنشاء',
+  'run.confirm.creates.body': 'العملية المعروضة تنشئ عنصرًا جديدًا على القرص. التنفيذ يبدأ الآن.',
+  'run.confirm.modifies.title': 'تأكيد التعديل',
+  'run.confirm.modifies.body':
+    'العملية المعروضة تعدّل محتوًى قائمًا على القرص. التنفيذ يبدأ الآن.',
+  'run.confirm.destructive.title': 'تأكيد تغييرٍ لا رجعة فيه',
+  'run.confirm.destructive.body':
+    'العملية المعروضة تغييرٌ لا يمكن التراجع عنه بعد تنفيذه. التنفيذ يبدأ الآن.',
 
   // ── الأزرار والحالات ────────────────────────────────────────────────
   'action.execute': 'نفِّذ',
@@ -1833,6 +1910,21 @@ export function tFirst(keys: readonly string[]): string {
  */
 export function tOptional(key: string): string | null {
   return key in AR ? t(key) : null;
+}
+
+/**
+ * نصٌّ فيه مواضع تُملأ، مثل «الإصدار {version}».
+ *
+ * البديل كان تركيب النص بالجمع في الشاشة (`t('...') + version`)، وهو يعمل في
+ * العربية اليوم ويكسر أول ما يحتاج النصّ ترتيبًا مختلفًا — والعربية تحديدًا
+ * تضع الرقم حيث لا تضعه الإنجليزية. الموضع المسمّى يبقى داخل النصّ المترجَم،
+ * فيملك المترجِم ترتيبه.
+ *
+ * الموضع الذي لا قيمة له يبقى كما هو: ظهور `{version}` على الشاشة عطبٌ مرئي
+ * يُصلَح، وحذفه بصمت كان سيخفيه.
+ */
+export function tFormat(key: string, vars: Readonly<Record<string, string>>): string {
+  return t(key).replace(/\{(\w+)\}/g, (whole, name: string) => vars[name] ?? whole);
 }
 
 /**

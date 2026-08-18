@@ -32,8 +32,13 @@
  * في النواة. والإصدار ٤ أضاف مسار Cargo لنفس السبب بالضبط — أداة أخرى
  * يثبّتها المستخدم بنفسه في مسارٍ متغيّر (`~/.cargo/bin/cargo` عادةً، لا
  * مسارًا نظاميًا ثابتًا).
+ *
+ * والإصدار ٥ أضاف تفضيلات شاشة الإعدادات المرسومة في التصميم: السمة، وحجم
+ * أيقونات الشريط الجانبي، وصوت الإشعارات، والتأكيد قبل التنفيذ، ومسار العمل
+ * الافتراضي، والتحديث التلقائي. كلّها تفضيلات عرضٍ وسلوكٍ في الواجهة — لا
+ * واحدة منها تحتاج سطح IPC سابعًا، وهو نفس المنطق الذي أبقى `nodePath` هنا.
  */
-export const SETTINGS_SCHEMA_VERSION = 4;
+export const SETTINGS_SCHEMA_VERSION = 5;
 
 /**
  * أقصى عدد مفضّلات تُحفظ.
@@ -46,6 +51,21 @@ export const MAX_FAVOURITES = 40;
 
 /** مفتاح التخزين. يحمل اسم المنتج صراحةً كي لا يشتبه بغيره في نفس الأصل. */
 export const SETTINGS_STORAGE_KEY = 'naffith.settings';
+
+/**
+ * السمة المختارة. `system` تتبع إعداد النظام، والقيمتان الأخريان تثبّتانها.
+ *
+ * الثلاثة هي بالضبط ما ترسمه شاشة المظهر (فاتح/داكن/تلقائي)، وهي أيضًا بالضبط
+ * ما يفهمه `tokens.css`: غياب `data-theme` يعني «اتبع النظام»، ووجودها بقيمة
+ * يعني «ثبّتها». لا حالة رابعة في أيٍّ من الطرفين.
+ */
+export type ThemePreference = 'system' | 'light' | 'dark';
+
+/** حجم أيقونات الشريط الجانبي. ثلاث درجات كما في التصميم. */
+export type SidebarIconSize = 'small' | 'medium' | 'large';
+
+const THEMES: readonly ThemePreference[] = ['system', 'light', 'dark'];
+const ICON_SIZES: readonly SidebarIconSize[] = ['small', 'medium', 'large'];
 
 export interface Settings {
   schemaVersion: number;
@@ -87,6 +107,38 @@ export interface Settings {
   /** مسار ملفّ Cargo التنفيذي، أو `null`. نفس منطق `nodePath` بالضبط —
    *  انظر توثيقه أعلاه. */
   cargoPath: string | null;
+  /**
+   * السمة المختارة. الافتراضي `system`: التطبيق لا يفرض مظهرًا لم يطلبه أحد.
+   */
+  theme: ThemePreference;
+  /** حجم أيقونات الشريط الجانبي. */
+  sidebarIconSize: SidebarIconSize;
+  /** نغمة عند اكتمال العملية بنجاح. */
+  notificationSound: boolean;
+  /**
+   * طلب تأكيدٍ صريح قبل تنفيذ العمليات الخطرة.
+   *
+   * **يضيق ولا يوسّع**: المعاينة قبل التنفيذ ليست خيارًا يُطفأ — الأمر يُعرض
+   * كاملًا قبل الضغط في كل حال. هذا التفضيل يضيف حاجزًا ثانيًا فوقها للعمليات
+   * التي تعدّل أو تتلف، وإطفاؤه يعيد السلوك إلى المعاينة وحدها لا إلى تنفيذٍ
+   * بلا عرض.
+   */
+  confirmBeforeExecute: boolean;
+  /**
+   * المجلد الذي تبدأ منه حوارات الاختيار، أو `null`.
+   *
+   * تفضيل راحةٍ لا صلاحية: لا يمنح الوصول إلى شيء، والنواة تفحص كل مسارٍ
+   * يعود من الحوار كما تفحص أي نصٍّ آخر.
+   */
+  defaultWorkingPath: string | null;
+  /**
+   * فحص التحديثات تلقائيًا عند التشغيل.
+   *
+   * يبقى تفضيلًا محفوظًا حتى قبل أن تُضبط نقطة التحديث: حين تُضبط يعمل بلا
+   * تغييرٍ في الشيفرة، وقبلها يبقى الفحص فاشلًا فشلًا صريحًا معروضًا للمستخدم
+   * لا صامتًا.
+   */
+  autoUpdate: boolean;
 }
 
 export function defaultSettings(): Settings {
@@ -97,6 +149,12 @@ export function defaultSettings(): Settings {
     lastCategoryId: null,
     nodePath: null,
     cargoPath: null,
+    theme: 'system',
+    sidebarIconSize: 'medium',
+    notificationSound: true,
+    confirmBeforeExecute: true,
+    defaultWorkingPath: null,
+    autoUpdate: true,
   };
 }
 
@@ -177,6 +235,23 @@ function readNullablePath(value: unknown): string | null {
 }
 
 /**
+ * قيمةٌ من مجموعةٍ مغلقة، أو الافتراضي.
+ *
+ * القيمة المخزَّنة قابلةٌ للتعديل بيد، و«سمة» لا يعرفها هذا البناء يجب أن تصير
+ * الافتراضي لا أن تُكتب على عنصر الجذر كما هي.
+ */
+function readEnum<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
+  return typeof value === 'string' && (allowed as readonly string[]).includes(value)
+    ? (value as T)
+    : fallback;
+}
+
+/** رايةٌ منطقية، أو الافتراضي. أي شيءٍ غير `boolean` ليس رايةً. */
+function readBool(value: unknown, fallback: boolean): boolean {
+  return typeof value === 'boolean' ? value : fallback;
+}
+
+/**
  * يرقّي قيمة من إصدار أقدم. تُضاف حلقة لكل إصدار جديد.
  *
  * الترقية من ١ إلى ٢ **تحتفظ بما كان** وتضيف الافتراضي لما استُجدّ. الاختصار
@@ -190,7 +265,10 @@ function migrate(raw: Record<string, unknown>, from: number): Settings | null {
   const onboardingCompletedAt = typeof at === 'string' && at !== '' ? at : null;
 
   // الإصدار ١ لا يحمل الحقلين، والإصدار ٢ لا يحمل `nodePath`، والإصدار ٣ لا
-  // يحمل `cargoPath` — فتُقرأ غيابًا وتصير افتراضها.
+  // يحمل `cargoPath`، وما دون ٥ لا يحمل تفضيلات المظهر والسلوك — فتُقرأ غيابًا
+  // وتصير افتراضها. الافتراضي هنا هو ما يرسمه التصميم، لا `false` تلقائيًا:
+  // من رقّى يجد الصوت والتأكيد يعملان كما يجدهما المستخدم الجديد.
+  const fallback = defaultSettings();
   return {
     schemaVersion: SETTINGS_SCHEMA_VERSION,
     onboardingCompletedAt,
@@ -198,6 +276,12 @@ function migrate(raw: Record<string, unknown>, from: number): Settings | null {
     lastCategoryId: readNullableId(raw['lastCategoryId']),
     nodePath: readNullablePath(raw['nodePath']),
     cargoPath: readNullablePath(raw['cargoPath']),
+    theme: readEnum(raw['theme'], THEMES, fallback.theme),
+    sidebarIconSize: readEnum(raw['sidebarIconSize'], ICON_SIZES, fallback.sidebarIconSize),
+    notificationSound: readBool(raw['notificationSound'], fallback.notificationSound),
+    confirmBeforeExecute: readBool(raw['confirmBeforeExecute'], fallback.confirmBeforeExecute),
+    defaultWorkingPath: readNullablePath(raw['defaultWorkingPath']),
+    autoUpdate: readBool(raw['autoUpdate'], fallback.autoUpdate),
   };
 }
 
@@ -336,4 +420,40 @@ export function withNodePath(settings: Settings, path: string | null): Settings 
 export function withCargoPath(settings: Settings, path: string | null): Settings {
   if (settings.cargoPath === path) return settings;
   return { ...settings, cargoPath: path };
+}
+
+/** يحفظ السمة المختارة. `applyTheme` في `theme.ts` هي من ينفّذها على الجذر. */
+export function withTheme(settings: Settings, theme: ThemePreference): Settings {
+  if (settings.theme === theme) return settings;
+  return { ...settings, theme };
+}
+
+/** يحفظ حجم أيقونات الشريط الجانبي. */
+export function withSidebarIconSize(settings: Settings, size: SidebarIconSize): Settings {
+  if (settings.sidebarIconSize === size) return settings;
+  return { ...settings, sidebarIconSize: size };
+}
+
+/** يحفظ تفضيل نغمة الإشعار. */
+export function withNotificationSound(settings: Settings, on: boolean): Settings {
+  if (settings.notificationSound === on) return settings;
+  return { ...settings, notificationSound: on };
+}
+
+/** يحفظ تفضيل التأكيد قبل التنفيذ. */
+export function withConfirmBeforeExecute(settings: Settings, on: boolean): Settings {
+  if (settings.confirmBeforeExecute === on) return settings;
+  return { ...settings, confirmBeforeExecute: on };
+}
+
+/** يحفظ مجلد البداية لحوارات الاختيار. `null` يمسحه. */
+export function withDefaultWorkingPath(settings: Settings, path: string | null): Settings {
+  if (settings.defaultWorkingPath === path) return settings;
+  return { ...settings, defaultWorkingPath: path };
+}
+
+/** يحفظ تفضيل فحص التحديثات تلقائيًا. */
+export function withAutoUpdate(settings: Settings, on: boolean): Settings {
+  if (settings.autoUpdate === on) return settings;
+  return { ...settings, autoUpdate: on };
 }

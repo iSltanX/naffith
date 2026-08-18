@@ -43,6 +43,14 @@ h1, h2, h3, h4, h5, h6, .t-display, .t-page-title, .t-section-title, .t-card-tit
 .t-section-title { font-size: var(--fs-section-title); line-height: var(--lh-section-title); font-weight: var(--fw-bold); }
 .t-card-title    { font-size: var(--fs-card-title);    line-height: var(--lh-card-title);    font-weight: var(--fw-bold); }
 
+/* Every `.t-page-title` in production is `tabIndex={-1}` + a mount-time
+   `.focus()` call — moving the a11y caret to the new heading on screen
+   change so a screen reader announces it, exactly like `.page:focus` above
+   for the outer frame. It is never a Tab stop (excluded from the tab order
+   by that same `tabIndex={-1}`), so a visible ring on it would tell a
+   sighted keyboard user they tabbed somewhere they structurally cannot. */
+.t-page-title:focus { outline: none; }
+
 .t-body      { font-family: var(--font-body); font-size: var(--fs-body);           line-height: var(--lh-body); }
 .t-body-sec  { font-family: var(--font-body); font-size: var(--fs-body-secondary); line-height: var(--lh-body-secondary); color: var(--text-secondary); }
 .t-label     { font-family: var(--font-body); font-size: var(--fs-label);          line-height: var(--lh-label);  font-weight: var(--fw-bold); }

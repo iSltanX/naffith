@@ -49,6 +49,8 @@ import {
   withOnboardingReset,
   type Settings,
 } from './settings';
+import { applyTheme } from './theme';
+import { playSuccessChime } from './notification-sound';
 import {
   emptyValues,
   isComplete,
@@ -229,6 +231,24 @@ export default function App() {
   const planSeq = useRef(0);
   const unlisten = useRef<Array<() => void>>([]);
 
+  /**
+   * مرآةٌ لآخر قيمة لإعداد الصوت، يقرؤها مستمعٌ لا يُعاد تسجيله عند تبدّلها.
+   *
+   * لو كان `settings.notificationSound` في مصفوفة اعتماديات الأثر أدناه —
+   * كما كانت قبل هذا التعليق — لأعاد الأثر تسجيل `onRunFinished`/`onRunOutput`
+   * عند كل ضغطة على مفتاح الصوت في الإعدادات. وتشغيلٌ يمكن أن يبقى جاريًا في
+   * الخلفية (زرّ «المغادرة على أي حال» في حوار المغادرة أثناء تشغيل لا يُلغيه)
+   * بينما يفتح المستخدم الإعدادات ويبدّل الصوت — ففكّ الاستماع وإعادته حينها
+   * نافذةٌ حقيقية تضيع فيها `run://finished` نفسها لا صدى فقط: لا طابور إعادة
+   * تشغيلٍ في أحداث Tauri، وضياع تلك النتيجة يُجمّد `phase` على `'running'`
+   * بلا مخرجٍ آخر. القراءة من مرجعٍ تتفادى هذا كله: يُسجَّل المستمع مرّةً عند
+   * التركيب ويقرأ أحدث قيمةٍ دائمًا دون أن يُعاد تسجيله أبدًا.
+   */
+  const notificationSoundRef = useRef(settings.notificationSound);
+  useEffect(() => {
+    notificationSoundRef.current = settings.notificationSound;
+  }, [settings.notificationSound]);
+
   useEffect(() => {
     onRunFinished((event) => {
       setOutcome(event);
@@ -239,6 +259,12 @@ export default function App() {
       setRunId(null);
       // السجلّ صار فيه قيدٌ جديد، و«المستخدَمة حديثًا» تُقرأ منه.
       loadJournal();
+      // ‏`status` هنا مستوى النقل — «نجح التشغيل كعملية» — لا تفسير جوابها:
+      // بحثٌ بلا نتائج أو عملية `unsigned` كلاهما `success` أيضًا، وكلاهما
+      // يستحقّ النغمة. الفشل والإشارة والإلغاء وحدها لا تُشغِّلها.
+      if (notificationSoundRef.current && event.status === 'success') {
+        playSuccessChime();
+      }
     }).then((u) => unlisten.current.push(u));
 
     // خرج الأداة. لا تصفية بمعرّف التشغيل: النواة تحجز خانةً واحدة فلا تشغيلان
@@ -329,23 +355,59 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [operation, values, complete, locked]);
 
-  const onExecute = useCallback(async () => {
-    if (!plan) return;
+  /** خطّةٌ تنتظر تأكيدًا صريحًا قبل التنفيذ — انظر توثيق `confirmBeforeExecute`
+   *  في `settings.ts`: حاجزٌ ثانٍ فوق المعاينة الدائمة، للعمليات التي تعدّل
+   *  أو تتلف وحدها. */
+  const [confirmExecutePlan, setConfirmExecutePlan] = useState<{
+    plan: PlanResponse;
+    danger: 'creates' | 'modifies' | 'destructive';
+  } | null>(null);
+
+  const runExecute = useCallback(async (toRun: PlanResponse) => {
     setError(null);
     setOutcome(null);
     // مجرى التشغيل السابق يُمحى هنا: من هذه اللحظة كل سطرٍ يصل يخصّ هذا التشغيل.
     setStream([]);
     setPhase('running');
     try {
-      setExecuted(plan);
-      setRunId(await execute(plan.token));
+      setExecuted(toRun);
+      setRunId(await execute(toRun.token));
       // الرمز أحادي الاستخدام: الخطة استُهلكت، فلا معنى لإبقائها قابلة للتنفيذ.
       setPlan(null);
     } catch (e) {
       setError(asCoreError(e));
       setPhase('idle');
     }
-  }, [plan]);
+  }, []);
+
+  const onExecute = useCallback(() => {
+    if (!plan) return;
+    // القراءة فقط لا تُسأل عنها أبدًا: لا شيء فيها يُعدَّل أو يُتلَف كي
+    // يستحقّ حاجزًا ثانيًا فوق المعاينة التي تُعرض في كل حال.
+    if (settings.confirmBeforeExecute && plan.danger !== 'safe') {
+      setConfirmExecutePlan({ plan, danger: plan.danger });
+      return;
+    }
+    void runExecute(plan);
+  }, [plan, settings.confirmBeforeExecute, runExecute]);
+
+  const confirmExecuteNow = useCallback(() => {
+    if (!confirmExecutePlan) return;
+    const { plan: toRun } = confirmExecutePlan;
+    setConfirmExecutePlan(null);
+    void runExecute(toRun);
+  }, [confirmExecutePlan, runExecute]);
+
+  const cancelConfirmExecute = useCallback(() => setConfirmExecutePlan(null), []);
+
+  // حارسٌ صريح لا اتّكال على أن العتمة تمنع كل شيء: العتمة تمنع اليوم فعلًا —
+  // لا مسار حاليّ يبدّل العملية المفتوحة أو يفرغها والحوار قائم — لكنها ليست
+  // القاعدة المعلَنة، بل أثرًا جانبيًا لتغطيتها الشاشة. نفس منطق `planSeq`
+  // أعلاه الذي يُبطل معاينةً سبقتها أحدث: خطّةُ تأكيدٍ تخصّ عمليةً لم تعد
+  // مفتوحة يجب أن تُبطَل صراحةً، لا أن تبقى صالحةً بمصادفة تخطيطٍ حاليّ.
+  useEffect(() => {
+    setConfirmExecutePlan(null);
+  }, [operation?.id]);
 
   const onCancel = useCallback(async () => {
     if (!runId) return;
@@ -466,6 +528,13 @@ export default function App() {
     },
     [storage],
   );
+
+  // السمة تُنفَّذ من هنا لا من شاشة الإعدادات: لو عاشت هناك لَما طُبِّقت إلا
+  // بعد أن يفتح المستخدم الشاشة، فيبدأ التطبيق فاتحًا ثم يقفز إلى الداكن.
+  // هنا تُطبَّق عند الإقلاع بالقيمة المحمَّلة، وعند كل تغيير بعدها.
+  useEffect(() => {
+    applyTheme(settings.theme, document.documentElement);
+  }, [settings.theme]);
 
   const finishOnboarding = useCallback(() => {
     // الحفظ قد يفشل، والانتقال يقع رغم ذلك: أسوأ ما يقع أن يرى المستخدم
@@ -605,6 +674,7 @@ export default function App() {
       categories={categoryCards}
       activeCategoryId={activeCategoryId}
       viewportMode={viewportMode}
+      iconSize={settings.sidebarIconSize}
       onOpenLibrary={() => go({ type: 'library.opened' })}
       onOpenCategory={openCategory}
       onOpenLog={() => go({ type: 'log.opened' })}
@@ -694,13 +764,10 @@ export default function App() {
     return inShell(
       <Page focusKey={currentKey}>
         <SettingsScreen
-          onBack={() => go({ type: 'back' })}
-          onReplayOnboarding={replayOnboarding}
+          settings={settings}
+          onSettingsChange={persist}
           storageAvailable={storageAvailable}
-          nodePath={settings.nodePath}
-          onNodePathChange={setNodePath}
-          cargoPath={settings.cargoPath}
-          onCargoPathChange={setCargoPath}
+          onReplayOnboarding={replayOnboarding}
         />
         {leaveDialog}
       </Page>,
@@ -779,6 +846,13 @@ export default function App() {
           )}
         </main>
       </div>
+      {confirmExecutePlan && (
+        <ConfirmExecute
+          danger={confirmExecutePlan.danger}
+          onCancel={cancelConfirmExecute}
+          onConfirm={confirmExecuteNow}
+        />
+      )}
       {leaveDialog}
     </Page>,
     'fixed',
@@ -853,42 +927,61 @@ const FOCUS_STOPS =
   ' textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /**
- * قرار المغادرة أثناء تشغيل نشط.
+ * القالب المشترك لكل حوارٍ يقاطع — يعرض قرارًا بخيارين ويحبس البؤرة حتى
+ * يُتّخذ.
  *
- * حوارٌ مقاطع لا إشعارٌ عابر: الانتقال الصامت أثناء تشغيلٍ يكتب على قرص
- * المستخدم يخفي عنه أن شيئًا ما زال يجري. و«البقاء» هو الفعل الافتراضي —
- * يأخذ التركيز — لأن الخطأ في اتجاه البقاء غير مكلف.
+ * استُخرج من حوار المغادرة (الاستعمال الأول) حين احتاج حوار تأكيد التنفيذ
+ * (الثاني) الآلية نفسها حرفًا بحرف: بؤرةٌ محبوسة، Escape يعني الخيار الآمن،
+ * والبؤرة تعود إلى حاملها عند الإغلاق. نسخُ هذا في كل حوارٍ جديد كان يعني
+ * عطلًا يُصلَح في نسخةٍ وينسى في الأخرى — وهو بالضبط ما يمنعه استخراجه هنا.
  *
  * ## `aria-modal` دعوى، وهذه براهينها الثلاثة
  *
  * الوسم وحده لا يفعل شيئًا؛ من يقرأه ينتظر سلوكًا:
  *
- * - **Escape يُغلق** بمعنى «البقاء»، وهو ما يفعله النقر على العتمة أصلًا.
- *   المخرج الآمن هو غير المكلف دائمًا، فمن ضغط Escape هربًا من الحوار لا
- *   يجوز أن يجد تشغيله وقد غُودر.
+ * - **Escape يُغلق** بمعنى `onPrimary` — الخيار الآمن دائمًا، وهو ما يفعله
+ *   النقر على العتمة أصلًا. المخرج الآمن هو غير المكلف دائمًا، فمن ضغط
+ *   Escape هربًا من الحوار لا يجوز أن يقع في الخيار الآخر.
  * - **البؤرة محبوسة**: بلا حبسٍ يخرج Tab إلى الشاشة التي خلف العتمة، فيملأ
  *   المستخدم حقولًا لا يراها ويظنّ الحوار ما زال يحاوره.
  * - **البؤرة تُعاد** إلى ما كان يحملها عند الفتح، فلا تُدفع إلى `body` بعد
  *   قرارٍ اتُّخذ ويستأنف Tab من رأس المستند.
+ *
+ * و`onPrimary` — الزرّ الأول، الذي يأخذ التركيز، والذي يعنيه Escape والنقر
+ * على العتمة — هو **الخيار الآمن دائمًا** لا الخيار الأول بالمصادفة: الخطأ
+ * في اتجاهه غير مكلف، وهذا ما يبرّر منحه الفعل الافتراضي.
  */
-function ConfirmLeave({
-  reason,
-  onStay,
-  onLeave,
+function ConfirmDialog({
+  dialogId,
+  title,
+  body,
+  primaryLabel,
+  onPrimary,
+  secondaryLabel,
+  onSecondary,
+  secondaryTone,
+  hint,
 }: {
-  reason: 'dirty' | 'busy';
-  onStay: () => void;
-  onLeave: () => void;
+  dialogId: string;
+  title: string;
+  body: string;
+  primaryLabel: string;
+  onPrimary: () => void;
+  secondaryLabel: string;
+  onSecondary: () => void;
+  secondaryTone: 'danger' | 'quiet' | 'primary';
+  hint?: string;
 }) {
-  const stay = useRef<HTMLButtonElement>(null);
+  const primary = useRef<HTMLButtonElement>(null);
   const box = useRef<HTMLDivElement>(null);
 
-  // مرّةً واحدة عند الفتح: يُحفظ حاملُ البؤرة ثم تُنقل إلى «البقاء»، وتُعاد
-  // إليه عند الإغلاق. وشرطُ `isConnected` لأن الحوار قد يُغلق بمغادرةٍ تنزع
-  // الشاشة كلها — وتركيزُ عنصرٍ خارج الشجرة يترك البؤرة على `body` صامتًا.
+  // مرّةً واحدة عند الفتح: يُحفظ حاملُ البؤرة ثم تُنقل إلى الخيار الآمن،
+  // وتُعاد إليه عند الإغلاق. وشرطُ `isConnected` لأن الحوار قد يُغلق
+  // بمغادرةٍ تنزع الشاشة كلها — وتركيزُ عنصرٍ خارج الشجرة يترك البؤرة على
+  // `body` صامتًا.
   useEffect(() => {
     const opener = document.activeElement;
-    stay.current?.focus();
+    primary.current?.focus();
     return () => {
       if (opener instanceof HTMLElement && opener.isConnected) opener.focus();
     };
@@ -900,7 +993,7 @@ function ConfirmLeave({
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') {
         event.preventDefault();
-        onStay();
+        onPrimary();
         return;
       }
       if (event.key !== 'Tab') return;
@@ -924,13 +1017,13 @@ function ConfirmLeave({
 
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [onStay]);
+  }, [onPrimary]);
 
-  const titleId = `leave-${reason}-title`;
-  const bodyId = `leave-${reason}-body`;
+  const titleId = `${dialogId}-title`;
+  const bodyId = `${dialogId}-body`;
 
   return (
-    <div className="scrim" role="presentation" onClick={onStay}>
+    <div className="scrim" role="presentation" onClick={onPrimary}>
       <div
         className="dialog card"
         role="alertdialog"
@@ -941,25 +1034,91 @@ function ConfirmLeave({
         onClick={(e) => e.stopPropagation()}
       >
         <h2 id={titleId} className="t-section-title dialog__title">
-          {t(`nav.leave.${reason}.title`)}
+          {title}
         </h2>
         <p id={bodyId} className="t-body-sec dialog__body">
-          {t(`nav.leave.${reason}.body`)}
+          {body}
         </p>
         <div className="dialog__actions">
-          <button ref={stay} type="button" className="btn btn--primary" onClick={onStay}>
-            {t(`nav.leave.${reason}.stay`)}
+          <button ref={primary} type="button" className="btn btn--primary" onClick={onPrimary}>
+            {primaryLabel}
           </button>
-          <button
-            type="button"
-            className={`btn ${reason === 'dirty' ? 'btn--danger' : 'btn--quiet'}`}
-            onClick={onLeave}
-          >
-            {t(`nav.leave.${reason}.leave`)}
+          <button type="button" className={`btn btn--${secondaryTone}`} onClick={onSecondary}>
+            {secondaryLabel}
           </button>
         </div>
-        <p className="dialog__hint">{t('dialog.safe_dismiss')}</p>
+        {hint && <p className="dialog__hint">{hint}</p>}
       </div>
     </div>
+  );
+}
+
+/**
+ * قرار المغادرة أثناء تشغيل نشط أو نموذجٍ لم يُنفَّذ — واجهةٌ رقيقة فوق
+ * `ConfirmDialog`. «البقاء» هو الخيار الآمن دائمًا؛ انظر توثيق `ConfirmDialog`
+ * لسبب ذلك.
+ */
+function ConfirmLeave({
+  reason,
+  onStay,
+  onLeave,
+}: {
+  reason: 'dirty' | 'busy';
+  onStay: () => void;
+  onLeave: () => void;
+}) {
+  return (
+    <ConfirmDialog
+      dialogId={`leave-${reason}`}
+      title={t(`nav.leave.${reason}.title`)}
+      body={t(`nav.leave.${reason}.body`)}
+      primaryLabel={t(`nav.leave.${reason}.stay`)}
+      onPrimary={onStay}
+      secondaryLabel={t(`nav.leave.${reason}.leave`)}
+      onSecondary={onLeave}
+      secondaryTone={reason === 'dirty' ? 'danger' : 'quiet'}
+      hint={t('dialog.safe_dismiss')}
+    />
+  );
+}
+
+/**
+ * تأكيد التنفيذ لعمليةٍ تعدّل أو تتلف — واجهةٌ رقيقة فوق `ConfirmDialog`،
+ * تُعرض فقط حين يفعّل المستخدم `confirmBeforeExecute` في الإعدادات.
+ *
+ * «الإلغاء» هو الخيار الآمن هنا — لا «عام» كما في `ConfirmLeave`: أن يُنفَّذ
+ * أمرٌ لم يُقصد تنفيذه هو الخطأ المكلف، لا العكس. ولذلك يأخذ التركيز ويعنيه
+ * Escape والنقر على العتمة، مطابقًا نفس القاعدة التي طبّقها `ConfirmLeave`
+ * على «البقاء» — الاتجاه الآمن يتغيّر، والقاعدة (امنحه الافتراضي) لا تتغيّر.
+ *
+ * وزرّ «نفِّذ» لا يأخذ `btn--primary` أبدًا هنا — ولو بدا ذلك متّسقًا مع كونه
+ * الفعل المطلوب: `ConfirmDialog` يحجز `btn--primary` لزرّها الأول (الآمن)
+ * دائمًا، فمنحُ الثاني الصنف نفسه في درجتي «ينشئ»/«يعدّل» كان يُلغي التمييز
+ * البصري الذي هذا الحوار وُجد من أجله — كلا الزرّين يبدوان الفعل الرئيسي.
+ * ‏`ConfirmLeave` لا يقع في هذا: زرّها الثاني إمّا `btn--danger` أو
+ * `btn--quiet`، لا `btn--primary` أبدًا. فالدرجات الثلاث هنا: تلقائي/خافت
+ * لـ«ينشئ» و«يعدّل» (فعلٌ متاحٌ لا مُلحّ)، وخطرٌ لـ«تلف» وحدها.
+ */
+function ConfirmExecute({
+  danger,
+  onCancel,
+  onConfirm,
+}: {
+  danger: 'creates' | 'modifies' | 'destructive';
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <ConfirmDialog
+      dialogId="run-confirm"
+      title={t(`run.confirm.${danger}.title`)}
+      body={t(`run.confirm.${danger}.body`)}
+      primaryLabel={t('action.cancel')}
+      onPrimary={onCancel}
+      secondaryLabel={t('action.execute')}
+      onSecondary={onConfirm}
+      secondaryTone={danger === 'destructive' ? 'danger' : 'quiet'}
+      hint={t('dialog.safe_dismiss')}
+    />
   );
 }

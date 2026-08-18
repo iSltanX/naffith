@@ -1,7 +1,38 @@
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath, URL } from 'node:url';
+import { createRequire } from 'node:module';
 import { CRITICAL_FONT_FILES } from './src/critical-fonts';
+
+/**
+ * رقم الإصدار المعروض في «حول نَفِّذ».
+ *
+ * يُقرأ من `package.json` وقت البناء ويُحقن ثابتًا، ولا يُسأل عنه أمر IPC
+ * عاشر: سطح الأوامر تسعة وقد أُثبت ذلك باختبارٍ في `security.rs`، وإضافة أمرٍ
+ * كي يقول التطبيق رقمه كانت ستوسّع سطح الهجوم من أجل نصٍّ يعرفه البناء أصلًا.
+ */
+const APP_VERSION = (createRequire(import.meta.url)('./package.json') as { version: string })
+  .version;
+
+/**
+ * هل ضُبطت وجهة التحديث ومفتاح التوقيع في هذا البناء؟
+ *
+ * يُقرأ من `tauri.conf.json` وقت البناء لا يُستنتج من نصّ خطأ وقت التشغيل.
+ * كان الاستنتاج بمطابقة رسالة النواة (`…does not have any endpoints set`)،
+ * وهي رسالةٌ إنجليزية من مكتبةٍ خارجية قد تتغيّر صياغتها في أي ترقية فتنقلب
+ * «غير مهيأة» إلى «تعذّر التحقق» بلا أن يتغيّر شيء عندنا. والبناء يعرف
+ * الجواب يقينًا، فيُسأل هو.
+ *
+ * والفائدة الثانية أصدق: بناءٌ بلا وجهة لا يسأل الشبكة أصلًا، فلا انتظار ولا
+ * فشلٌ يُعرض ثم يُفسَّر.
+ */
+const UPDATER = (
+  createRequire(import.meta.url)('./src-tauri/tauri.conf.json') as {
+    plugins?: { updater?: { endpoints?: string[]; pubkey?: string } };
+  }
+).plugins?.updater;
+const UPDATER_CONFIGURED =
+  (UPDATER?.endpoints?.length ?? 0) > 0 && (UPDATER?.pubkey ?? '').trim() !== '';
 
 // نظام التصميم **منسوخ داخل المشروع** في `src/design-system`.
 //
@@ -66,6 +97,10 @@ function preloadCriticalFonts(): Plugin {
 export default defineConfig({
   plugins: [react(), preloadCriticalFonts()],
   clearScreen: false,
+  define: {
+    __APP_VERSION__: JSON.stringify(APP_VERSION),
+    __UPDATER_CONFIGURED__: JSON.stringify(UPDATER_CONFIGURED),
+  },
   resolve: { alias: { '@ds': DESIGN_SYSTEM } },
   server: {
     port: 5173,

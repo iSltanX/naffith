@@ -316,16 +316,22 @@ fn reveal_takes_only_a_run_id() {
     }
 }
 
-/// الإضافة الوحيدة خارج النواة هي حوار الفتح. هذا الاختبار يثبّت الصلاحيات
-/// **المحلولة** كي لا تتوسّع بالسهو إلى الحفظ أو النوافذ أو نظام الملفات.
+/// خارج النواة صلاحيتان: حوار الفتح، وفحص التحديث. هذا الاختبار يثبّت
+/// الصلاحيات **المحلولة** كي لا تتوسّع بالسهو إلى الحفظ أو النوافذ أو نظام
+/// الملفات أو HTTP عام.
 ///
 /// قراءة `default.json` وحده كانت تكذب: `tauri-build` يجمع
 /// `capabilities/**/*` كلّه، فملفٌ ثانٍ يمنح
 /// `core:webview:allow-create-webview-window` — أي نافذة عرض على عنوان
 /// اعتباطي، وهي قناة تسريب تلتفّ حول `default-src 'self'` — كان يمرّ والاختبار
 /// أخضر. الملف المحلول في `gen/schemas` هو ما يُبنى منه التطبيق فعلًا.
+///
+/// و`updater:default` أُضيفت عن قصد لا سهوًا: هي أول صلاحية شبكة هنا، وحارسها
+/// التوقيع لا هذا الملف — لا تُثبَّت نسخة إلا بتوقيعٍ يطابق `pubkey`. وتبقى
+/// `http:` ممنوعةً أدناه: فرقٌ بين وجهةٍ واحدة معلَنة موقَّعة، وبين منح
+/// الواجهة شبكةً عامة.
 #[test]
-fn the_resolved_capability_set_grants_nothing_beyond_the_open_dialog() {
+fn the_resolved_capability_set_grants_nothing_beyond_the_open_dialog_and_the_updater() {
     let path = manifest_dir().join("gen/schemas/capabilities.json");
     let resolved = std::fs::read_to_string(&path).unwrap_or_else(|e| {
         panic!("{} is written by tauri-build; build the crate before testing: {e}", path.display())
@@ -343,7 +349,7 @@ fn the_resolved_capability_set_grants_nothing_beyond_the_open_dialog() {
 
     assert_eq!(
         granted,
-        vec!["core:default", "dialog:allow-open"],
+        vec!["core:default", "dialog:allow-open", "updater:default"],
         "the resolved capability set changed. Every permission is attack surface — \
          widen it deliberately."
     );
