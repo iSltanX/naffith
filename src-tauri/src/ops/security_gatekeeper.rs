@@ -23,16 +23,8 @@
 //!
 //! ## أمانة: «فشل» هنا قد يعني «رُفض بحقّ»
 //!
-//! `spctl` تخرج **برمزٍ غير صفري حين ترفض**: قيس على هذا الجهاز أن
-//! `spctl -a -vv -- /bin/ls` تخرج بالرمز ٣. و`executor.rs` يعتبر أي خروجٍ غير
-//! صفري تشغيلًا فاشلًا، فتقول الشاشة «لم تكتمل العملية» عن تشغيلٍ أجاب عن
-//! سؤاله إجابةً صحيحة.
-//!
-//! ولم نُخفِ ذلك بترجمة رموز الخروج في هذه العملية وحدها: قاعدة «غير صفري =
-//! فشل» واحدة في المنتج كله، واستثناءٌ منها هنا يعني أن معنى «نجح» يختلف من
-//! عمليةٍ إلى أخرى — وهو ثمنٌ أغلى من تحذير. لذلك يُرفع `warn.spctl.exit_code`
-//! **دائمًا**، قبل التنفيذ لا بعده، فيقرأ المستخدم الحكم في مجرى الخرج ولا
-//! يقرأ الحالة وحدها.
+//! `spctl` تخرج **برمزٍ غير صفري حين ترفض**: عقد النتائج يترجم الرمز ٣ إلى
+//! `rejected` والصفر إلى `accepted`. كلاهما حكمٌ مكتمل، وما عداه يفشل مغلقًا.
 //!
 //! وأمانةٌ ثانية: `spctl` تكتب حكمها على قناة الخطأ لا على الخرج القياسي
 //! (قيس)، والتطبيق يبثّ القناتين معًا فلا يضيع شيء.
@@ -85,11 +77,7 @@ fn plan(inputs: &Inputs) -> Result<PlannedCommand> {
         .flag("-a", "explain.spctl.assess")
         .flag("-vv", "explain.spctl.verbose")
         .end_of_flags()
-        .path(target)
-        // لا شرط عليه: الرفض حكمٌ مشروع، ورمز الخروج غير الصفري الذي يحمله
-        // سيُقرأ فشلًا في الشاشة مهما كان الهدف. تحذيرٌ يُرفع أحيانًا كان
-        // سيجعل غيابه يبدو ضمانًا بأن التشغيل سينجح.
-        .warn("warn.spctl.exit_code");
+        .path(target);
 
     if let Some(key) = warn_if_resolved(inputs, "target", target, "warn.target.resolved") {
         argv = argv.warn(key);
@@ -178,24 +166,18 @@ mod tests {
 
     /// التحذير الذي لا يجوز أن يغيب.
     ///
-    /// غيابه في حالةٍ واحدة يجعل حضوره يبدو نبوءةً بالفشل وغيابه وعدًا
-    /// بالنجاح، بينما هو خبرٌ عن كيفية قراءة الشاشة لرمز الخروج لا عن الهدف.
     #[test]
-    fn the_exit_code_honesty_warning_is_raised_for_every_target() {
+    fn the_result_contract_replaces_the_obsolete_exit_code_warning() {
         let s = Scratch::new("gate-warn").unwrap();
 
         for name in ["تطبيق", "مستند.txt", "-rf"] {
             let f = s.file(name, b"x");
             let cmd = plan_with(&f).unwrap();
-            assert_eq!(
-                cmd.warnings,
-                vec!["warn.spctl.exit_code"],
-                "{name:?} must carry the exit-code warning and nothing else"
-            );
+            assert!(cmd.warnings.is_empty(), "{name:?}: {:?}", cmd.warnings);
         }
 
         let d = s.dir("مجلد");
-        assert!(plan_with(&d).unwrap().warnings.contains(&"warn.spctl.exit_code"));
+        assert!(plan_with(&d).unwrap().warnings.is_empty());
     }
 
     #[test]
@@ -236,8 +218,7 @@ mod tests {
         let cmd = plan_with(&link).unwrap();
         assert_eq!(Path::new(cmd.args.last().unwrap()), real.as_path());
         assert!(cmd.warnings.contains(&"warn.target.resolved"), "{:?}", cmd.warnings);
-        // ولا يزيح التحذيرَ الثابت.
-        assert!(cmd.warnings.contains(&"warn.spctl.exit_code"), "{:?}", cmd.warnings);
+        assert!(!cmd.warnings.contains(&"warn.spctl.exit_code"), "{:?}", cmd.warnings);
     }
 
     #[test]

@@ -31,6 +31,8 @@ static ALL: &[&OperationSpec] = &[
     &ops::files_find_name::SPEC,
     &ops::files_tree_size::SPEC,
     &ops::files_open::SPEC,
+    &ops::files_list::SPEC,
+    &ops::files_identify::SPEC,
     // ── الضغط وفكّ الضغط ────────────────────────────────────────────────
     &ops::compress_ditto::SPEC,
     &ops::compress_zip_list::SPEC,
@@ -54,11 +56,14 @@ static ALL: &[&OperationSpec] = &[
     &ops::disk_free::SPEC,
     &ops::disk_hash::SPEC,
     &ops::disk_compare::SPEC,
+    &ops::disk_compare_bytes::SPEC,
     &ops::disk_list::SPEC,
+    &ops::disk_directory_open_handles::SPEC,
     // ── الشبكة والاتصال ─────────────────────────────────────────────────
     &ops::net_ping::SPEC,
     &ops::net_dns::SPEC,
     &ops::net_ports::SPEC,
+    &ops::net_port_owner::SPEC,
     &ops::net_download::SPEC,
     &ops::net_headers::SPEC,
     // ── الأمان والصلاحيات ───────────────────────────────────────────────
@@ -66,6 +71,7 @@ static ALL: &[&OperationSpec] = &[
     &ops::security_xattr::SPEC,
     &ops::security_gatekeeper::SPEC,
     &ops::security_codesign::SPEC,
+    &ops::security_codesign_verify::SPEC,
     // ── Git ومستودعات الشفرة ────────────────────────────────────────────
     &ops::git_init::SPEC,
     &ops::git_status::SPEC,
@@ -73,12 +79,41 @@ static ALL: &[&OperationSpec] = &[
     &ops::git_diff::SPEC,
     &ops::git_branches::SPEC,
     &ops::git_archive::SPEC,
+    &ops::git_log::SPEC,
+    &ops::git_diff_commits::SPEC,
+    &ops::git_show_file::SPEC,
+    &ops::git_blame::SPEC,
+    &ops::git_grep::SPEC,
+    &ops::git_version::SPEC,
     // ── النظام والصيانة الدورية ─────────────────────────────────────────
     &ops::system_processes::SPEC,
+    &ops::system_process_find::SPEC,
+    &ops::system_process_open_files::SPEC,
     &ops::system_info::SPEC,
+    &ops::system_architecture::SPEC,
     &ops::system_uptime::SPEC,
+    &ops::system_log_recent::SPEC,
     &ops::system_dns_flush::SPEC,
     &ops::system_report::SPEC,
+    // آخر ما أُضيف إلى هذا الفهرس، وأخطره: إنهاء عمليةٍ جارية. انظر رأس
+    // `system_process_kill.rs` — الحارس مدًى مغلق في نوع المدخل لا شرطٌ في
+    // دالّة يمكن أن يسقط سهوًا.
+    &ops::system_process_kill::SPEC,
+    // ── أدوات المطوّرين ──────────────────────────────────────────────────
+    &ops::dev_npm_typecheck::SPEC,
+    &ops::dev_npm_lint::SPEC,
+    &ops::dev_npm_test::SPEC,
+    &ops::dev_npm_install::SPEC,
+    &ops::dev_npm_dev::SPEC,
+    &ops::dev_tauri_dev::SPEC,
+    &ops::dev_tauri_build::SPEC,
+    &ops::dev_cargo_test::SPEC,
+    &ops::dev_cargo_check::SPEC,
+    &ops::dev_cargo_clippy::SPEC,
+    &ops::dev_cargo_fmt_check::SPEC,
+    &ops::dev_cargo_fmt::SPEC,
+    &ops::dev_cargo_build_release::SPEC,
+    &ops::dev_cargo_clean::SPEC,
     // ── داخليّة ─────────────────────────────────────────────────────────
     &ops::internal_echo::SPEC,
 ];

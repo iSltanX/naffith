@@ -27,8 +27,8 @@
 //!
 //! العمليات التي تبني شيئًا تكتبه باسمٍ عابر ثم تُرقّيه، لأن انقطاعها يترك
 //! نصفَ ناتج. و`mkdir` لا تترك نصف مجلد: إمّا وُجدت المدخلة في الدليل وإمّا
-//! لم توجد. مؤقّتٌ هنا كان طقسًا بلا معنًى — و`reveal` على المجلد الأب هو ما
-//! يجيب «أين أنظر؟» بدلًا منه.
+//! لم توجد. مؤقّتٌ هنا كان طقسًا بلا معنًى؛ المسار النهائي نفسه يُسجَّل بعد
+//! النجاح كي يعرض عقد النتيجة المجلد المنشأ لا أباه.
 
 use crate::error::{CoreError, Result};
 use crate::ops::common::{warn_if_resolved, Argv};
@@ -80,8 +80,8 @@ fn plan(inputs: &Inputs) -> Result<PlannedCommand> {
         // يمكن أن يُقرأ راية؛ الفاصل حزام أمانٍ فوق ذلك لا بديلٌ عنه.
         .end_of_flags()
         .explained_path(&final_path, "explain.role.new_dir")
-        // لا `Artifact` يجيب «أين أنظر؟»، فيُعلَن الجواب صراحة.
-        .reveal(parent);
+        // لا `Artifact` مؤقّت، لكن هذا هو المجلد الفعلي الذي سينشئه التشغيل.
+        .reveal(&final_path);
 
     if let Some(key) = warn_if_resolved(inputs, "parent", parent, "warn.destination.resolved") {
         argv = argv.warn(key);
@@ -142,8 +142,41 @@ mod tests {
         assert!(!args.iter().any(|a| a == "-p"), "-p would succeed silently on an existing folder");
 
         assert!(cmd.artifact.is_none(), "mkdir is atomic in itself; there is nothing to promote");
-        assert_eq!(cmd.reveal_target.as_deref(), Some(parent.as_path()));
+        assert_eq!(cmd.reveal_target.as_deref(), Some(parent.join("مجلد جديد").as_path()));
         assert!(!parent.join("مجلد جديد").exists(), "planning must create nothing");
+    }
+
+    #[tokio::test]
+    async fn a_successful_result_names_the_actual_created_directory() {
+        let s = Scratch::new("mkdir-result").unwrap();
+        let parent = s.dir("الأب");
+        let final_path = parent.join("الجديد");
+        let cmd = plan_with(&parent, "الجديد").unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::channel(8);
+        let (_cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
+
+        let execution = crate::executor::run_for(ID, cmd, tx, cancel_rx).await;
+        assert_eq!(
+            execution.outcome,
+            crate::executor::Outcome::Success { produced: Some(final_path.display().to_string()) }
+        );
+        assert!(final_path.is_dir());
+
+        let reveal = crate::reveal::safe_target_kind(&final_path);
+        let result = crate::result::ResultContract::for_operation(
+            ID,
+            execution.semantic,
+            execution.outcome.produced(),
+            Vec::new(),
+            reveal,
+        );
+        assert_eq!(result.category, crate::result::ResultCategory::Artifact);
+        assert_eq!(result.reveal, Some(crate::result::RevealKind::Directory));
+        assert!(matches!(
+            result.payload,
+            crate::result::ResultPayload::Artifact { ref path, .. }
+                if path == &final_path.display().to_string()
+        ));
     }
 
     #[test]

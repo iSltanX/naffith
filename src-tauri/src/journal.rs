@@ -48,6 +48,10 @@
 
 use crate::error::CoreError;
 use crate::executor::Outcome;
+use crate::result::{
+    CollectionRow, MetricValue, RawOutputLine, ResultContract, ResultPayload, ResultProperty,
+    StructuredLine,
+};
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
@@ -153,6 +157,9 @@ pub struct Entry {
     /// آخر ما طبعته الأداة. في القيد النهائي وحده، ومحدودٌ بالحدّين أعلاه.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tail: Vec<String>,
+    /// عقد النتيجة المنظّم. يغيب عن القيود القديمة وعن planned/running.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result: Option<ResultContract>,
     #[serde(flatten)]
     pub state: State,
 }
@@ -170,6 +177,7 @@ impl Entry {
             cwd: None,
             inputs: Vec::new(),
             tail: Vec::new(),
+            result: None,
             state,
         }
     }
@@ -204,6 +212,95 @@ impl Entry {
         self.tail = lines[start..].iter().map(|l| clip_tail(l)).collect();
         self
     }
+
+    pub fn with_result(mut self, mut result: ResultContract) -> Self {
+        match &mut result.payload {
+            ResultPayload::Artifact { output, .. } => bound_result_output(output),
+            ResultPayload::Acknowledgement { details, .. }
+            | ResultPayload::Digest { details, .. }
+            | ResultPayload::Comparison { details, .. }
+            | ResultPayload::Verdict { details, .. } => bound_structured_output(details),
+            ResultPayload::Collection { rows, .. } => bound_collection_rows(rows),
+            ResultPayload::PropertiesReport { properties, .. } => {
+                bound_properties(properties);
+            }
+            ResultPayload::Metrics { metrics, .. } => bound_metrics(metrics),
+            ResultPayload::DiffSearch { items, .. } => bound_structured_output(items),
+            ResultPayload::Diagnostic { lines } => bound_result_output(lines),
+            ResultPayload::RawOutput { lines } => bound_result_output(lines),
+        }
+        self.result = Some(result);
+        self
+    }
+}
+
+fn tail_start(len: usize) -> usize {
+    len.saturating_sub(MAX_TAIL_LINES)
+}
+
+fn bound_structured_output(lines: &mut Vec<StructuredLine>) {
+    let start = tail_start(lines.len());
+    let bounded = lines
+        .drain(start..)
+        .map(|mut line| {
+            line.value = clip_tail(&line.value);
+            line
+        })
+        .collect();
+    *lines = bounded;
+}
+
+fn bound_collection_rows(rows: &mut Vec<CollectionRow>) {
+    let start = tail_start(rows.len());
+    let bounded = rows
+        .drain(start..)
+        .map(|mut row| {
+            row.cells = row.cells.into_iter().map(|cell| clip_tail(&cell)).collect();
+            row
+        })
+        .collect();
+    *rows = bounded;
+}
+
+fn bound_properties(properties: &mut Vec<ResultProperty>) {
+    let start = tail_start(properties.len());
+    let bounded = properties
+        .drain(start..)
+        .map(|mut property| {
+            property.label_key = clip_tail(&property.label_key);
+            property.value = clip_tail(&property.value);
+            property
+        })
+        .collect();
+    *properties = bounded;
+}
+
+fn bound_metrics(metrics: &mut Vec<MetricValue>) {
+    let start = tail_start(metrics.len());
+    let bounded = metrics
+        .drain(start..)
+        .map(|mut metric| {
+            metric.label_key = clip_tail(&metric.label_key);
+            metric.value = clip_tail(&metric.value);
+            metric.unit = metric.unit.map(|unit| clip_tail(&unit));
+            metric
+        })
+        .collect();
+    *metrics = bounded;
+}
+
+fn bound_result_output(lines: &mut Vec<RawOutputLine>) {
+    let start = tail_start(lines.len());
+    let bounded = lines
+        .drain(start..)
+        .map(|line| match line {
+            RawOutputLine::Stdout(text) => RawOutputLine::Stdout(clip_tail(&text)),
+            RawOutputLine::Stderr(text) => RawOutputLine::Stderr(clip_tail(&text)),
+            RawOutputLine::Omitted { dropped } => RawOutputLine::Omitted { dropped },
+            RawOutputLine::Truncated { dropped } => RawOutputLine::Truncated { dropped },
+        })
+        .collect();
+    *lines = bounded;
 }
 
 /// يقصّ سطرًا على حدّ محرفٍ كامل، فلا يُشطر حرفٌ عربي نصفين.
@@ -549,14 +646,45 @@ fn needs_leading_newline(file: &mut std::fs::File) -> std::io::Result<bool> {
 struct FileLock(std::os::unix::io::RawFd);
 
 impl FileLock {
+    /// أقصى انتظارٍ لقفلٍ يمسكه غيرنا، ثم نُخفق بدل أن نقف.
+    ///
+    /// كان `flock(LOCK_EX)` وحده: انتظارٌ **بلا سقف**. ومن يمسك القفل قد يكون
+    /// نسخةً ثانية من التطبيق (‏`app_data_dir` مشتقّ من المعرّف، فالنسختان
+    /// تكتبان `runs.jsonl` نفسه) أو خيطَ المنفّذ في هذه العملية نفسها —
+    /// و`flock` يُسلسل بين واصفَي فتحٍ مختلفَين ولو كانا لعمليةٍ واحدة.
+    ///
+    /// والثمن كان تجمّد الواجهة: `plan` أمرٌ متزامن، والأوامر المتزامنة في
+    /// Tauri تعمل على **الخيط الرئيسي**، فيقف الخيط داخل نداء نظامٍ لا يعود
+    /// منه، وتتوقّف حلقة أحداث AppKit، ويقول macOS «التطبيق لا يستجيب».
+    ///
+    /// سجلٌّ لا يُكتب سطرُه أهون من واجهةٍ لا تستجيب — والإخفاق مُبلَّغٌ في
+    /// `record` لا مُبتلَع.
+    const MAX_WAIT: std::time::Duration = std::time::Duration::from_millis(2_000);
+    const RETRY_EVERY: std::time::Duration = std::time::Duration::from_millis(5);
+
     fn acquire(file: &std::fs::File) -> std::io::Result<Self> {
         use std::os::unix::io::AsRawFd;
         let fd = file.as_raw_fd();
-        // SAFETY: الواصف مملوك لملفٍ حيّ ويبقى صالحًا حتى تحرير القفل.
-        if unsafe { libc::flock(fd, libc::LOCK_EX) } != 0 {
-            return Err(std::io::Error::last_os_error());
+        let deadline = std::time::Instant::now() + Self::MAX_WAIT;
+        loop {
+            // SAFETY: الواصف مملوك لملفٍ حيّ ويبقى صالحًا حتى تحرير القفل.
+            if unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) } == 0 {
+                return Ok(FileLock(fd));
+            }
+            let err = std::io::Error::last_os_error();
+            // ‏`EWOULDBLOCK` وحدها تعني «القفل مشغول». أي خطأٍ آخر عطلٌ حقيقي
+            // يُرفع فورًا بدل أن يُعاد المحاولة عليه إلى نهاية المهلة.
+            if err.raw_os_error() != Some(libc::EWOULDBLOCK) {
+                return Err(err);
+            }
+            if std::time::Instant::now() >= deadline {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::WouldBlock,
+                    "journal lock is held by another writer",
+                ));
+            }
+            std::thread::sleep(Self::RETRY_EVERY);
         }
-        Ok(FileLock(fd))
     }
 }
 
@@ -623,6 +751,49 @@ mod tests {
         )
     }
 
+    /// قيدٌ في السجلّ لا يجوز أن يجمّد من يستدعيه مهما فعل جارُه.
+    ///
+    /// `flock(LOCK_EX)` بلا `LOCK_NB` انتظارٌ بلا سقف: نسخةٌ ثانية من التطبيق
+    /// — أو خيطُ المنفّذ نفسه — تمسك القفل، فيقف المستدعي إلى الأبد. وحين
+    /// يكون المستدعي **الخيط الرئيسي** (وأمر `plan` متزامن، فهو كذلك) تتوقّف
+    /// حلقة أحداث AppKit ويقول macOS «التطبيق لا يستجيب».
+    ///
+    /// الاختبار يمسك القفل من واصفٍ مستقلّ ثم يقيس: `record` يجب أن تعود
+    /// خلال مهلةٍ معلَنة، لا أن تنتظر إلى ما لا نهاية.
+    #[test]
+    fn a_peer_holding_the_journal_lock_cannot_freeze_the_caller() {
+        use std::os::unix::io::AsRawFd;
+        use std::sync::mpsc;
+
+        let dir = std::env::temp_dir().join(format!("naffith-flock-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("runs.jsonl");
+        std::fs::write(&path, b"").unwrap();
+
+        // جارٌ يمسك القفل الحصريّ ولا يُفلته — كالنسخة الثانية من التطبيق.
+        let peer = std::fs::OpenOptions::new().read(true).write(true).open(&path).unwrap();
+        assert_eq!(unsafe { libc::flock(peer.as_raw_fd(), libc::LOCK_EX) }, 0);
+
+        let j = Journal::new(Some(path.clone()));
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            j.record(Entry::new("run-1", "files.copy", State::Planned));
+            let _ = tx.send(());
+        });
+
+        let returned = rx.recv_timeout(std::time::Duration::from_secs(5)).is_ok();
+
+        unsafe { libc::flock(peer.as_raw_fd(), libc::LOCK_UN) };
+        drop(peer);
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert!(
+            returned,
+            "record() لم تعد بينما يمسك جارٌ القفل — انتظارٌ بلا سقف يجمّد الخيط الرئيسي"
+        );
+    }
+
     #[test]
     fn every_state_is_recorded_not_just_success() {
         let j = Journal::new(None);
@@ -681,6 +852,66 @@ mod tests {
 
         let read = read_all(&path).unwrap();
         assert_eq!(read.entries[0].args[2], "/Users/x/مجلد");
+    }
+
+    #[test]
+    fn journals_written_before_the_result_contract_still_load() {
+        let old = serde_json::json!({
+            "id": "old",
+            "op_id": "disk.free",
+            "at": 1,
+            "program": "/bin/df",
+            "args": ["-h"],
+            "state": "succeeded",
+            "produced": null
+        });
+        let entry: Entry = serde_json::from_value(old).unwrap();
+        assert!(entry.result.is_none());
+        assert!(matches!(entry.state, State::Succeeded { produced: None }));
+    }
+
+    #[test]
+    fn a_terminal_result_contract_survives_the_journal_round_trip() {
+        let result = crate::result::ResultContract::for_operation(
+            "text.search",
+            crate::result::ResultSemantic::NoMatches,
+            None,
+            vec![crate::result::RawOutputLine::Stderr("none".into())],
+            Some(crate::result::RevealKind::Directory),
+        );
+        let original = entry("result", State::Succeeded { produced: None }).with_result(result);
+        let encoded = serde_json::to_vec(&original).unwrap();
+        let decoded: Entry = serde_json::from_slice(&encoded).unwrap();
+        assert_eq!(decoded.result, original.result);
+    }
+
+    #[test]
+    fn typed_result_output_obeys_the_journal_tail_limits_too() {
+        let mut lines = vec![RawOutputLine::Stdout("/tmp/image.png".into())];
+        lines.extend(
+            (0..20).map(|index| {
+                RawOutputLine::Stdout(format!("property{index}: {}", "x".repeat(500)))
+            }),
+        );
+        let result = crate::result::ResultContract::for_operation(
+            "image.info",
+            crate::result::ResultSemantic::Completed,
+            None,
+            lines,
+            None,
+        );
+        let entry =
+            entry("bounded-result", State::Succeeded { produced: None }).with_result(result);
+        let Some(ResultPayload::PropertiesReport { properties, .. }) =
+            entry.result.map(|result| result.payload)
+        else {
+            panic!("expected a properties report")
+        };
+        assert_eq!(properties.len(), MAX_TAIL_LINES);
+        for property in properties {
+            assert_eq!(property.stream, crate::result::OutputStream::Stdout);
+            assert!(property.value.len() <= MAX_TAIL_LINE_BYTES + " …".len());
+        }
     }
 
     #[test]

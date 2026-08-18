@@ -176,6 +176,43 @@ impl Inputs {
             })
             .collect()
     }
+
+    /// Render command arguments for the persistent run journal without
+    /// retaining any value declared secret by the operation specification.
+    ///
+    /// Redacting `journal_form` alone is not sufficient: the same value may
+    /// also occur in the argv that the Run Log persists and renders. Signed
+    /// download URLs are the concrete case today. The executed command is not
+    /// changed; this method is only for the audit record.
+    pub fn journal_args(
+        &self,
+        op: &crate::spec::OperationSpec,
+        args: &[std::ffi::OsString],
+    ) -> Vec<String> {
+        const REDACTED: &str = "[redacted]";
+
+        let secrets: Vec<String> = self
+            .values
+            .iter()
+            .filter(|(id, _)| op.input(id).is_some_and(|input| input.secret))
+            .map(|(_, value)| value.as_journal_text())
+            // An empty secret is not useful as a substring and would redact
+            // every argument. Required secret inputs are validated elsewhere,
+            // but this keeps the persistence helper fail-safe on its own.
+            .filter(|value| !value.is_empty())
+            .collect();
+
+        args.iter()
+            .map(|arg| {
+                let rendered = arg.to_string_lossy();
+                if secrets.iter().any(|secret| rendered.contains(secret)) {
+                    REDACTED.to_owned()
+                } else {
+                    rendered.into_owned()
+                }
+            })
+            .collect()
+    }
 }
 
 impl Value {
@@ -192,6 +229,17 @@ impl Value {
             Value::Flag(b) => (if *b { "1" } else { "" }).to_owned(),
         }
     }
+}
+
+/// حقلا مسار أداةٍ يختارها المستخدم صراحةً في الإعدادات، لا ملفّ بياناتٍ
+/// عادي — رغم أن كليهما يعلن `InputKind::ExistingFile` نفسه في مواصفته.
+///
+/// الفارق بين الحقلين دلاليٌّ (ما الذي يمثّله هذا الملف؟) لا شكليّ، فلا
+/// يستطيع نوع المدخل وحده حمله؛ والقرار بمعرّف الحقل هنا ليس اختراعًا: هو
+/// المعرّفان نفساهما اللذان تُميّزهما `toolPathFields` في `app.tsx` بالفعل
+/// لتعبئتهما من الإعدادات — فهذا التطابق امتدادٌ لتمييزٍ قائم لا تمييزٌ جديد.
+fn is_tool_path_field(id: &'static str) -> bool {
+    matches!(id, "node_path" | "cargo_path")
 }
 
 /// يتحقّق من المدخلات الخام مقابل مواصفة العملية.
@@ -223,7 +271,13 @@ pub fn validate(op: &OperationSpec, raw: &BTreeMap<String, RawValue>) -> Result<
                 Value::Dir(paths::existing_dir(Path::new(s)).map_err(|e| e.on_input(spec.id))?)
             }
             (InputKind::ExistingFile, RawValue::Path(s)) => {
-                Value::File(paths::existing_file(Path::new(s)).map_err(|e| e.on_input(spec.id))?)
+                let resolved = if is_tool_path_field(spec.id) {
+                    paths::existing_tool_file(Path::new(s))
+                } else {
+                    paths::existing_file(Path::new(s))
+                }
+                .map_err(|e| e.on_input(spec.id))?;
+                Value::File(resolved)
             }
             (InputKind::ExistingPath, RawValue::Path(s)) => {
                 Value::AnyPath(paths::existing_path(Path::new(s)).map_err(|e| e.on_input(spec.id))?)

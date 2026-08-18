@@ -13,13 +13,12 @@
  *    وإغلاقُ المستخدم يُحترم فلا يُعاد فتحه مع كل سطرٍ يصل.
  */
 import { cleanup, render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 import RunStream, {
   MAX_KEPT_LINES,
   appendLine,
   droppedCount,
-  shouldOpen,
+  streamPresentation,
   type StreamLine,
 } from './run-stream';
 import { AR } from './i18n';
@@ -34,6 +33,11 @@ const err = (line: string): RunOutputEvent => ({ run_id: RUN, stream: 'stderr', 
 const cut = (dropped: number): RunOutputEvent => ({
   run_id: RUN,
   stream: 'truncated',
+  line: { dropped },
+});
+const omitted = (dropped: number): RunOutputEvent => ({
+  run_id: RUN,
+  stream: 'omitted',
   line: { dropped },
 });
 
@@ -66,23 +70,14 @@ describe('الاحتفاظ بالأسطر', () => {
   });
 });
 
-describe('قاعدة الطيّ', () => {
-  it('يفتح أثناء التشغيل وأثناء الإلغاء', () => {
-    expect(shouldOpen('running', undefined)).toBe(true);
-    expect(shouldOpen('cancelling', undefined)).toBe(true);
-  });
-
-  it('يفتح بعد كل نهايةٍ غير ناجحة، ويطوي بعد النجاح', () => {
-    expect(shouldOpen('finished', 'failed')).toBe(true);
-    expect(shouldOpen('finished', 'signalled')).toBe(true);
-    expect(shouldOpen('finished', 'cancelled')).toBe(true);
-    expect(shouldOpen('finished', 'error')).toBe(true);
-    expect(shouldOpen('finished', 'success')).toBe(false);
-  });
-
-  it('لا يفتح قبل أن يبدأ تشغيل', () => {
-    expect(shouldOpen('idle', undefined)).toBe(false);
-    expect(shouldOpen('planning', undefined)).toBe(false);
+describe('حالات Run/Stream المهيكلة', () => {
+  it('يختار الحالات الست من الطور وأنواع الحدث لا من نص الأداة', () => {
+    expect(streamPresentation([], 'running')).toBe('waiting');
+    expect(streamPresentation([], 'finished')).toBe('silent');
+    expect(streamPresentation(build([out('ok')]), 'running')).toBe('stdout');
+    expect(streamPresentation(build([err('no')]), 'running')).toBe('stderr');
+    expect(streamPresentation(build([out('a'), cut(4)]), 'finished')).toBe('truncated');
+    expect(streamPresentation(build([omitted(3)]), 'finished')).toBe('dropped');
   });
 });
 
@@ -112,53 +107,71 @@ describe('الرسم', () => {
 
   it('يعلن قصَّ النواة بعدد ما لم يُبَثّ', () => {
     const lines = build([out('أ'), cut(1284)]);
-    render(<RunStream lines={lines} phase="finished" status="success" />);
+    render(<RunStream lines={lines} phase="finished" />);
     expect(screen.getByText(AR['stream.truncated'], { exact: false })).toBeTruthy();
     expect(screen.getByText('1284')).toBeTruthy();
+  });
+
+  it('يميّز إسقاط ذيل الحدث عن توقّف البثّ في النواة', () => {
+    const lines = build([omitted(17)]);
+    const { container } = render(<RunStream lines={lines} phase="finished" />);
+    expect(container.querySelector('.stream--dropped')).toBeTruthy();
+    expect(screen.getByText(AR['stream.state.dropped.body'])).toBeTruthy();
+  });
+
+  /**
+   * H-6 regression: dropping *some* lines must not hide *all* of them. Before
+   * the fix, `showLines` excluded the `dropped` presentation entirely, so the
+   * runs that produce the most output — exactly the ones with something to
+   * drop — rendered nothing at all: the more a tool printed, the less the
+   * user could see.
+   */
+  it('لا يُخفي الذيل المحفوظ عند إسقاط أسطرٍ من مقدّمة المجرى', () => {
+    const events = Array.from({ length: MAX_KEPT_LINES + 3 }, (_, i) => out(`سطر ${i}`));
+    const lines = build(events);
+    expect(droppedCount(lines)).toBe(3); // الفرضية: ثلاثة أسطرٍ أُسقطت فعلًا.
+
+    render(<RunStream lines={lines} phase="finished" />);
+
+    // الذيل المحفوظ ما زال ظاهرًا — آخر سطرٍ وصل تحديدًا.
+    expect(screen.getByText('سطر ' + (MAX_KEPT_LINES + 2))).toBeTruthy();
+    // وتفسير الإسقاط يظهر معه، لا بدلًا منه.
+    expect(screen.getByText(AR['stream.state.dropped.body'])).toBeTruthy();
+  });
+
+  /** ونفس الشيء حين يحمل المجرى علامة `omitted` من النواة وسط أسطرٍ حقيقية. */
+  it('لا يُخفي الأسطر المحيطة بعلامة إسقاطٍ وسط المجرى', () => {
+    const lines = build([out('قبل'), omitted(5), out('بعد')]);
+    render(<RunStream lines={lines} phase="finished" />);
+    expect(screen.getByText('قبل')).toBeTruthy();
+    expect(screen.getByText('بعد')).toBeTruthy();
   });
 
   it('يعلن إسقاط الواجهة بصياغةٍ غير صياغة قصّ النواة', () => {
     // شيئان مختلفان: «لم تُبَثّ» و«بُثّت ولم تُحفظ». نصٌّ واحد لهما يخفي أحدهما.
     expect(AR['stream.dropped']).not.toBe(AR['stream.truncated']);
     const events = Array.from({ length: MAX_KEPT_LINES + 3 }, (_, i) => out(`س ${i}`));
-    render(<RunStream lines={build(events)} phase="finished" status="failed" />);
-    expect(screen.getByText(AR['stream.dropped'], { exact: false })).toBeTruthy();
-    expect(screen.getByText('3')).toBeTruthy();
+    const { container } = render(<RunStream lines={build(events)} phase="finished" />);
+    expect(container.querySelector('.stream--dropped')).toBeTruthy();
+    expect(screen.getByText(AR['stream.state.dropped.footer'])).toBeTruthy();
   });
 
   it('يفرّق بين «لم تطبع بعد» و«لم تطبع شيئًا»', () => {
     // أثناء التشغيل الصمتُ انتظار، وبعده الصمتُ خبر. نصٌّ واحد للحالتين يجعل
     // أداةً ما زالت تعمل تبدو وقد فرغت.
     render(<RunStream lines={[]} phase="running" />);
-    expect(screen.getByText(AR['stream.waiting'])).toBeTruthy();
+    expect(screen.getByText(AR['stream.state.waiting.body'])).toBeTruthy();
     cleanup();
-    render(<RunStream lines={[]} phase="finished" status="success" />);
-    expect(screen.getByText(AR['stream.silent'])).toBeTruthy();
+    render(<RunStream lines={[]} phase="finished" />);
+    expect(screen.getByText(AR['stream.state.silent.body'])).toBeTruthy();
   });
 
-  it('يعرض العدّاد في الوسم فيُقرأ وهو مطويّ', () => {
+  it('يعرض وسم stdout المباشر في الرأس', () => {
     const lines = build([out('أ'), out('ب')]);
-    const { container } = render(<RunStream lines={lines} phase="finished" status="success" />);
-    expect(container.querySelector('.stream')?.hasAttribute('open')).toBe(false);
-    expect(container.querySelector('.stream__count')?.textContent).toContain('2');
-  });
-
-  it('يحترم إغلاق المستخدم ولا يعيد فتحه مع كل رسم', async () => {
-    // العطل المحروس: `<details open={auto}>` تعيد فرض القيمة عند كل إعادة رسم،
-    // وسطرٌ جديد يصل كل بضع مئات من الميلي ثانية يعني إعادة رسم — فينفتح القسم
-    // في وجه من أغلقه.
-    const user = userEvent.setup();
-    const view = render(<RunStream lines={build([out('أ')])} phase="running" />);
-    const box = view.container.querySelector('.stream') as HTMLDetailsElement;
-    expect(box.open).toBe(true);
-
-    await user.click(view.container.querySelector('summary') as HTMLElement);
-    expect(box.open).toBe(false);
-
-    view.rerender(<RunStream lines={build([out('أ'), out('ب')])} phase="running" />);
-    expect(
-      (view.container.querySelector('.stream') as HTMLDetailsElement).open,
-      'أُعيد فتح القسم مع وصول سطر',
-    ).toBe(false);
+    const { container } = render(<RunStream lines={lines} phase="finished" />);
+    expect(container.querySelector('.stream--stdout')).toBeTruthy();
+    expect(container.querySelector('.stream__count')?.textContent).toBe(
+      AR['stream.state.stdout.meta'],
+    );
   });
 });

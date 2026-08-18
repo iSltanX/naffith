@@ -555,6 +555,7 @@ async fn a_tool_that_exits_zero_without_writing_never_becomes_a_zero_byte_archiv
         estimate: None,
         stdout_to: None,
         reveal_target: None,
+        extra_path: Vec::new(),
     };
 
     let mut store = PlanStore::new();

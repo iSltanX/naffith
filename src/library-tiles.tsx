@@ -45,14 +45,12 @@ function unavailableReason(card: OperationCard): string {
 export function OperationTile({
   card,
   categories,
-  showCategory,
   isFavourite,
   onSelect,
   onToggleFavourite,
 }: {
   card: OperationCard;
   categories?: CategoryCard[];
-  showCategory?: boolean;
   isFavourite: boolean;
   onSelect: (opId: string) => void;
   onToggleFavourite: (opId: string) => void;
@@ -60,64 +58,61 @@ export function OperationTile({
   const uid = useId();
   const whyId = `${uid}-why`;
   const unavailable = card.availability.state !== 'available';
-  const category = showCategory && categories ? findCategory(categories, card.category) : undefined;
+  const unavailableKind =
+    card.availability.state === 'tool_missing' ? 'tool-missing' : 'unsupported';
+  const availabilityLabel =
+    card.availability.state === 'tool_missing'
+      ? t('ops.unavailable.tool.label')
+      : card.availability.state === 'unsupported'
+        ? t('ops.unavailable.unsupported.label')
+        : t('ops.available');
+  const category = categories ? findCategory(categories, card.category) : undefined;
 
   return (
     <li className="ops__cell">
       <div className="tile">
         <button
           type="button"
-          className={`card op-card ${unavailable ? 'op-card--off' : 'card--interactive'}`}
+          className={`card op-card op-card--operation ${unavailable ? `op-card--off op-card--${unavailableKind}` : 'card--interactive'}`}
           disabled={unavailable}
           aria-describedby={unavailable ? whyId : undefined}
           onClick={() => onSelect(card.id)}
         >
-          <span className="op-card__icon" aria-hidden="true">
-            {/* الأيقونة معرّفٌ في لوحة الرموز جاء مع البطاقة. أي خريطةٍ هنا من
-                العملية إلى رمزٍ كانت ستعيد الفهرس إلى الواجهة من بابٍ خلفي. */}
-            <svg viewBox="0 0 24 24">
-              <use href={card.icon} />
-            </svg>
-          </span>
+          {/* الأيقونة نفسها هي العنصر البصري: هوية Page 15 لا تضعها داخل
+              بلاطةٍ زخرفية، وتبقي لون Ember لحالة التفاعل. */}
+          <svg className="op-card__icon" viewBox="0 0 24 24" aria-hidden="true">
+            <use href={card.icon} />
+          </svg>
 
-          {/* الاسم، وتحته سطرٌ واحد من الوسوم القصيرة. لا فقرة.
-
-              كان الوصفُ كاملًا هنا (سطران إلى ثمانية)، والبطاقات في صفٍّ واحد
-              تتساوى ارتفاعًا بحكم الشبكة — فوصفٌ طويل يمطّ الصفّ كلّه ويترك
-              تحت جيرانه فراغًا بقدره. وقراءةُ عشر فقرات ليست تصفّحًا.
-
-              وليس هذا إخفاءً بل إعادةُ ترتيب — وهي العلاج الذي يوجبه قانون
-              التخطيط لا خرقٌ له: الوصف كاملًا في شاشة العملية بعد فتحها
-              (`.opbar__desc` في `app.css`)، ظاهرًا في كل عرضٍ للنافذة. */}
           <span className="op-card__text">
             <span className="t-card-title op-card__title">{t(card.titleKey)}</span>
+            <span className="t-body-sec op-card__description">{t(card.descriptionKey)}</span>
             <span className="tile__meta">
-              {category && (
-                <span className="chip chip--neutral tile__chip">{t(category.titleKey)}</span>
-              )}
-              {/* اسم الأداة على البطاقة: هو ما يجعل البحث عن `ditto` معقولًا،
-                  وما يجعل المستخدم يتعلّم أن لكل عمليةٍ أداةً بعينها. وهو الآن
-                  كلُّ ما تحت الاسم — وسمٌ من كلمة، لا سطرُ نثر. */}
-              <span className="tile__tool">⁦{card.tool}⁩</span>
-              {unavailable && (
-                <span className="chip chip--neutral tile__chip">
-                  <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <use href="#i-info" />
-                  </svg>
-                  {t('ops.unavailable')}
+              <span className="tile__origin">
+                {category && (
+                  <>
+                    <span className="tile__category">{t(category.titleKey)}</span>
+                    <span className="tile__separator" aria-hidden="true">
+                      ·
+                    </span>
+                  </>
+                )}
+                {/* قيمةٌ تقنية حقيقية، ولذلك وحدها Mono ومعزولة الاتجاه. */}
+                <bdi className="tile__tool" dir="ltr">
+                  {card.tool}
+                </bdi>
+              </span>
+              {unavailable ? (
+                <span className={`tile__availability tile__availability--${unavailableKind}`}>
+                  {availabilityLabel}
+                </span>
+              ) : (
+                <span className="tile__availability tile__availability--ok">
+                  {t('ops.available')}
                 </span>
               )}
             </span>
           </span>
-
-          {!unavailable && (
-            <span className="op-card__go" aria-hidden="true">
-              {/* السهم يشير إلى جهة المضيّ، فيَنعكس مع اتجاه الصفحة. */}
-              <svg viewBox="0 0 24 24" data-directional>
-                <use href="#i-chevron" />
-              </svg>
-            </span>
-          )}
         </button>
 
         <button
@@ -172,25 +167,34 @@ export function CategoryTile({
 }) {
   const journal = card.kind === 'journal';
   const partial = !journal && card.availableCount < card.operationCount;
+  const empty = !journal && card.operationCount === 0;
+  const state = journal ? 'history' : empty ? 'empty' : partial ? 'partial' : 'available';
 
   return (
     <li className="ops__cell">
       <button
         type="button"
-        className="card op-card card--interactive"
+        className={`card op-card category-card category-card--${state} card--interactive`}
         onClick={() => onSelect(card.id)}
       >
-        <span className="op-card__icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24">
-            <use href={card.icon} />
-          </svg>
-        </span>
+        <svg className="op-card__icon" viewBox="0 0 24 24" aria-hidden="true">
+          <use href={card.icon} />
+        </svg>
 
         <span className="op-card__text">
           <span className="t-card-title op-card__title">{t(card.titleKey)}</span>
-          <span className="t-caption tile__count">
+          <span className={`t-caption tile__count tile__count--${state}`}>
             {journal ? (
               t('lib.category.journal')
+            ) : empty ? (
+              t('lib.category.empty.count')
+            ) : partial ? (
+              <>
+                <span className="num">{card.availableCount}</span>{' '}
+                {t('lib.category.availability.of')}{' '}
+                <span className="num">{card.operationCount}</span>{' '}
+                {t('lib.category.availability.operations')}
+              </>
             ) : card.operationCount === 1 ? (
               t('ops.count.one')
             ) : (
@@ -198,19 +202,7 @@ export function CategoryTile({
                 <span className="num">{card.operationCount}</span> {t('ops.count.many')}
               </>
             )}
-            {partial && (
-              <>
-                {' · '}
-                <span className="num">{card.availableCount}</span> {t('lib.category.available')}
-              </>
-            )}
           </span>
-        </span>
-
-        <span className="op-card__go" aria-hidden="true">
-          <svg viewBox="0 0 24 24" data-directional>
-            <use href="#i-chevron" />
-          </svg>
         </span>
       </button>
     </li>

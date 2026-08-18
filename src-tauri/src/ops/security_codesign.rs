@@ -34,13 +34,9 @@
 //!
 //! ## أمانة: «فشل» هنا قد يعني «لا توقيع على هذا الملف»
 //!
-//! `codesign` تخرج **برمزٍ غير صفري حين لا يكون الهدف موقَّعًا**: قيس على هذا
-//! الجهاز أن ملفًا نصّيًا عاديًا يعيد الرمز ١ ورسالة `code object is not signed
-//! at all`. و`executor.rs` يعتبر أي خروجٍ غير صفري تشغيلًا فاشلًا.
-//!
-//! ولم تُترجَم رموز الخروج في هذه العملية وحدها لأن معنى «نجح» يجب أن يبقى
-//! واحدًا في المنتج كله. لذلك يُرفع `warn.codesign.unsigned` **دائمًا**، قبل
-//! التنفيذ: «غير موقَّع» جوابٌ عن السؤال المطروح لا فشلٌ في طرحه.
+//! `codesign` تخرج **برمزٍ غير صفري حين لا يكون الهدف موقَّعًا**: عقد النتائج
+//! يترجم الواحد إلى `unsigned` والصفر إلى `signed`. كلاهما جوابٌ مكتمل، وما
+//! عداه يبقى فشل تنفيذ.
 
 use crate::error::Result;
 use crate::ops::common::{warn_if_resolved, Argv};
@@ -83,11 +79,7 @@ fn plan(inputs: &Inputs) -> Result<PlannedCommand> {
         .flag("-d", "explain.codesign.display")
         .flag("-vv", "explain.codesign.verbose")
         .end_of_flags()
-        .path(target)
-        // بلا شرط، وللسبب نفسه الذي في `security_gatekeeper`: التحذير خبرٌ عن
-        // كيفية قراءة الشاشة لرمز الخروج، لا نبوءةٌ عن هذا الملف بعينه. ولو
-        // رُفع أحيانًا لصار غيابُه وعدًا بالنجاح.
-        .warn("warn.codesign.unsigned");
+        .path(target);
 
     if let Some(key) = warn_if_resolved(inputs, "target", target, "warn.target.resolved") {
         argv = argv.warn(key);
@@ -175,17 +167,13 @@ mod tests {
     }
 
     #[test]
-    fn the_unsigned_honesty_warning_is_raised_for_every_target() {
+    fn the_result_contract_replaces_the_obsolete_unsigned_warning() {
         let s = Scratch::new("sign-warn").unwrap();
 
         for name in ["تطبيق", "مستند.txt", "-f"] {
             let f = s.file(name, b"x");
             let cmd = plan_with(&f).unwrap();
-            assert_eq!(
-                cmd.warnings,
-                vec!["warn.codesign.unsigned"],
-                "{name:?} must carry the exit-code warning and nothing else"
-            );
+            assert!(cmd.warnings.is_empty(), "{name:?}: {:?}", cmd.warnings);
         }
     }
 
@@ -245,7 +233,7 @@ mod tests {
         let cmd = plan_with(&link).unwrap();
         assert_eq!(Path::new(cmd.args.last().unwrap()), real.as_path());
         assert!(cmd.warnings.contains(&"warn.target.resolved"), "{:?}", cmd.warnings);
-        assert!(cmd.warnings.contains(&"warn.codesign.unsigned"), "{:?}", cmd.warnings);
+        assert!(!cmd.warnings.contains(&"warn.codesign.unsigned"), "{:?}", cmd.warnings);
     }
 
     #[test]

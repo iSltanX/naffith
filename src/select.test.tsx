@@ -71,6 +71,21 @@ describe('القائمة المنسدلة', () => {
     expect(trigger().getAttribute('aria-activedescendant')).toBeNull();
   });
 
+  it('تعرض عبارة الاختيار حين لا توجد قيمة بدل ادّعاء اختيار أول صف', () => {
+    view({ value: '', placeholder: 'اختر قيمة', required: true });
+    expect(trigger().textContent).toContain('اختر قيمة');
+    expect(trigger().textContent).not.toContain('الكل');
+    expect(trigger().getAttribute('aria-required')).toBe('true');
+  });
+
+  it('الحالة المعطّلة لا تفتح القائمة', async () => {
+    const user = userEvent.setup();
+    view({ disabled: true });
+    expect((trigger() as HTMLButtonElement).disabled).toBe(true);
+    await user.click(trigger());
+    expect(screen.queryByRole('listbox')).toBeNull();
+  });
+
   it('البحث بالحرف الأوّل يطابق العربية بعد التوحيد لا حرفًا بحرف', async () => {
     // «أُلغيت» تبدأ بهمزةٍ فوقها ضمّة. بلا `fold` لا يبلغها من يكتب «ا»، وهي
     // دالّة المقارنة نفسها التي يستعملها بحث المكتبة.

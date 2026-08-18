@@ -20,6 +20,7 @@ import type { CategoryCard, OperationCard } from './library';
 import { isAvailable } from './library';
 import { t } from './i18n';
 import { OperationTile } from './library-tiles';
+import StatePanel from './state-panel';
 import './library-screen.css';
 
 interface Props {
@@ -43,64 +44,48 @@ export default function CategoryScreen(props: Props): JSX.Element {
   }, [category.id]);
 
   const available = operations.filter((o) => isAvailable(o.availability)).length;
-  const partial = available < operations.length;
 
   return (
     <section className="lib" aria-labelledby="cat-heading">
       <header className="cat__head">
-        <button type="button" className="btn btn--ghost btn--sm cat__back" onClick={onBack}>
+        <nav className="cat__breadcrumb" aria-label={t('nav.back.library')}>
+          <button type="button" aria-label={t('nav.back.library')} onClick={onBack}>
+            {t('nav.operations')}
+          </button>
           <svg viewBox="0 0 24 24" aria-hidden="true" data-directional>
             <use href="#i-chevron" />
           </svg>
-          {t('nav.back.library')}
-        </button>
+          <span>{t(category.titleKey)}</span>
+        </nav>
 
-        <div className="cat__title-row">
-          <span className="cat__icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24">
-              <use href={category.icon} />
-            </svg>
-          </span>
+        <div className="cat__masthead">
           <div className="ops__intro">
             <h2 id="cat-heading" className="t-page-title ops__title" tabIndex={-1} ref={heading}>
               {t(category.titleKey)}
             </h2>
-            <p className="t-body-sec ops__sub">{t(category.descriptionKey)}</p>
+            <p className="t-body-sec ops__sub cat__availability">
+              <span className="num">{available}</span> {t('lib.category.availability.of')}{' '}
+              <span className="num">{operations.length}</span>{' '}
+              {t('lib.category.availability.operations')}
+            </p>
           </div>
         </div>
-
-        {/* العدد يُحسب من البطاقات المعروضة لا يُمرَّر: أي رقمٍ يأتي من مكانٍ
-            آخر يمكن أن يخالف ما تراه العين. */}
-        <p className="t-caption ops__count">
-          {operations.length === 1 ? (
-            t('ops.count.one')
-          ) : (
-            <>
-              <span className="num">{operations.length}</span> {t('ops.count.many')}
-            </>
-          )}
-          {partial && (
-            <>
-              {' · '}
-              <span className="num">{available}</span> {t('lib.category.available')}
-            </>
-          )}
-        </p>
       </header>
 
       {operations.length === 0 ? (
-        <div className="ops__state">
-          <svg viewBox="0 0 24 24" aria-hidden="true" className="ops__state-icon">
-            <use href="#i-info" />
-          </svg>
-          <p className="t-body-sec">{t('lib.category.empty')}</p>
-        </div>
+        <StatePanel
+          title={t('lib.category.empty')}
+          body={t('lib.category.empty.body')}
+          action={t('action.return.library')}
+          onAction={onBack}
+        />
       ) : (
-        <ul className="ops__grid">
+        <ul className="ops__grid ops__grid--operations">
           {operations.map((card) => (
             <OperationTile
               key={card.id}
               card={card}
+              categories={[category]}
               isFavourite={favouriteIds.includes(card.id)}
               onSelect={onOpenOperation}
               onToggleFavourite={onToggleFavourite}

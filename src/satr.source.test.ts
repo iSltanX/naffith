@@ -34,7 +34,10 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-const APP = readFileSync(new URL('./app.css', import.meta.url).pathname, 'utf8');
+const OPERATION = readFileSync(
+  new URL('./operation-layout.css', import.meta.url).pathname,
+  'utf8',
+);
 const TOKENS = readFileSync(
   new URL('./design-system/tokens.css', import.meta.url).pathname,
   'utf8',
@@ -123,12 +126,12 @@ const MODES: ReadonlyArray<readonly [string, Map<string, string>]> = [
   ['الليلي', DARK],
 ];
 
-const PANES = rule(APP, '.op__panes');
-const PANEL = rule(APP, '.satr');
-const LIVE = rule(APP, '.satr--live');
-const RAIL = rule(APP, '.satr__rail');
-const NAME = rule(APP, '.satr__rail-name');
-const STATE = rule(APP, '.satr__rail-state');
+const PANES = rule(OPERATION, '.op__panes');
+const PANEL = rule(OPERATION, '.satr');
+const LIVE = rule(OPERATION, '.satr--live');
+const RAIL = rule(OPERATION, '.satr__rail');
+const NAME = rule(OPERATION, '.satr__rail-name');
+const STATE = rule(OPERATION, '.satr__rail-state');
 
 /** رمز أرضية اللوحة، مقروءًا من قاعدتها لا مكتوبًا هنا. */
 const GROUND_TOKEN = tokenOf(PANEL, 'background');
@@ -141,35 +144,31 @@ function localVar(body: string, name: string): string {
 }
 
 describe('اللوحة تطوي عرضها', () => {
-  it('عرضُ المطويّة قيمةٌ مطلقة صغيرة من سلّم الهوية', () => {
+  it('عرضُ المطويّة يساوي 96px من سلّم الهوية', () => {
     // نسبةٌ للمطويّة تجعلها تكبر مع النافذة، فتعود المساحة المحجوزة من بابٍ
     // آخر. والقيمة محسوبةٌ من رمزٍ في النظام لا رقمًا مكتوبًا.
     const folded = localVar(PANES, '--satr-w-folded');
     expect(folded).toContain('var(--sidebar-w-collapsed)');
     expect(folded, 'عرضُ المطويّة يقرأ الصفّ أو النافذة').not.toMatch(/%|vw|vh/);
+    const foldedPx = [...folded.matchAll(/var\((--[\w-]+)\)/g)]
+      .reduce((total, match) => total + px(LIGHT, match[1] as string), 0);
+    expect(foldedPx).toBe(96);
     expect(PANEL).toContain('inline-size: var(--satr-w-folded)');
   });
 
-  it('عرضُ المتوسّعة في نطاق ‎30–35%‎ بسقفٍ مطلق', () => {
+  it('عرضُ المتوسّعة ثابت 328px كما في Page 16', () => {
     const live = localVar(PANES, '--satr-w-live');
-    const pct = /(\d+(?:\.\d+)?)%/.exec(live);
-    expect(pct?.[1], 'عرضُ المتوسّعة ليس نسبةً من الصفّ').toBeTruthy();
-    const value = Number.parseFloat(pct?.[1] ?? '0');
-    expect(value).toBeGreaterThanOrEqual(30);
-    expect(value).toBeLessThanOrEqual(35);
-    // سقفٌ يمنعها من التضخّم في نافذةٍ عريضة.
-    expect(live).toMatch(/\bmin\(/);
+    expect(live, 'عرضُ المتوسّعة يقرأ الصفّ أو النافذة').not.toMatch(/%|vw|vh/);
+    const livePx = [...live.matchAll(/var\((--[\w-]+)\)/g)]
+      .reduce((total, match) => total + px(LIGHT, match[1] as string), 0);
+    expect(livePx).toBe(328);
     expect(LIVE).toContain('inline-size: var(--satr-w-live)');
   });
 
   it('الفرق بين الحالتين طيٌّ لا تضييق', () => {
-    // ‎96px‎ مقابل ‎34%‎ من ‎1180px‎ ≈ ‎401px‎: أربعة أضعاف. وحدُّ الضِعف يمنع أن
-    // يتحوّل «الطيّ» يومًا إلى قضم عشرين بكسلًا ويبقى الاسم قائمًا.
-    const collapsed = px(LIGHT, '--sidebar-w-collapsed') + px(LIGHT, '--space-40');
-    const NARROWEST_WINDOW = 900; // ما دونه تنزل اللوحة تحت النموذج
-    const livePct = Number.parseFloat((/(\d+(?:\.\d+)?)%/.exec(localVar(PANES, '--satr-w-live')) ??
-      ['', '0'])[1] as string);
-    expect(collapsed * 2).toBeLessThanOrEqual((NARROWEST_WINDOW * livePct) / 100);
+    const value = (name: string) => [...localVar(PANES, name).matchAll(/var\((--[\w-]+)\)/g)]
+      .reduce((total, match) => total + px(LIGHT, match[1] as string), 0);
+    expect(value('--satr-w-live')).toBeGreaterThanOrEqual(value('--satr-w-folded') * 3);
   });
 
   it('الانتقال بمدّةٍ من رموز الحركة، فيُطاع تقليلُ الحركة', () => {
@@ -180,7 +179,27 @@ describe('اللوحة تطوي عرضها', () => {
   });
 });
 
+describe('علاقة اللوحتين تستجيب لنافذة المنتج', () => {
+  it('تتكدّسان تحت 900px وتبقيان منقسمتين عند 900px', () => {
+    const compactAt = OPERATION.indexOf('@media (max-width: 899px)');
+    expect(compactAt, 'قاعدة التكديس تحت 900px غير موجودة').toBeGreaterThan(-1);
+    const compact = OPERATION.slice(compactAt);
+
+    expect(compact).toMatch(/\.op__panes\s*\{[^}]*flex-direction:\s*column/s);
+    expect(compact).toMatch(/\.op__panes > \.naffith\s*\{[^}]*flex:\s*none/s);
+    expect(compact).toMatch(/\.satr,\s*\.satr--live\s*\{[^}]*inline-size:\s*100%/s);
+    expect(OPERATION).not.toContain('@media (max-width: 900px)');
+
+    // قاعدة الحالة الضيقة تأتي بعد قواعد الانقسام، وإلا يغلبها ترتيب المصدر.
+    expect(compactAt).toBeGreaterThan(OPERATION.lastIndexOf('\n.satr {'));
+  });
+});
+
 describe('الشريط المطويّ يبقى مقروءًا', () => {
+  it('لا يعيد رقعة أيقونة إلى حالة «لا أمر بعد»', () => {
+    expect(OPERATION).not.toContain('.satr__rail-glyph');
+  });
+
   it('يقيس على أرضية اللوحة نفسها', () => {
     // حارسٌ على الاختبار: كان يقيس على `--bg-canvas` مكتوبًا هنا بينما أرضية
     // اللوحة `--bg-sunken`، فكان يحرس تباينًا على سطحٍ لا وجود له في الشاشة.

@@ -24,16 +24,30 @@ impl Tool {
     /// يُستدعى عند كل تخطيط لا مرة واحدة عند الإقلاع: الغياب بين الإقلاع
     /// والتنفيذ حالة واقعية (تحديث نظام، قرص مفصول).
     pub fn resolve(&self) -> Result<PathBuf> {
-        let p = Path::new(self.absolute);
-        let meta = std::fs::metadata(p).map_err(|_| CoreError::ToolMissing { id: self.id })?;
-        if !meta.is_file() {
-            return Err(CoreError::ToolNotExecutable { id: self.id });
-        }
-        if !is_executable(&meta) {
-            return Err(CoreError::ToolNotExecutable { id: self.id });
-        }
-        Ok(p.to_path_buf())
+        resolve_executable(self.id, Path::new(self.absolute))
     }
+}
+
+/// الفحص الذي يجريه `Tool::resolve` نفسه، معزولًا لمسارٍ لا يُعرَف وقت
+/// البناء.
+///
+/// أدوات Node — `npm`، و`node_modules/.bin/tauri` — مساراتها ليست ثابتةً في
+/// النظام كـ`ditto`: يختارها المستخدم (أو تُشتقّ من اختياره) وقت التشغيل.
+/// الثابت الذي لا يتغيّر هو **الفحص**، لا المسار — فالتحقّق واحدٌ يُستدعى
+/// من الحالتين، بدل نسخةٍ ثانية قد تفترق عن الأولى يومًا.
+///
+/// **هذا وحده لا يكفي أمانًا لمسارٍ من المستخدم**: يثبت أن الملف تنفيذيّ، لا
+/// أنه الأداة التي يظنّها المستخدم. الاستدعاء يمرّ أولًا بسياسة المسارات
+/// (‏`ExistingFile`)، فهذا تحقّقٌ إضافي فوقها لا بديلٌ عنها.
+pub fn resolve_executable(id: &'static str, p: &Path) -> Result<PathBuf> {
+    let meta = std::fs::metadata(p).map_err(|_| CoreError::ToolMissing { id })?;
+    if !meta.is_file() {
+        return Err(CoreError::ToolNotExecutable { id });
+    }
+    if !is_executable(&meta) {
+        return Err(CoreError::ToolNotExecutable { id });
+    }
+    Ok(p.to_path_buf())
 }
 
 fn is_executable(meta: &std::fs::Metadata) -> bool {
@@ -93,6 +107,9 @@ pub const DF: Tool = Tool::new("df", "/bin/df");
 /// عرض الصلاحيات وقوائم التحكّم والسمات الممتدّة. `-l` تكشف ACL، و`-@` السمات.
 pub const LS: Tool = Tool::new("ls", "/bin/ls");
 
+/// تعرّف نوع ملفٍّ من محتواه (magic bytes)، لا من امتداد اسمه.
+pub const FILE: Tool = Tool::new("file", "/usr/bin/file");
+
 /// دمج الملفات. تكتب إلى `stdout` وحده، فيُوجَّه إلى ناتج العملية في النواة.
 pub const CAT: Tool = Tool::new("cat", "/bin/cat");
 
@@ -127,6 +144,10 @@ pub const TEXTUTIL: Tool = Tool::new("textutil", "/usr/bin/textutil");
 /// مقارنة ملفين نصيين. `-u` تنتج فرقًا موحّدًا يقرؤه البشر والأدوات معًا.
 pub const DIFF: Tool = Tool::new("diff", "/usr/bin/diff");
 
+/// مقارنة ملفين بايتًا بايت. تتوقّف عند أول اختلاف — أسرع من بصمةٍ كاملة،
+/// وأضيق منها: تحتاج الملفين حاضرين معًا، لا بصمةً منشورة من مكانٍ آخر.
+pub const CMP: Tool = Tool::new("cmp", "/usr/bin/cmp");
+
 /// البحث داخل الملفات. يُستعمل للبحث وحده — الاستبدال داخل الملفات مؤجَّل،
 /// لأنه تعديلٌ في مكانه لا يمرّ بالترقية الذرّية التي يقوم عليها هذا المنتج.
 pub const GREP: Tool = Tool::new("grep", "/usr/bin/grep");
@@ -160,6 +181,54 @@ pub const PS: Tool = Tool::new("ps", "/bin/ps");
 pub const SW_VERS: Tool = Tool::new("sw_vers", "/usr/bin/sw_vers");
 pub const UPTIME: Tool = Tool::new("uptime", "/usr/bin/uptime");
 pub const SYSTEM_PROFILER: Tool = Tool::new("system_profiler", "/usr/sbin/system_profiler");
+/// معمارية المعالج (‏`arm64`، `x86_64`) — سؤالٌ عن الجهاز، لا عن نسخة macOS
+/// التي تجيب عنها `sw_vers`.
+pub const UNAME: Tool = Tool::new("uname", "/usr/bin/uname");
+
+/// البحث عن عمليةٍ بالاسم. **قارئةٌ فقط** خلافًا لأختها `pkill` التي تحمل
+/// الاسم نفسه تقريبًا وتُنهي ما تجده — وهذه لا تملك رايةً تُنهي شيئًا أصلًا،
+/// و`pkill` غير معلَنة في هذا الملفّ فلا سبيل إليها من المنتج كلّه.
+pub const PGREP: Tool = Tool::new("pgrep", "/usr/bin/pgrep");
+
+/// سجلّ النظام الموحَّد. أداةٌ خطرة الأفعال وآمنة الاستعمال هنا بالبنية لا
+/// بالفحص: `log erase` تمحو أرشيف السجلّات و`log config` تغيّر إعداد التسجيل،
+/// ولا سبيل إلى أيٍّ منهما لأن الفعل `show` سلسلةٌ ثابتة تدخل الثنائيّة عند
+/// الترجمة — نفس منطق `diskutil list` في `disk_list.rs`.
+pub const LOG: Tool = Tool::new("log", "/usr/bin/log");
+
+/// إرسال إشارةٍ إلى عمليةٍ برقمها. **لا `pkill` ولا `killall`**: كلتاهما
+/// تُنهيان كلّ ما يطابق اسمًا دفعةً واحدة — عددًا لا يظهر في الأمر المعروض
+/// ولا يعرفه المستخدم قبل الضغط. هذه تأخذ رقمًا واحدًا فتُصيب عمليةً واحدة
+/// مكتوبةً أمام عينه.
+pub const KILL: Tool = Tool::new("kill", "/bin/kill");
+
+/// أداتا Node.js وTauri CLI — استثناءٌ عن قاعدة هذا الملف.
+///
+/// كل أداة أخرى هنا مسارها ثابتٌ في نظام التشغيل. `npm` و`tauri` (المحلّي في
+/// `node_modules/.bin`) ليستا كذلك: يثبّتهما المستخدم بنفسه في مسارٍ يختاره
+/// هو، ويُحلّان وقت التخطيط من ذلك الاختيار — انظر `ops/dev_common.rs`.
+///
+/// فلماذا `Tool` بهذا الشكل إذن؟ لأن `Availability::of` تحتاج مسارًا مطلقًا
+/// حقيقيًا تفحصه لتقرّر «هل هذه العملية متاحةٌ على هذا الجهاز؟» — وهذا سؤالٌ
+/// عن **الجهاز**، لا عن إعداد المستخدم. إعداد المستخدم يُفحص لاحقًا كمدخلٍ
+/// عاديّ (`node_path`)، وله رسالة رفضٍ خاصّة إن غاب أو كان فاسدًا.
+///
+/// فالمسار المطلق هنا `/usr/bin/env` نفسه — حاضرٌ دائمًا على macOS، وهو فعلًا
+/// ما يُفسِّر شِبَنغ `#!/usr/bin/env node` الذي تبدأ به `npm` و`tauri.js`
+/// كلتاهما. أمّا الهوية (`id`) فتحمل الاسم الحقيقي وحده، فيظهر في البحث
+/// وفي رسائل الخطأ باسمه لا باسم `env`.
+pub const NPM: Tool = Tool::new("npm", "/usr/bin/env");
+pub const TAURI_CLI: Tool = Tool::new("tauri", "/usr/bin/env");
+
+/// أداة Cargo — نفس منطق `NPM`/`TAURI_CLI` أعلاه، بمرساةٍ مختلفة.
+///
+/// ‏`cargo` ملفٌّ تنفيذي أصيل (‏Mach-O)، لا شِبَنغ `env` — فلا صلة لها بـ
+/// `/usr/bin/env` كما كانت `npm`. لكنها تحتاج المصرّف والرابط (‏`cc`،
+/// `xcrun`) لأي بناءٍ حقيقي، وهذا مُثبَتٌ تجريبيًا: `cargo check` تفشل بلا
+/// `/usr/bin/cc` بالضبط. فهو المرساة الصادقة هنا: «هل هذا الجهاز يملك أصلًا
+/// ما يلزم لبناء Rust؟» — سؤالٌ عن الجهاز، منفصلٌ عن مسار `cargo` نفسه الذي
+/// يختاره المستخدم في الإعداد (`cargo_path`، مثل `node_path`).
+pub const CARGO: Tool = Tool::new("cargo", "/usr/bin/cc");
 pub const DISKUTIL: Tool = Tool::new("diskutil", "/usr/sbin/diskutil");
 
 /// تفريغ ذاكرة DNS المؤقتة.
@@ -197,6 +266,7 @@ mod tests {
         DU,
         DF,
         LS,
+        FILE,
         CAT,
         SPLIT,
         UNZIP,
@@ -205,6 +275,7 @@ mod tests {
         QLMANAGE,
         TEXTUTIL,
         DIFF,
+        CMP,
         GREP,
         WC,
         SHASUM,
@@ -217,6 +288,10 @@ mod tests {
         SW_VERS,
         UPTIME,
         SYSTEM_PROFILER,
+        UNAME,
+        PGREP,
+        LOG,
+        KILL,
         DISKUTIL,
         DSCACHEUTIL,
         XATTR,

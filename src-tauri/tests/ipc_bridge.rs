@@ -619,14 +619,73 @@ fn the_run_events_carry_the_payloads_the_frontend_listens_for() {
     let f = next(&finished, "run://finished");
     assert_eq!(
         keys(&f),
-        set(&["run_id", "status", "produced"]),
+        set(&["run_id", "status", "produced", "result"]),
         "a successful RunFinished carries exactly these — {f}"
     );
     assert_eq!(f["run_id"], json!(run_id));
     assert_eq!(f["status"], json!("success"), "the tag the run screen switches on");
     assert_eq!(f["produced"], Value::Null, "echo writes nothing");
+    assert_eq!(
+        f["result"],
+        json!({
+            "category": "raw_output",
+            "semantic": "completed",
+            "type": "raw_output",
+            "lines": [{ "stream": "stdout", "line": "سلام" }]
+        }),
+        "ResultView receives typed Rust-captured output, not a template hint"
+    );
 
     settle(&bridge, &run_id);
+}
+
+/// The terminal event serializes `ResultContract` directly. Exercise the rich
+/// and fallback shapes at the crate boundary without relying on a frontend
+/// parser or on launching a platform tool.
+#[test]
+fn structured_and_raw_result_contracts_have_honest_wire_discriminants() {
+    use naffith_core::result::{RawOutputLine, ResultContract, ResultSemantic};
+
+    let structured = ResultContract::for_operation(
+        "files.find.name",
+        ResultSemantic::Completed,
+        None,
+        vec![RawOutputLine::Stdout("/tmp/found.txt".into())],
+        None,
+    );
+    assert_eq!(
+        serde_json::to_value(&structured).unwrap(),
+        json!({
+            "category": "collection",
+            "semantic": "completed",
+            "type": "collection",
+            "kind": "file_matches",
+            "columns": ["result.column.path"],
+            "rows": [{ "cells": ["/tmp/found.txt"], "stream": "stdout" }],
+            "notices": []
+        })
+    );
+
+    let raw = ResultContract::for_operation(
+        "system.report",
+        ResultSemantic::Completed,
+        None,
+        vec![RawOutputLine::Stdout("human system_profiler prose".into())],
+        None,
+    );
+    assert_eq!(
+        serde_json::to_value(&raw).unwrap(),
+        json!({
+            "category": "raw_output",
+            "semantic": "completed",
+            "type": "raw_output",
+            "lines": [{ "stream": "stdout", "line": "human system_profiler prose" }]
+        })
+    );
+
+    let encoded = serde_json::to_value(structured).unwrap();
+    let decoded: ResultContract = serde_json::from_value(encoded).unwrap();
+    assert_eq!(decoded.category, naffith_core::result::ResultCategory::Collection);
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -742,9 +801,57 @@ fn the_journal_crosses_the_bridge_as_the_entries_the_run_log_draws() {
     let finished = entries.last().unwrap();
     assert_eq!(finished["produced"], Value::Null, "echo produces no artifact");
     assert!(finished["duration_ms"].is_u64(), "the final entry carries its duration: {finished}");
+    assert_eq!(finished["result"]["category"], json!("raw_output"));
+    assert_eq!(finished["result"]["semantic"], json!("completed"));
+    assert_eq!(finished["result"]["type"], json!("raw_output"));
+    assert_eq!(finished["result"]["lines"], json!([{ "stream": "stdout", "line": "قيد" }]));
     assert!(
         entries[0].get("duration_ms").is_none(),
         "a plan preview has no duration; the field must be absent, not a lie"
+    );
+}
+
+#[test]
+fn secret_input_values_never_cross_back_out_in_persisted_command_arguments() {
+    let scratch = Scratch::new("journal-secret-argv");
+    let destination = scratch.dir("وجهة");
+    let bridge = Bridge::new(Policy::for_build(), Some(scratch.journal()));
+    let secret = "https://example.com/file?token=SECRET-DO-NOT-LOG";
+
+    let planned = bridge.ok(
+        "plan",
+        plan_args(
+            "net.download",
+            json!({
+                "url": text_value(secret),
+                "destination": path_value(&destination),
+                "out_name": text_value("ملف.bin"),
+            }),
+        ),
+    );
+    let run_id = planned["plan_id"].as_str().unwrap();
+    let entries = bridge.ok("recent_runs", json!({}));
+    let entry = entries
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["id"] == json!(run_id))
+        .expect("planning must create its audit entry");
+
+    let persisted = serde_json::to_string(entry).unwrap();
+    assert!(!persisted.contains(secret), "a secret URL leaked into Run Log: {entry}");
+    assert_eq!(
+        entry["inputs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|input| input["id"] == json!("url"))
+            .unwrap()["value"],
+        Value::Null
+    );
+    assert!(
+        entry["args"].as_array().unwrap().iter().any(|arg| arg == "[redacted]"),
+        "the command must retain an explicit redaction marker: {entry}"
     );
 }
 
@@ -972,4 +1079,58 @@ fn the_production_policy_refuses_the_internal_operation_over_the_wire() {
         let listed = bridge.ok("list_operations", json!({}));
         assert!(!listed.to_string().contains("internal."), "{listed}");
     }
+}
+
+/// أمر `plan` لا يقف حين يمسك غيرُه قفل السجلّ.
+///
+/// هذا هو مسار التجمّد بعينه: `plan` أمرٌ متزامن، والأوامر المتزامنة في Tauri
+/// تعمل على الخيط الرئيسي؛ وكان `plan` يكتب قيد «خُطِّط» تحت `flock(LOCK_EX)`
+/// بلا سقف. فنسخةٌ ثانية من التطبيق — أو خيطُ المنفّذ في هذه العملية — تمسك
+/// القفل، فيقف الخيط الرئيسي داخل نداء نظام، وتتوقّف حلقة أحداث AppKit،
+/// ويعرض macOS «التطبيق لا يستجيب».
+///
+/// ويُقاد هنا `ipc_handler` الحقيقي لا نسخةٌ منه: المقيس هو الأمر كما تناديه
+/// الواجهة، لا الدالّة تحته.
+#[test]
+fn plan_does_not_stall_while_a_peer_holds_the_journal_lock() {
+    use std::os::unix::io::AsRawFd;
+
+    let scratch = Scratch::new("plan-lock");
+    let source = scratch.dir("مصدر");
+    std::fs::write(source.join("ملف.txt"), b"bytes").unwrap();
+    let destination = scratch.dir("وجهة");
+
+    // جارٌ يمسك القفل الحصريّ على ملف السجلّ ولا يُفلته.
+    let journal = scratch.journal();
+    if let Some(dir) = journal.parent() {
+        std::fs::create_dir_all(dir).unwrap();
+    }
+    let peer = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&journal)
+        .unwrap();
+    assert_eq!(unsafe { libc::flock(peer.as_raw_fd(), libc::LOCK_EX) }, 0);
+
+    let bridge = Bridge::new(Policy::for_build(), Some(journal.clone()));
+    let started = std::time::Instant::now();
+    let r = bridge.ok(
+        "plan",
+        plan_args("compress.folder.zip", compress_inputs(&source, &destination, "أرشيف")),
+    );
+    let waited = started.elapsed();
+
+    unsafe { libc::flock(peer.as_raw_fd(), libc::LOCK_UN) };
+    drop(peer);
+
+    // الخطة تُبنى وتعود كاملةً: تعذُّرُ كتابة السطر لا يُسقط التخطيط.
+    assert!(r["token"].is_string(), "plan must still answer while contended: {r}");
+
+    // والسقف هو المقصود: بلا `LOCK_NB` كان هذا الانتظار بلا نهاية.
+    assert!(
+        waited < std::time::Duration::from_secs(5),
+        "plan waited {waited:?} on a contended journal lock — the main thread would freeze"
+    );
 }

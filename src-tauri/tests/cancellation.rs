@@ -30,6 +30,7 @@ fn command(program: &str, args: &[&str], artifact: Option<Artifact>) -> PlannedC
         estimate: None,
         stdout_to: None,
         reveal_target: None,
+        extra_path: Vec::new(),
     }
 }
 
@@ -73,6 +74,9 @@ async fn next_number(rx: &mut mpsc::Receiver<OutputLine>) -> i32 {
         }
         OutputLine::Truncated { dropped } => {
             panic!("a pid probe cannot overflow the stream ceiling, yet {dropped} were dropped")
+        }
+        OutputLine::Omitted { .. } => {
+            panic!("result-tail omission markers must never enter the live output stream")
         }
     }
 }

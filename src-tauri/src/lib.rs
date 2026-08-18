@@ -1,4 +1,4 @@
-//! نَفِّذ — سَطْر · النواة.
+//! نَفِّذ · النواة.
 //!
 //! ## الأطروحة
 //!
@@ -26,6 +26,7 @@ pub mod planner;
 pub mod plans;
 pub mod policy;
 pub mod registry;
+pub mod result;
 pub mod reveal;
 pub mod spec;
 #[cfg(test)]
@@ -158,6 +159,7 @@ pub struct RunOutput {
 #[derive(Debug, Serialize, Clone)]
 pub struct RunFinished {
     pub run_id: String,
+    pub result: result::ResultContract,
     #[serde(flatten)]
     pub outcome: Outcome,
 }
@@ -195,7 +197,7 @@ fn list_operations(state: State<'_, AppState>) -> Vec<OperationSummary> {
 /// فورًا في كل مسار خروج — لأن قراءة بتات الصلاحيات تكذب تحت ACL أو قرص
 /// للقراءة فقط. اختبار في `paths.rs` و`ops/compress_ditto.rs` يثبت ألّا بقيّة.
 #[tauri::command]
-fn plan(
+async fn plan(
     state: State<'_, AppState>,
     op_id: String,
     inputs: BTreeMap<String, value::RawValue>,
@@ -204,14 +206,14 @@ fn plan(
         let mut store = recover(&state.plans);
         planner::plan(&mut store, &state.session, state.policy, &op_id, &inputs)?
     };
-    let planner::Planned { response, journal_inputs } = planned;
+    let planner::Planned { response, journal_inputs, journal_argv } = planned;
 
     // قيدٌ عند التخطيط: خطةٌ رُوجعت ثم تُركت أثرٌ يستحق أن يُرى في السجل.
     state.journal.record(
         Entry::new(response.plan_id.clone(), response.op_id, journal::State::Planned)
             .with_command(
-                response.argv_display.first().cloned().unwrap_or_default(),
-                response.argv_display.iter().skip(1).cloned().collect(),
+                journal_argv.first().cloned().unwrap_or_default(),
+                journal_argv.iter().skip(1).cloned().collect(),
                 response.working_directory.clone(),
             )
             .with_category(&category_name(response.category))
@@ -257,15 +259,21 @@ async fn execute(
     let command = stored.command.clone();
     let op_id = stored.op_id;
     let program = command.program.display().to_string();
-    let args: Vec<String> = command.args.iter().map(|a| a.to_string_lossy().into_owned()).collect();
     let cwd = command.cwd.as_ref().map(|p| p.display().to_string());
 
     // القسم والمدخلات يُخرجان من الفهرس والخطة المحفوظة، لا ممّا ترسله الواجهة:
     // القيد أثرٌ لما نُفِّذ فعلًا، والمدخلات المحفوظة هي **المُتحقَّق منها** —
     // المسار المحلول لا الرابط الرمزي الذي كُتب في الحقل.
-    let (category, journal_inputs) = match registry::find(op_id, state.policy) {
-        Ok(op) => (Some(category_name(op.category)), stored.inputs.journal_form(op)),
-        Err(_) => (None, Vec::new()),
+    let (category, journal_inputs, args) = match registry::find(op_id, state.policy) {
+        Ok(op) => (
+            Some(category_name(op.category)),
+            stored.inputs.journal_form(op),
+            stored.inputs.journal_args(op, &command.args),
+        ),
+        // A consumed plan should always resolve to the specification that
+        // created it. If that invariant is ever broken, fail closed in the
+        // persistent audit trail rather than storing possibly secret argv.
+        Err(_) => (None, Vec::new(), vec!["[redacted]".to_owned(); command.args.len()]),
     };
 
     let mut running = Entry::new(run_id.clone(), op_id, journal::State::Running)
@@ -283,12 +291,14 @@ async fn execute(
     // الذيل يُجمع هنا لا في `executor`: هذا الموضع يرى كل سطرٍ مرّةً واحدة
     // بترتيبه، والمنفّذ يبثّ من مهمّتين متوازيتين. وحدّه في `journal.rs` —
     // اثنا عشر سطرًا مقصوصة — لا يجعله نسخةً من الخرج بل موضعَ رسالة الخطأ.
-    let (tail_tx, tail_rx) = oneshot::channel::<Vec<String>>();
+    let (tail_tx, tail_rx) = oneshot::channel::<(Vec<String>, Vec<OutputLine>, Vec<OutputLine>)>();
     let emit_app = app.clone();
     let emit_run = run_id.clone();
     tokio::spawn(async move {
         let mut tail: std::collections::VecDeque<String> =
             std::collections::VecDeque::with_capacity(journal::MAX_TAIL_LINES);
+        let mut result_tail = result::EventOutputTail::with_limit(journal::MAX_TAIL_LINES);
+        let mut result_output = result::EventOutputTail::new();
         while let Some(line) = out_rx.recv().await {
             if let OutputLine::Stdout(s) | OutputLine::Stderr(s) = &line {
                 if tail.len() == journal::MAX_TAIL_LINES {
@@ -296,9 +306,15 @@ async fn execute(
                 }
                 tail.push_back(s.clone());
             }
+            result_tail.push(line.clone());
+            result_output.push(line.clone());
             let _ = emit_app.emit("run://output", RunOutput { run_id: emit_run.clone(), line });
         }
-        let _ = tail_tx.send(tail.into_iter().collect());
+        let _ = tail_tx.send((
+            tail.into_iter().collect(),
+            result_tail.into_lines(),
+            result_output.into_lines(),
+        ));
     });
 
     let done_app = app.clone();
@@ -316,7 +332,7 @@ async fn execute(
         let started = Instant::now();
         // `Outcome::Success` لا يُبنى إلا بعد ترقية الناتج إلى اسمه النهائي،
         // فقيد `succeeded` لا يمكن أن يسبقها. انظر `executor::run`.
-        let outcome = executor::run(command, out_tx, cancel_rx).await;
+        let execution = executor::run_for(op_id, command, out_tx, cancel_rx).await;
 
         // التحرير صراحةً هنا لا عند نهاية المهمة: الواجهة قد تُطلق تشغيلًا
         // تاليًا فور وصول `run://finished`، فلا يجوز أن تكون الخانة محجوزة
@@ -325,7 +341,27 @@ async fn execute(
 
         // مهمّة البثّ تُغلق قناتها بعد آخر سطر، فالذيل جاهزٌ هنا حتمًا. وفشل
         // الاستقبال — لو ذُعرت تلك المهمّة — يكلّف الذيل وحده لا القيد كلّه.
-        let tail = tail_rx.await.unwrap_or_default();
+        let (tail, result_tail, result_output) = tail_rx.await.unwrap_or_default();
+
+        let reveal_kind = execution
+            .outcome
+            .produced()
+            .and_then(|path| reveal::safe_target_kind(std::path::Path::new(path)));
+        let journal_result = result::ResultContract::for_operation(
+            op_id,
+            execution.semantic,
+            execution.outcome.produced(),
+            result_tail,
+            reveal_kind,
+        );
+        let event_result = result::ResultContract::for_operation(
+            op_id,
+            execution.semantic,
+            execution.outcome.produced(),
+            result_output,
+            reveal_kind,
+        );
+        let outcome = execution.outcome;
 
         let state: State<'_, AppState> = done_app.state();
         let mut finished =
@@ -333,13 +369,17 @@ async fn execute(
                 .with_command(program, args, cwd)
                 .with_duration(started.elapsed().as_millis() as u64)
                 .with_inputs(journal_inputs)
-                .with_tail(tail);
+                .with_tail(tail)
+                .with_result(journal_result);
         if let Some(c) = &category {
             finished = finished.with_category(c);
         }
         state.journal.record(finished);
 
-        let _ = done_app.emit("run://finished", RunFinished { run_id: done_run, outcome });
+        let _ = done_app.emit(
+            "run://finished",
+            RunFinished { run_id: done_run, result: event_result, outcome },
+        );
     });
 
     let _ = app.emit("run://started", RunStarted { run_id: run_id.clone() });
@@ -378,7 +418,7 @@ fn recent_runs(state: State<'_, AppState>) -> Vec<Entry> {
 /// ولا يمسّ هذا شيئًا على القرص خارج ملف السجلّ: التشغيل الذي حُذف قيدُه ما زال
 /// ناتجه في مكانه. حذفُ الأثر ليس حذف ما فعله.
 #[tauri::command]
-fn journal_delete(state: State<'_, AppState>, run_id: String) -> Result<()> {
+async fn journal_delete(state: State<'_, AppState>, run_id: String) -> Result<()> {
     state.journal.delete(&run_id)
 }
 
@@ -386,7 +426,7 @@ fn journal_delete(state: State<'_, AppState>, run_id: String) -> Result<()> {
 ///
 /// أمرٌ في الحدّ لا حذفٌ للملف من الواجهة: الواجهة لا تملك مسارًا أصلًا.
 #[tauri::command]
-fn journal_clear(state: State<'_, AppState>) -> Result<()> {
+async fn journal_clear(state: State<'_, AppState>) -> Result<()> {
     state.journal.clear()
 }
 
@@ -434,6 +474,9 @@ pub fn run() {
             Ok(())
         })
         .plugin(tauri_plugin_dialog::init())
+        // لا تفشل التهيئة حين لا تكون نقطة التحديث مضبوطة: الإضافة تُسجَّل
+        // دائمًا، و`check` وحدها هي التي تُرجع خطأً صريحًا تعرضه الشاشة.
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(ipc_handler())
         .run(tauri::generate_context!())
         .expect("error while running naffith");
@@ -455,6 +498,7 @@ mod tests {
             estimate: None,
             stdout_to: None,
             reveal_target: None,
+            extra_path: Vec::new(),
         }
     }
 

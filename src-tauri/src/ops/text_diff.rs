@@ -25,18 +25,8 @@
 //! يقول `man diff`: `0` لا فرق، `1` وُجد فرق، وما فوق خطأ. أي أن **النجاح
 //! التام** لهذه العملية — أن تجد فرقًا وتعرضه — يخرج بـ‎1‎.
 //!
-//! و`executor.rs` اليوم يعرف حالةً واحدة: `status.success()` أو `Failed`.
-//! فالفرق الذي وُجد وعُرض كاملًا على الشاشة يُقيَّد في السجلّ «فشلت» ويُعرض
-//! «لم تكتمل العملية · رمز الخروج ‎1‎». الخرج صحيح والحكم عليه خاطئ.
-//!
-//! العلاج الصحيح أن تعلن `OperationSpec` رموز الخروج التي تعدّها نجاحًا
-//! (‏`success_exit_codes: &[0, 1]`) وأن يقرأها `executor`؛ وهو تغييرٌ في
-//! `spec.rs` و`executor.rs` معًا، أي في ملفّين مشتركين بين كل العمليات، فلا
-//! يصحّ أن يُدسّ في عمليةٍ واحدة. مسجَّلٌ في خارطة الطريق.
-//!
-//! وحتى ذلك الحين **يُقال قبل التنفيذ لا بعده**: `warn.diff.exit_code`
-//! تُعلَن في كل خطة. أن يقرأ المستخدم «الفرق سيظهر، وقد تُوسم العملية فاشلة»
-//! قبل الضغط أهون من أن يظنّ بعدها أن شيئًا تعطّل.
+//! عقد النتائج يترجم الصفر إلى `no_differences` والواحد إلى `differences`؛
+//! كلاهما جوابٌ مكتمل، وما فوق الواحد وحده فشل تنفيذ.
 
 use crate::error::{CoreError, Result};
 use crate::ops::common::{warn_if_resolved, Argv};
@@ -92,8 +82,7 @@ fn plan(inputs: &Inputs) -> Result<PlannedCommand> {
 }
 
 fn warnings_for(inputs: &Inputs, left: &Path, right: &Path) -> Vec<&'static str> {
-    // خاصيّةٌ ثابتة في الأداة وفي نموذج التنفيذ معًا، فتُعلَن في كل خطة.
-    let mut warnings = vec!["warn.diff.exit_code"];
+    let mut warnings = Vec::new();
     warnings.extend(warn_if_resolved(inputs, "left", left, "warn.source.resolved"));
     warnings.extend(warn_if_resolved(inputs, "right", right, "warn.source.resolved"));
     warnings
@@ -207,13 +196,13 @@ mod tests {
     }
 
     #[test]
-    fn the_exit_code_model_is_announced_before_the_run_not_explained_after_it() {
+    fn the_result_contract_replaces_the_obsolete_exit_code_warning() {
         let s = Scratch::new("diff-warn").unwrap();
         let left = s.file("أ", b"1\n");
         let right = s.file("ب", b"2\n");
 
         let cmd = plan_with(&left, &right).unwrap();
-        assert!(cmd.warnings.contains(&"warn.diff.exit_code"), "{:?}", cmd.warnings);
+        assert!(!cmd.warnings.contains(&"warn.diff.exit_code"), "{:?}", cmd.warnings);
     }
 
     #[test]

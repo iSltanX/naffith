@@ -10,11 +10,12 @@
 //! تعيد التحقّق منه بالسياسة نفسها التي تحكم كل مسار في المنتج. لا يوجد مدخل
 //! يجعل هذه الدالة تفتح موضعًا لم تنتجه بنفسها.
 //!
-//! ولا شيء يُكتب: `open -R` تُبرز الملف في نافذة Finder ولا تفتحه ولا تعدّله.
+//! ولا شيء يُكتب: `open -R` تُبرز الملف أو المجلد في Finder ولا تعدّله.
 
 use crate::error::{CoreError, Result};
 use crate::journal::Journal;
 use crate::paths;
+use crate::result::RevealKind;
 use crate::tools;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -26,11 +27,24 @@ use std::process::Stdio;
 pub fn resolve_target(journal: &Journal, run_id: &str) -> Result<PathBuf> {
     let produced = journal.produced_for(run_id).ok_or(CoreError::NothingToReveal)?;
     // المسار خرج من سجلّنا، ومع ذلك يمرّ بالسياسة كاملة: السجل قد يكون قديمًا،
-    // والملف قد يكون استُبدل برابط يشير خارج الجذور المسموحة.
-    paths::existing_file(Path::new(&produced))
+    // والهدف قد يكون استُبدل برابط يشير خارج الجذور المسموحة.
+    paths::existing_path(Path::new(&produced))
 }
 
-/// يُبرز الملف في Finder. لا يفتحه ولا يشغّله.
+/// Describe a target only when it currently passes the same policy as reveal.
+///
+/// This is UI metadata, not authorization. `resolve_target` repeats the full
+/// check when the user invokes the existing run-scoped command.
+pub fn safe_target_kind(path: &Path) -> Option<RevealKind> {
+    let target = paths::existing_path(path).ok()?;
+    if target.is_dir() {
+        Some(RevealKind::Directory)
+    } else {
+        Some(RevealKind::File)
+    }
+}
+
+/// يُبرز الملف أو المجلد في Finder. لا يفتحه ولا يشغّله.
 pub fn reveal(path: &Path) -> Result<()> {
     let program = tools::OPEN.resolve()?;
     // مصفوفة وسائط، لا صدفة. والمسار مطلق (خرج من `canonicalize`) فلا يُقرأ راية.
@@ -127,6 +141,30 @@ mod tests {
         assert_eq!(target, archive.canonicalize().unwrap());
 
         std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn a_successful_run_may_reveal_a_safe_directory() {
+        let Some(home) = std::env::var_os("HOME").map(PathBuf::from) else { return };
+        let base =
+            home.join(format!(".naffith-test-reveal-directory-{}", crate::plans::random_suffix()));
+        let directory = base.join("الناتج");
+        std::fs::create_dir_all(&directory).unwrap();
+
+        let j = journal_with(
+            "r1",
+            State::Succeeded { produced: Some(directory.display().to_string()) },
+        );
+        let target = resolve_target(&j, "r1").unwrap();
+        assert_eq!(target, directory.canonicalize().unwrap());
+        assert_eq!(safe_target_kind(&target), Some(RevealKind::Directory));
+
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn reveal_metadata_still_fails_closed_outside_policy() {
+        assert_eq!(safe_target_kind(Path::new("/etc")), None);
     }
 
     #[test]

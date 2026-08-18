@@ -13,11 +13,30 @@ pub mod common;
 pub mod compress_ditto;
 pub mod internal_echo;
 
+// ── أدوات المطوّرين ─────────────────────────────────────────────────────
+pub mod dev_cargo_build_release;
+pub mod dev_cargo_check;
+pub mod dev_cargo_clean;
+pub mod dev_cargo_clippy;
+pub mod dev_cargo_fmt;
+pub mod dev_cargo_fmt_check;
+pub mod dev_cargo_test;
+pub mod dev_common;
+pub mod dev_npm_dev;
+pub mod dev_npm_install;
+pub mod dev_npm_lint;
+pub mod dev_npm_test;
+pub mod dev_npm_typecheck;
+pub mod dev_tauri_build;
+pub mod dev_tauri_dev;
+
 // ── الملفات والمجلدات ───────────────────────────────────────────────────
 pub mod files_copy;
 pub mod files_find_large;
 pub mod files_find_name;
 pub mod files_find_stale;
+pub mod files_identify;
+pub mod files_list;
 pub mod files_mkdir;
 pub mod files_move;
 pub mod files_open;
@@ -46,6 +65,8 @@ pub mod text_split;
 
 // ── الأقراص ومساحة التخزين ──────────────────────────────────────────────
 pub mod disk_compare;
+pub mod disk_compare_bytes;
+pub mod disk_directory_open_handles;
 pub mod disk_free;
 pub mod disk_hash;
 pub mod disk_list;
@@ -55,25 +76,38 @@ pub mod net_dns;
 pub mod net_download;
 pub mod net_headers;
 pub mod net_ping;
+pub mod net_port_owner;
 pub mod net_ports;
 
 // ── الأمان والصلاحيات ───────────────────────────────────────────────────
 pub mod security_codesign;
+pub mod security_codesign_verify;
 pub mod security_gatekeeper;
 pub mod security_permissions;
 pub mod security_xattr;
 
 // ── Git ومستودعات الشفرة ────────────────────────────────────────────────
 pub mod git_archive;
+pub mod git_blame;
 pub mod git_branches;
 pub mod git_commit;
 pub mod git_diff;
+pub mod git_diff_commits;
+pub mod git_grep;
 pub mod git_init;
+pub mod git_log;
+pub mod git_show_file;
 pub mod git_status;
+pub mod git_version;
 
 // ── النظام والصيانة الدورية ─────────────────────────────────────────────
+pub mod system_architecture;
 pub mod system_dns_flush;
 pub mod system_info;
+pub mod system_log_recent;
+pub mod system_process_find;
+pub mod system_process_kill;
+pub mod system_process_open_files;
 pub mod system_processes;
 pub mod system_report;
 pub mod system_uptime;

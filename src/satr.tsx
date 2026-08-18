@@ -17,20 +17,13 @@ import { useEffect, useState } from 'react';
 import type { PlanResponse, TokenRole } from './ipc';
 import { t } from './i18n';
 import RunStream, { type StreamLine, type StreamPhase } from './run-stream';
-import { shellCommand, tokenNotes } from './shell-quote';
+import { shellCommand } from './shell-quote';
 
 const ROLE_CLASS: Record<TokenRole, string> = {
   tool: 'tok-name',
   flag: 'tok-flag',
   path: 'tok-path',
   value: 'tok-string',
-};
-
-const ROLE_LABEL: Record<TokenRole, string> = {
-  tool: 'satr.legend.tool',
-  flag: 'satr.legend.flag',
-  path: 'satr.legend.path',
-  value: 'satr.arg',
 };
 
 /**
@@ -67,12 +60,14 @@ export default function Satr({
   stream = [],
   phase = 'idle',
   status,
+  onCancel,
 }: {
   plan: PlanResponse | null;
   /** ما بثّته النواة من خرج الأداة في التشغيل الحالي. */
   stream?: readonly StreamLine[];
   phase?: StreamPhase;
   status?: string | undefined;
+  onCancel?: (() => void) | undefined;
 }) {
   /**
    * هل الشريط المطويّ محمول؟
@@ -93,6 +88,25 @@ export default function Satr({
     return () => window.clearTimeout(timer);
   }, [plan, idleShown]);
 
+  const stateKey =
+    phase === 'running'
+      ? 'satr.state.running'
+      : phase === 'cancelling'
+        ? 'state.cancelling'
+        : phase === 'finished'
+          ? status === 'success'
+            ? 'satr.state.succeeded'
+            : 'satr.state.failed'
+          : 'satr.state.planned';
+  const stateClass =
+    phase === 'cancelling'
+      ? ' satr__state--warning'
+      : phase === 'finished' && status !== 'success'
+        ? ' satr__state--danger'
+        : phase === 'finished'
+          ? ' satr__state--success'
+          : '';
+
   return (
     <section
       className={`satr${plan ? ' satr--live' : ''}`}
@@ -106,15 +120,24 @@ export default function Satr({
             <h2 id="satr-heading" className="t-card-title satr__name">
               {t('app.satr')}
             </h2>
-            <p className="t-caption satr__subtitle">{t('satr.subtitle')}</p>
+            <p className={`t-caption satr__state${stateClass}`}>{t(stateKey)}</p>
           </div>
           <div className="satr__stage">
             <Preview plan={plan} />
             {/* مجرى التشغيل بعد الأمر ووسائطه وقبل الملاحظات: الأمرُ ما
                 سيُنفَّذ، والمجرى ما قالته الأداة وهي تُنفَّذ، والملاحظات سياسةٌ
                 ثابتة لا تتبدّل بتشغيل. فالترتيب زمنيّ: خطّة، فتنفيذ، فسياسة. */}
-            <RunStream lines={stream} phase={phase} status={status} />
-            <Notes />
+            <RunStream lines={stream} phase={phase} />
+            {(phase === 'running' || phase === 'cancelling') && onCancel && (
+              <button
+                type="button"
+                className={`btn satr__cancel${phase === 'cancelling' ? ' satr__cancel--waiting' : ''}`}
+                onClick={onCancel}
+                disabled={phase === 'cancelling'}
+              >
+                {t(phase === 'cancelling' ? 'state.cancelling' : 'satr.action.cancel')}
+              </button>
+            )}
           </div>
         </>
       ) : null}
@@ -147,12 +170,6 @@ export default function Satr({
 function Rail({ leaving, labelled }: { leaving: boolean; labelled: boolean }) {
   return (
     <div className={`satr__rail${leaving ? ' satr__rail--leaving' : ''}`}>
-      {/* خطٌّ فيه عقدة: سَطْرٌ لم يُكتب بعد. */}
-      <span className="satr__rail-glyph" aria-hidden="true">
-        <svg viewBox="0 0 24 24">
-          <use href="#i-git-commit" />
-        </svg>
-      </span>
       <h2
         id={labelled ? 'satr-heading' : undefined}
         className="t-label satr__rail-name"
@@ -167,6 +184,10 @@ function Rail({ leaving, labelled }: { leaving: boolean; labelled: boolean }) {
 /** الأمر كما سيُنفَّذ: سطرًا واحدًا للقراءة السريعة، ثم وسيطًا وسيطًا للفهم. */
 function Preview({ plan }: { plan: PlanResponse }) {
   const [copied, setCopied] = useState(false);
+  const suspicious = plan.argv_display.some(
+    (token, index) =>
+      index > 0 && /\s/u.test(token) && plan.explain[index]?.role !== 'tool',
+  );
 
   async function copy() {
     await navigator.clipboard.writeText(shellCommand(plan.argv_display));
@@ -174,139 +195,39 @@ function Preview({ plan }: { plan: PlanResponse }) {
     window.setTimeout(() => setCopied(false), 1600);
   }
 
-  // آخر وسيطين هما المصدر والمؤقّت. نعطيهما شرحًا خاصًا لأنهما بيانات لا رايات.
-  const lastIndex = plan.explain.length - 1;
-  const sourceIndex = lastIndex - 1;
-
   return (
-    <>
-      <div className="command">
+      <div className={`command${suspicious ? ' command--suspicious' : ''}`}>
         <div className="command__bar">
           <span className="command__label">{t('satr.title')}</span>
           <button
             type="button"
-            className="btn btn--quiet btn--sm"
+            className="command__copy"
             onClick={copy}
             aria-live="polite"
           >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <use href={copied ? '#i-check' : '#i-copy'} />
-            </svg>
             {copied ? t('action.copied') : t('action.copy')}
           </button>
         </div>
 
         {/* سطر واحد للقراءة السريعة، بنفس ترتيب الوسائط ولونها. */}
-        <div className="command__body">
-          <span className="tok-prompt">$ </span>
-          {plan.argv_display.map((token, i) => (
-            <span key={i}>
-              <span className={ROLE_CLASS[plan.explain[i]?.role ?? 'value']}>{token}</span>
+        <div className={`command__body${plan.argv_display.length === 0 ? ' command__body--empty' : ''}`}>
+          {plan.argv_display.length === 0 ? (
+            <span>{t('satr.command.empty')}</span>
+          ) : plan.argv_display.map((token, i) => {
+            const role = plan.explain[i]?.role ?? 'value';
+            return (
+            <span key={i} className={`command__token command__token--${role}`}>
+              <span className={ROLE_CLASS[role]}>{token}</span>
               {i < plan.argv_display.length - 1 ? ' ' : ''}
             </span>
-          ))}
-        </div>
-      </div>
-
-      {/* الوسائط مفصولة: هنا لا يمكن أن تُقرأ مسافةٌ داخل اسمٍ فاصلًا.
-          والشرح مطويّ في كلٍّ منها. كانت السبعة تُفتح معًا، فتصير اللوحة جدارًا
-          من فقراتٍ عربية يعلو ألفَ بكسل — والأمر، وهو ما جاء المستخدم لأجله،
-          يبقى في أعلاها سطرين. الآن الصفوف قائمةٌ تُمسح بالبصر (رقم، رمز، دور)
-          ويُفتح منها ما يُسأل عنه. */}
-      <h3 className="t-label satr__section">{t('satr.args.heading')}</h3>
-      <ol className="args" aria-label="وسائط الأمر، كلٌّ على حدة">
-        {plan.explain.map((tok, i) => {
-          const notes = tokenNotes(tok.token);
-          const label =
-            i === sourceIndex
-              ? 'explain.role.source'
-              : i === lastIndex
-                ? 'explain.role.temp'
-                : tok.key;
-          const line = (
-            // الرقم والرمز والدور في صفٍّ واحد، والشرح تحته.
-            //
-            // كان الدور شقيقًا لكتلة الشرح كلّها، فكان يحاذي رأس صفٍّ يعلو
-            // ثلاثة أسطر — وسمٌ صغير معلّق بعيدًا عن الرمز الذي يسمّيه. وفي
-            // لوحةٍ أضيق صار ذلك يزاحم الرمز على العرض. موضعُه الصحيح طرفُ
-            // سطر الرمز: هما معًا «هذا الوسيط، وهذا نوعه».
-            <>
-              <span className="arg__index lat" aria-hidden="true">
-                {i === 0 ? '·' : i}
-              </span>
-              <code className={`arg__token ${ROLE_CLASS[tok.role]}`}>{tok.token}</code>
-              <span className="arg__role t-caption">{t(ROLE_LABEL[tok.role])}</span>
-            </>
-          );
-
-          // رمزٌ بلا شرحٍ ولا ملاحظة لا يُلفّ في `details`: قرصُ فتحٍ لا يفتح
-          // شيئًا يَعِد بما ليس هناك.
-          if (!label && notes.length === 0) {
-            return (
-              <li key={i}>
-                <div className="arg">
-                  <div className="arg__line">{line}</div>
-                </div>
-              </li>
             );
-          }
-
-          return (
-            <li key={i}>
-              {/* ‏`details` أصليّ لا زرٌّ وحالة: يعطي المفتاح والدور
-                  و`aria-expanded` مجانًا، ويُفتح حين يبحث المتصفّح في الصفحة.
-                  و`open` حين توجد ملاحظة: الملاحظة تنبيهٌ على محرفٍ مريب في
-                  الاسم، وتنبيهٌ مطويّ تنبيهٌ لم يقع. */}
-              <details className="arg" open={notes.length > 0}>
-                <summary className="arg__line">
-                  {line}
-                  <svg className="arg__caret" viewBox="0 0 24 24" aria-hidden="true">
-                    <use href="#i-chevron-down" />
-                  </svg>
-                </summary>
-                <div className="arg__main">
-                  {label && <p className="t-caption arg__note">{t(label)}</p>}
-                  {notes.length > 0 && (
-                    <p className="t-caption arg__flagged">
-                      <svg viewBox="0 0 24 24" aria-hidden="true">
-                        <use href="#i-info" />
-                      </svg>
-                      {notes.join(' · ')}
-                    </p>
-                  )}
-                </div>
-              </details>
-            </li>
-          );
-        })}
-      </ol>
-
-    </>
-  );
-}
-
-/**
- * سياسة التطبيق: قسمٌ مطويّ كلّه.
- *
- * ثلاث فقرات لا تتبدّل بين تخطيطٍ وآخر — تُقرأ مرّةً ويُرجَع إليها عند السؤال.
- * ومكانها آخر اللوحة لأن ترتيب اللوحة زمنيّ: أمرٌ سيُنفَّذ، فما قالته الأداة وهي
- * تُنفَّذ، فسياسةٌ ثابتة تحكم الاثنين. وفصلُها عن `Preview` هو ما يجعل هذا
- * الترتيب ممكنًا: كانت داخله، فكان كل ما يُضاف بعده يقع بعد السياسة.
- */
-function Notes() {
-  return (
-    <details className="satr__notes">
-      <summary className="t-label satr__section satr__section--fold">
-        {t('satr.notes.heading')}
-        <svg className="arg__caret" viewBox="0 0 24 24" aria-hidden="true">
-          <use href="#i-chevron-down" />
-        </svg>
-      </summary>
-      <div className="satr__notes-body">
-        <p className="t-body-sec">{t('satr.no_shell')}</p>
-        <p className="t-body-sec">{t('satr.promotion')}</p>
-        <p className="t-caption satr__fineprint">{t('satr.copy_note')}</p>
+          })}
+        </div>
+        {suspicious && (
+          <p className="command__warning" role="status">
+            {t('satr.command.suspicious')}
+          </p>
+        )}
       </div>
-    </details>
   );
 }

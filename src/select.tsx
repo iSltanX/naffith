@@ -40,9 +40,25 @@ interface Props {
   value: string;
   options: SelectOption[];
   onChange: (value: string) => void;
+  /** نصٌّ حقيقي للحالة غير المختارة؛ لا نعرض أول خيار وكأنه اختير. */
+  placeholder?: string;
+  disabled?: boolean;
+  describedBy?: string;
+  invalid?: boolean;
+  required?: boolean;
 }
 
-export default function Select({ label, value, options, onChange }: Props): JSX.Element {
+export default function Select({
+  label,
+  value,
+  options,
+  onChange,
+  placeholder = '',
+  disabled = false,
+  describedBy,
+  invalid = false,
+  required = false,
+}: Props): JSX.Element {
   const uid = useId();
   const labelId = `${uid}-label`;
   const listId = `${uid}-list`;
@@ -60,7 +76,7 @@ export default function Select({ label, value, options, onChange }: Props): JSX.
   const typed = useRef<{ text: string; at: number }>({ text: '', at: 0 });
 
   const selected = options.findIndex((o) => o.value === value);
-  const current = options[selected >= 0 ? selected : 0];
+  const current = selected >= 0 ? options[selected] : undefined;
 
   const close = useCallback((focusButton: boolean) => {
     setOpen(false);
@@ -72,10 +88,10 @@ export default function Select({ label, value, options, onChange }: Props): JSX.
   const openAt = useCallback(() => {
     // قائمةٌ بلا خيارات لا تُفتح: صندوقٌ فارغ يطفو فوق الشاشة، و`aria-activedescendant`
     // يشير إلى معرّفٍ لا وجود له فيصمت قارئ الشاشة.
-    if (!options.length) return;
+    if (!options.length || disabled) return;
     setActive(selected >= 0 ? selected : 0);
     setOpen(true);
-  }, [selected, options.length]);
+  }, [selected, options.length, disabled]);
 
   const choose = useCallback(
     (index: number) => {
@@ -245,11 +261,18 @@ export default function Select({ label, value, options, onChange }: Props): JSX.
         aria-controls={open ? listId : undefined}
         aria-activedescendant={open ? optionId(active) : undefined}
         aria-labelledby={`${labelId} ${uid}-value`}
+        aria-describedby={describedBy}
+        aria-invalid={invalid || undefined}
+        aria-required={required || undefined}
+        disabled={disabled}
         onClick={() => (open ? close(false) : openAt())}
         onKeyDown={onKeyDown}
       >
-        <span className="select__value" id={`${uid}-value`}>
-          {current?.label ?? ''}
+        <span
+          className={`select__value${current ? '' : ' select__value--placeholder'}`}
+          id={`${uid}-value`}
+        >
+          {current?.label ?? placeholder}
         </span>
         {/* القرص لا يُقلب مع الاتجاه: سهمٌ إلى أسفل يعني «تنزل قائمة» في
             الاتجاهين، ولا جهة له تُعكس. */}

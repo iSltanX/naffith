@@ -30,11 +30,16 @@ function rustSources(dir: string): string[] {
 
 /** كل نصّ يبدأ بواحدة من بادئات المفاتيح داخل مصادر النواة. */
 function keysEmittedByCore(): Set<string> {
-  const prefixes = ['err.', 'warn.', 'explain.', 'op.'];
+  const prefixes = ['err.', 'warn.', 'explain.', 'op.', 'result.'];
   const found = new Set<string>();
   for (const file of rustSources(CORE_SRC)) {
     const text = readFileSync(file, 'utf8');
-    for (const match of text.matchAll(/"([a-z_]+(?:\.[a-z_]+)+)"/g)) {
+    // ‏`0-9` جزءٌ من صنف المحارف لا زيادة، نظير الشرطة السفلية أدناه في عدّ
+    // العمليات: بدونه كان الفحص يُسقط صامتًا كل مفتاحٍ يحمل رقمًا —
+    // `explain.shasum.sha256` و`explain.sips.rotate.90` و
+    // `op.disk.hash.sha256.*` و`op.text.encoding.utf8.*` وغيرها — فيمرّ
+    // مفتاحٌ بلا ترجمة ولا يسقط الحارس الذي وُضع ليمنع ذلك بعينه.
+    for (const match of text.matchAll(/"([a-z0-9_]+(?:\.[a-z0-9_]+)+)"/g)) {
       const key = match[1];
       if (key && prefixes.some((p) => key.startsWith(p))) found.add(key);
     }
@@ -201,7 +206,9 @@ function requestsFromUi(): Request[] {
     const text = readFileSync(file, 'utf8');
     const where = relative(APP_SRC, file);
     // ‏`(?<![\w$.])` يمنع التقاط `errorText(` و`.t(` ونحوهما.
-    for (const call of text.matchAll(/(?<![\w$.])(t|tFirst)\(/g)) {
+    // و`tFormat` مشمولة: مفتاحها نصٌّ حرفيّ كغيره، وإغفالها كان يعني أن نصوص
+    // «حول» ذات المواضع المسمّاة تعيش خارج الحارس.
+    for (const call of text.matchAll(/(?<![\w$.])(t|tFirst|tFormat)\(/g)) {
       const open = (call.index ?? 0) + call[0].length - 1;
       const args = argsAt(text, open);
       // مفتاحٌ يُبنى وقت التشغيل (قالبٌ نصّي أو متغيّر) لا يُقرأ من المصدر.
@@ -311,5 +318,155 @@ describe('t و errorText', () => {
   it('يتحمّل تفصيلًا ليس نصًّا', () => {
     expect(errorText('err.path.missing', { tool: 'ditto' })).toBe(AR['err.path.missing']);
     expect(errorText('err.path.missing', null)).toBe(AR['err.path.missing']);
+  });
+});
+
+/**
+ * سلّم النصّ الثلاثي: البطاقة «ماذا تفعل؟»، وصفحة التنفيذ «ماذا سيحدث؟»،
+ * والحقل «ماذا أختار هنا؟».
+ *
+ * الطبقتان الأوليان مفتاحان لكل عملية. وغيابُ `execution` لا يُسقط شيئًا في
+ * التشغيل — `tOptional` تطويه بصمت — فالعمليةُ الجديدة تصل إلى الشاشة بلا
+ * جوابٍ عن «ماذا سيحدث؟» ولا أحد يعلم. هذا الحارس هو ما يجعل الغياب مسموعًا.
+ */
+/**
+ * عائلات مفاتيح الإعدادات المبنيّة وقت التشغيل.
+ *
+ * `settings-screen.tsx` يبني مفاتيحه بقوالب نصّية — `t(`${keyPrefix}.change`)`
+ * و`t(`settings.${name}.title`)` — والماسح أعلاه يتخطّى القوالب عمدًا لأنه لا
+ * يستطيع تقييمها. فمرّ مفتاحٌ ناقص (`settings.workpath.choose`) إلى الشاشة
+ * وظهر حرفيًّا للمستخدم. هذا الحارس يفتح تلك العائلات المغلقة صراحةً.
+ */
+describe('عائلات مفاتيح الإعدادات', () => {
+  it('كل بطاقة مسار تملك لواحقها الخمس', () => {
+    for (const prefix of ['settings.workpath', 'settings.node', 'settings.cargo']) {
+      for (const suffix of ['title', 'unset', 'choose', 'change', 'clear']) {
+        const key = `${prefix}.${suffix}`;
+        expect(AR, key).toHaveProperty(key);
+      }
+    }
+  });
+
+  it('كل صفّ تبديل يملك عنوانه ومتنه', () => {
+    for (const name of ['welcome', 'sound', 'confirm']) {
+      for (const suffix of ['title', 'body']) {
+        const key = `settings.${name}.${suffix}`;
+        expect(AR, key).toHaveProperty(key);
+      }
+    }
+  });
+
+  it('كل لسان يملك اسمه وعنوان قسمه', () => {
+    for (const tab of ['general', 'appearance', 'developer', 'about']) {
+      expect(AR, `settings.tab.${tab}`).toHaveProperty(`settings.tab.${tab}`);
+      expect(AR, `settings.${tab}.title`).toHaveProperty(`settings.${tab}.title`);
+    }
+  });
+
+  it('كل خيار سمة وحجم أيقونات يملك نصّه', () => {
+    for (const theme of ['system', 'light', 'dark']) {
+      expect(AR, `settings.theme.${theme}`).toHaveProperty(`settings.theme.${theme}`);
+    }
+    for (const size of ['small', 'medium', 'large']) {
+      expect(AR, `settings.iconsize.${size}`).toHaveProperty(`settings.iconsize.${size}`);
+    }
+  });
+});
+
+/**
+ * حوار تأكيد التنفيذ (إعداد «تأكيد قبل التنفيذ») يبني مفتاحه بقالبٍ نصّي —
+ * `t(`run.confirm.${danger}.title`)` في `app.tsx` — فيتخطّاه الماسح أعلاه
+ * كما يتخطّى عائلات الإعدادات. ثلاث درجات لا أربع: «قراءة فقط» لا تصل هذا
+ * الحوار أصلًا، فلا مفتاح لها هنا عمدًا.
+ */
+describe('عائلة مفاتيح تأكيد التنفيذ', () => {
+  it('كل درجة خطرٍ تُعدّل أو تتلف تملك عنوانها ومتنها', () => {
+    // القائمة تُقرأ من نوع `Danger` نفسه في ipc.ts لا تُكتب هنا يدويًا —
+    // كأخواتها في هذا الملف (`nav.leave.*` من nav.ts، `log.state.*` من
+    // journal.rs): درجة خطرٍ رابعة تُضاف يومًا هناك يجب أن تُفقد ترجمتها هنا
+    // لا أن تمرّ صامتة لأن أحدًا نسي تحديث قائمةٍ ثانية.
+    const ipc = readFileSync(join(APP_SRC, 'ipc.ts'), 'utf8');
+    const match = /export type Danger =([^;]+);/.exec(ipc);
+    expect(match, 'لم يُعثر على تعريف Danger في ipc.ts').toBeTruthy();
+    const allDangers = [...(match?.[1] ?? '').matchAll(/'([a-z]+)'/g)].map((m) => m[1] as string);
+    expect(allDangers.length, 'لم تُستخرج أي درجة من Danger').toBeGreaterThan(1);
+
+    // «قراءة فقط» لا تصل حوار التأكيد أصلًا — انظر توثيق `confirmBeforeExecute`
+    // في settings.ts — فلا مفتاح لها هنا عمدًا، لا سهوًا.
+    const gated = allDangers.filter((d) => d !== 'safe');
+    expect(gated).toEqual(['creates', 'modifies', 'destructive']);
+
+    for (const danger of gated) {
+      for (const suffix of ['title', 'body']) {
+        const key = `run.confirm.${danger}.${suffix}`;
+        expect(AR, key).toHaveProperty(key);
+      }
+    }
+  });
+});
+
+describe('سلّم نصّ العمليات', () => {
+  // الشرطة السفلية جزءٌ من صنف المحارف لا زيادة: معرّفات مثل
+  // `system.process.open_files` و`disk.directory.open_handles` تحملها، وكان
+  // النمط بدونها **يُسقطها من العدّ صامتًا** — فتصل عمليةٌ إلى الشاشة بلا
+  // جوابٍ عن «ماذا سيحدث؟» ولا يسقط الحارس أدناه، وهو بالضبط ما وُجد ليمنعه.
+  const ids = Object.keys(AR)
+    .filter((k) => /^op\.[a-z0-9._]+\.title$/.test(k))
+    .map((k) => k.slice(3, -'.title'.length))
+    // العملية الداخلية لا تظهر في أي إصدار، فلا شاشة تنفيذ لها.
+    .filter((id) => id !== 'internal.echo');
+
+  it('يقرأ التسع والسبعين عملية من القاموس نفسه', () => {
+    expect(ids).toHaveLength(79);
+  });
+
+  it('لكل عملية جوابٌ عن «ماذا تفعل؟» وآخر عن «ماذا سيحدث؟»', () => {
+    const missing = ids.flatMap((id) => [
+      ...(`op.${id}.description` in AR ? [] : [`op.${id}.description`]),
+      ...(`op.${id}.execution` in AR ? [] : [`op.${id}.execution`]),
+    ]);
+    expect(missing, `نصٌّ ناقص: ${missing.join(', ')}`).toEqual([]);
+  });
+
+  it('جواب البطاقة جملةٌ واحدة، وجواب التنفيذ ليس تكرارًا لها', () => {
+    for (const id of ids) {
+      const card = t(`op.${id}.description`);
+      const exec = t(`op.${id}.execution`);
+      // جملةٌ واحدة: تنتهي بنقطة ولا تحمل فاصلَ جملةٍ في وسطها. والمقياس
+      // «نقطةٌ يتلوها فراغ» لا «نقطة»، وإلا عُدّت ⁦TAR.GZ⁩ جملتين.
+      expect(card, `بطاقة ${id} أكثر من جملة`).not.toMatch(/\.\s/u);
+      expect(card.trimEnd().endsWith('.'), `بطاقة ${id} لا تنتهي بنقطة`).toBe(true);
+      expect(card.length, `بطاقة ${id} طويلة`).toBeLessThan(90);
+      expect(exec, `تنفيذ ${id} يكرّر البطاقة`).not.toBe(card);
+      expect(exec.length, `تنفيذ ${id} أطول من ثلاث جمل قصيرة`).toBeLessThan(220);
+    }
+  });
+});
+
+/**
+ * الطبقة الثالثة: «ماذا أختار هنا؟».
+ *
+ * نصّ الحقل يُقرأ في لحظة الاختيار، بين تسميةٍ فوقه وحقلٍ تحته — فالسرد فيه
+ * يُتخطّى لا يُقرأ. والطمأنةُ العامّة («لا يُمسّ الأصل») صارت جواب صفحة
+ * التنفيذ، فتكرارُها هنا يُطيل النصّ ويزحم المعلومة الخاصّة بالحقل.
+ */
+describe('نصّ الحقول', () => {
+  const help = Object.entries(AR).filter(([k]) => /^field\.[a-z0-9._]+\.help$/.test(k));
+
+  it('يغطّي الحقول المعلَنة كلّها', () => {
+    expect(help.length).toBe(92);
+  });
+
+  it('يبقى قصيرًا بما يُقرأ في لحظة الاختيار', () => {
+    const long = help.filter(([, v]) => v.length > 110).map(([k, v]) => `${k} (${v.length})`);
+    expect(long, `نصّ حقلٍ أطول ممّا يُقرأ: ${long.join(', ')}`).toEqual([]);
+  });
+
+  it('لا يعيد جملة «ماذا سيحدث؟» في كل حقل مسار', () => {
+    // العبارتان كانتا مكرّرتين في عشرة حقول؛ موضعهما صفحة التنفيذ.
+    const echoed = help
+      .filter(([, v]) => /لا يُمسّ ولا يتغيّر|يُقرأ ولا يُعدَّل\.$/.test(v))
+      .map(([k]) => k);
+    expect(echoed, `طمأنةٌ مكرّرة عن صفحة التنفيذ: ${echoed.join(', ')}`).toEqual([]);
   });
 });

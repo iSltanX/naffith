@@ -1,0 +1,51 @@
+/* Shared production-page anatomy from Figma pages 18–19. */
+.screen {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-20);
+  inline-size: 100%;
+}
+
+.screen__head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-8);
+}
+
+.screen__title {
+  margin: 0;
+}
+
+.screen__title:focus {
+  outline: none;
+}
+
+.screen__back svg {
+  transform: scaleX(-1);
+}
+
+[dir="rtl"] .screen__back svg { transform: scaleX(1); }
+
+.screen__section {
+  padding: var(--space-24);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-8);
+}
+
+.screen__section h3,
+.screen__section p {
+  margin: 0;
+}
+
+.screen__section .btn {
+  margin-block-start: var(--space-4);
+}
+
+@media (max-width: 759px) {
+  .screen__section {
+    padding: var(--space-16);
+  }
+}

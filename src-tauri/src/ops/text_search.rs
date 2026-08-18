@@ -50,15 +50,9 @@
 //!
 //! ## حدٌّ معروف: `grep` تخرج بـ‎1‎ حين لا تجد شيئًا
 //!
-//! يقول `man grep`: `0` وُجد سطرٌ أو أكثر، `1` لم يوجد، وما فوق خطأ. و«لم
-//! يوجد» جوابٌ صحيح لا عطب. لكن `executor.rs` يعرف حالةً واحدة —
-//! `status.success()` أو `Failed` — فبحثٌ انتهى إلى «لا نتائج» يُقيَّد
-//! «فشلت» ويُعرض «رمز الخروج ‎1‎».
-//!
-//! العلاج نفسه المذكور في `text_diff`: رموز خروجٍ معلَنة في `OperationSpec`
-//! يقرؤها `executor`، وهو تغييرٌ في ملفّين مشتركين لا يصحّ أن يُدسّ في عملية.
-//! وحتى ذلك الحين تُعلَن `warn.grep.exit_code` في كل خطة، فيعرف المستخدم
-//! قبل الضغط أن «لا نتائج» قد تظهر بلون الفشل.
+//! يقول `man grep`: `0` وُجد سطرٌ أو أكثر، `1` لم يوجد، وما فوق خطأ. يترجم
+//! عقد النتائج الصفر إلى `matches` والواحد إلى `no_matches`؛ كلاهما جوابٌ
+//! مكتمل، ولا تحتاج الواجهة إلى تخمينه من الخرج.
 //!
 //! ## لا تكتب شيئًا
 //!
@@ -126,8 +120,7 @@ fn plan(inputs: &Inputs) -> Result<PlannedCommand> {
 }
 
 fn warnings_for(inputs: &Inputs, folder: &Path) -> Vec<&'static str> {
-    // خاصيّةٌ ثابتة في الأداة وفي نموذج التنفيذ معًا، فتُعلَن في كل خطة.
-    let mut warnings = vec!["warn.grep.exit_code"];
+    let mut warnings = Vec::new();
     warnings.extend(warn_if_resolved(inputs, "folder", folder, "warn.source.resolved"));
     warnings
 }
@@ -345,11 +338,11 @@ mod tests {
     }
 
     #[test]
-    fn the_exit_code_model_is_announced_before_the_run_not_explained_after_it() {
+    fn the_result_contract_replaces_the_obsolete_exit_code_warning() {
         let s = Scratch::new("grep-warn").unwrap();
         let folder = s.dir("م");
         let cmd = plan_with(&folder, "نص", false).unwrap();
-        assert!(cmd.warnings.contains(&"warn.grep.exit_code"), "{:?}", cmd.warnings);
+        assert!(!cmd.warnings.contains(&"warn.grep.exit_code"), "{:?}", cmd.warnings);
     }
 
     #[test]

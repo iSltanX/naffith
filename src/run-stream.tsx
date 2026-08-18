@@ -27,7 +27,6 @@
  * قطعًا. وبهذا يرث المجرى سلوكَ اللوحة المستقرّ: مطويّةٌ حتى يوجد محتوى، وتتوسّع
  * حين يوجد، وتفاصيلها قابلة للطيّ.
  */
-import { useEffect, useState } from 'react';
 import type { RunOutputEvent } from './ipc';
 import { t } from './i18n';
 
@@ -70,112 +69,121 @@ export function droppedCount(kept: readonly StreamLine[]): number {
   return kept[0]?.seq ?? 0;
 }
 
-/**
- * هل يُفتح القسم من تلقائه؟
- *
- * أثناء التشغيل: نعم — المجرى هو الشيء الوحيد الذي يتحرّك في الشاشة، وطيُّه
- * يجعل التطبيق يبدو واقفًا. وبعد فشلٍ أو إشارة: نعم — هناك يُبحث عن السبب.
- * وبعد نجاح: لا — الأداة الناجحة صامتة عادةً، وقسمٌ مفتوح على «لم تطبع شيئًا»
- * ضجيج.
- */
-export function shouldOpen(phase: StreamPhase, status: string | undefined): boolean {
-  if (phase === 'running' || phase === 'cancelling') return true;
-  return phase === 'finished' && status !== undefined && status !== 'success';
+export type StreamPresentation =
+  | 'waiting'
+  | 'stdout'
+  | 'stderr'
+  | 'silent'
+  | 'truncated'
+  | 'dropped';
+
+/** Page 14 Run/Stream state is selected from typed events, never parsed prose. */
+export function streamPresentation(
+  lines: readonly StreamLine[],
+  phase: StreamPhase,
+): StreamPresentation {
+  if (droppedCount(lines) > 0 || lines.some(({ event }) => event.stream === 'omitted')) {
+    return 'dropped';
+  }
+  if (lines.some(({ event }) => event.stream === 'truncated')) return 'truncated';
+  if (lines.length === 0) {
+    return phase === 'running' || phase === 'cancelling' ? 'waiting' : 'silent';
+  }
+  if (lines.some(({ event }) => event.stream === 'stderr')) return 'stderr';
+  return 'stdout';
 }
 
 export default function RunStream({
   lines,
   phase,
-  status,
 }: {
   lines: readonly StreamLine[];
   phase: StreamPhase;
-  /**
-   * حالة الناتج، أو `undefined` قبل انتهاء التشغيل.
-   *
-   * `| undefined` صريحة لا `?:` وحدها: `exactOptionalPropertyTypes` يفرّق بين
-   * «الخاصّية غائبة» و«حاضرةٌ بقيمة `undefined`»، والغلاف يمرّر `outcome?.status`
-   * فيمرّر الثانية.
-   */
-  status?: string | undefined;
 }) {
-  const auto = shouldOpen(phase, status);
-
-  /**
-   * الفتح حالةٌ يملكها المكوّن، لا خاصّيةٌ محسوبة في كل رسم.
-   *
-   * `<details open={auto}>` وحدها تعيد فرض القيمة عند كل إعادة رسم — وسطرٌ جديد
-   * يصل كل بضع مئات من الميلي ثانية يعني إعادة رسم — فينفتح القسم في وجه من
-   * أغلقه. والأثر يُشعل الفتح عند تبدّل `auto` وحده، فيبقى إغلاق المستخدم
-   * محترمًا حتى يتغيّر الطور فعلًا.
-   */
-  const [open, setOpen] = useState(auto);
-  useEffect(() => {
-    if (auto) setOpen(true);
-  }, [auto]);
-
   // لا مجرى قبل التشغيل: الخطة ليست تشغيلًا، وقسمٌ فارغ يَعِد بما لم يبدأ.
   if (phase === 'idle' || phase === 'planning') return null;
 
-  const dropped = droppedCount(lines);
-  const running = phase === 'running' || phase === 'cancelling';
+  const presentation = streamPresentation(lines, phase);
+  const headerTitle = t(`stream.state.${presentation}.title`);
+  const headerMeta = t(`stream.state.${presentation}.meta`);
+  // ‏`dropped` هنا أيضًا: الإسقاط يعني أن **بعض** الأسطر ضاعت — من مقدّمة ما
+  // حفظته الواجهة، أو بعلامة `omitted` وسط المجرى — لا أن كل ما وصل ضاع.
+  // إخفاء الذيل المحفوظ بالكامل عند أي إسقاط كان يعني أن أطول التشغيلات
+  // إخراجًا (‏`cargo build`، `npm test`) — وهي أكثرها حاجةً إلى أن يُقرأ خرجها
+  // — تعرض لا شيء إطلاقًا.
+  const showLines =
+    presentation === 'stdout' ||
+    presentation === 'stderr' ||
+    presentation === 'truncated' ||
+    presentation === 'dropped';
 
   return (
-    <details
-      className="stream"
-      open={open}
-      onToggle={(e) => setOpen(e.currentTarget.open)}
+    <section
+      className={`stream stream--${presentation}`}
+      aria-label={headerTitle}
     >
-      <summary className="t-label satr__section satr__section--fold">
-        {t('stream.heading')}
-        {/* العدّاد في الوسم: يُقرأ وهو مطويّ، فيُعرف أن هناك ما يُفتح. */}
-        <span className="t-caption stream__count">
-          <bdi className="num">{lines.length}</bdi> {t('stream.lines')}
+      <div className="stream__header">
+        <span className="stream__heading">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <use href="#i-terminal" />
+          </svg>
+          {headerTitle}
         </span>
-        <svg className="arg__caret" viewBox="0 0 24 24" aria-hidden="true">
-          <use href="#i-chevron-down" />
-        </svg>
-      </summary>
+        <span className="t-caption stream__count">{headerMeta}</span>
+      </div>
 
       <div className="stream__body">
-        {dropped > 0 && (
-          <p className="t-caption stream__notice">
-            {t('stream.dropped')} <bdi className="num">{dropped}</bdi>
-          </p>
-        )}
-
-        {lines.length === 0 ? (
-          <p className="t-caption stream__empty">
-            {running ? t('stream.waiting') : t('stream.silent')}
-          </p>
-        ) : (
-          /* منطقةٌ حيّة مهذّبة: الأسطر تصل تباعًا، وإعلانُ كل سطر يقاطع من يقرأ
-             بالصوت بلا انتهاء. `polite` تجعل قارئ الشاشة يقول ما وصل عند أوّل
-             صمت، وهو السلوك الصحيح لمجرًى لا لخبر. */
-          <ol className="stream__lines" aria-live="polite">
-            {lines.map(({ seq, event }) => (
-              <li key={seq} className={`stream__line stream__line--${event.stream}`}>
-                {event.stream === 'truncated' ? (
-                  <span className="t-caption stream__notice">
-                    {t('stream.truncated')}{' '}
-                    <bdi className="num">{event.line.dropped}</bdi>
-                  </span>
-                ) : (
-                  <>
-                    <span className="stream__tag t-caption" aria-hidden="true">
-                      {t(event.stream === 'stderr' ? 'stream.stderr' : 'stream.stdout')}
+        {presentation === 'waiting' ? (
+            <div className="stream__waiting">
+              <p className="stream__waiting-body">{t('stream.state.waiting.body')}</p>
+              <p className="t-caption stream__waiting-state">
+                <span className="stream__waiting-dot" aria-hidden="true" />
+                {t('stream.state.waiting.footer')}
+              </p>
+            </div>
+        ) : presentation === 'silent' ? (
+          <p className="stream__state-copy">{t('stream.state.silent.body')}</p>
+        ) : showLines ? (
+          <>
+            {/* الإسقاط يفسَّر فوق الذيل المحفوظ، لا بدلًا منه — انظر توثيق
+                `showLines` أعلاه. */}
+            {presentation === 'dropped' && (
+              <p className="stream__state-copy">{t('stream.state.dropped.body')}</p>
+            )}
+            {/* المجرى سجلٌّ قابل للمراجعة لا منطقةٌ حيّة عملاقة. حالة التشغيل
+                الموجزة تُعلنها `RunningState`؛ أمّا إعلان كل سطرٍ يصل فيقاطع قارئ
+                الشاشة بلا انتهاء، خصوصًا مع أوامر البحث والتقارير الطويلة. */}
+            <ol className="stream__lines">
+              {lines.map(({ seq, event }) => (
+                <li key={seq} className={`stream__line stream__line--${event.stream}`}>
+                  {event.stream === 'truncated' || event.stream === 'omitted' ? (
+                    <span className="t-caption stream__notice">
+                      {t(event.stream === 'omitted' ? 'stream.omitted' : 'stream.truncated')}{' '}
+                      <bdi className="num">{event.line.dropped}</bdi>
                     </span>
-                    {/* نصُّ الأداة كما هو: خطٌّ أحادي، اتجاهٌ LTR، ومسافاته
-                        محفوظة. و`overflow-wrap: normal` في الأنماط كي لا يُشقّ
-                        مسارٌ في منتصفه — القاعدة نفسها التي يتبعها الأمر. */}
-                    <code className="stream__text">{event.line}</code>
-                  </>
-                )}
-              </li>
-            ))}
-          </ol>
+                  ) : (
+                    <>
+                      <span className="stream__tag t-caption" aria-hidden="true">
+                        {t(event.stream === 'stderr' ? 'stream.stderr' : 'stream.stdout')}
+                      </span>
+                      {/* نصُّ الأداة كما هو: خطٌّ أحادي، اتجاهٌ LTR، ومسافاته
+                          محفوظة. و`overflow-wrap: normal` في الأنماط كي لا يُشقّ
+                          مسارٌ في منتصفه — القاعدة نفسها التي يتبعها الأمر. */}
+                      <code className="stream__text">{event.line}</code>
+                    </>
+                  )}
+                </li>
+              ))}
+            </ol>
+          </>
+        ) : null}
+
+        {(presentation === 'truncated' || presentation === 'dropped') && (
+          <p className="t-caption stream__footer">
+            {t(`stream.state.${presentation}.footer`)}
+          </p>
         )}
       </div>
-    </details>
+    </section>
   );
 }

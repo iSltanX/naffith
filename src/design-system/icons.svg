@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" style="display:none">
 <!-- ============================================================================
-     نَفِّذ — سَطْر · Icon System
+     نَفِّذ · Icon System
      24 x 24 grid · 20 x 20 live area (2px padding) · stroke 1.5
      round caps · round joins · 2px corner radius on rectangular forms
      Single stroke colour: every icon paints with currentColor. Status is
@@ -137,6 +137,15 @@
   <path d="M4.75 12c0 1.66 3.25 3 7.25 3s7.25-1.34 7.25-3"/>
 </symbol>
 
+<!-- terminal: the سَطْر surface itself — a frame holding a prompt and its
+     caret. NEVER mirrored: a shell prompt reads left-to-right in every
+     locale, and the frame is the window, not a direction. -->
+<symbol id="i-terminal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <rect x="2.75" y="4.25" width="18.5" height="15.5" rx="2"/>
+  <path d="m7 10 3 2.75L7 15.5"/>
+  <path d="M12.75 15.5H17"/>
+</symbol>
+
 <!-- ── GIT ─────────────────────────────────────────────────────────────── -->
 <symbol id="i-git-branch" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
   <circle cx="7" cy="5.75" r="2.25"/>
@@ -234,5 +243,46 @@
   <circle cx="12" cy="12" r="8.25"/>
   <path d="M9.7 9.6a2.35 2.35 0 0 1 4.57.78c0 1.57-2.35 2.35-2.35 2.35"/>
   <path d="M12 16.3h.01"/>
+</symbol>
+
+<!-- ── 14.1 · بقيّة مكتبة الأيقونات ───────────────────────────────────────
+     ستٌّ كانت معلَنةً في صفحة الأيقونات ولا مقابل لها هنا. هندستُها منقولةٌ من
+     متّجهات الهوية لا مرسومةً بالعين: أربعٌ تُكتب في شبكة ‎24‎ مباشرةً، واثنتان
+     (‏`refresh` و`link`) فيهما منحنياتُ بيزيه حقيقية فتُنقل كما هي داخل
+     `translate` بإزاحة المتّجه الأصلية — نقلٌ حرفيّ لا تقريب. -->
+<symbol id="i-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <g transform="translate(3.617 3.918)">
+    <path d="M15.383 4.082V.082l-2 2C12.126.938 10.537.225 8.848.045 7.158-.135 5.455.228 3.985 1.08 2.516 1.933 1.356 3.231.673 4.788c-.682 1.556-.851 3.289-.482 4.947.368 1.659 1.255 3.157 2.532 4.278 1.278 1.121 2.878 1.806 4.571 1.956 1.692.15 3.389-.243 4.843-1.122 1.454-.878 2.591-2.197 3.246-3.765"/>
+  </g>
+  <path d="M19 4h-4"/>
+</symbol>
+
+<symbol id="i-filter" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M3 5h18l-7 8v5l-4 2v-7z"/>
+</symbol>
+
+<symbol id="i-link" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <g transform="translate(0.757 5.646)">
+    <path d="M9.243 8.354l-2 2c-.394.394-.862.707-1.377.92-.515.213-1.066.323-1.623.323-1.126 0-2.205-.447-3-1.243C.447 9.559 0 8.479 0 7.354c0-1.125.447-2.204 1.243-3l3-3c.375-.425.837-.766 1.354-1 .517-.233 1.078-.354 1.646-.354.567 0 1.128.121 1.645.354.518.234.979.575 1.355 1"/>
+  </g>
+  <g transform="translate(13 6.757)">
+    <path d="M1 3.243l2-2C3.796.447 4.875 0 6 0c1.125 0 2.204.447 3 1.243.796.795 1.243 1.874 1.243 3 0 1.125-.447 2.204-1.243 3l-3 3c-.375.425-.837.766-1.354 1-.517.233-1.078.354-1.646.354-.568 0-1.129-.121-1.646-.354-.517-.234-.979-.575-1.354-1"/>
+  </g>
+  <path d="M8 12h8"/>
+</symbol>
+
+<symbol id="i-upload" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M12 16V4M12 4 7 9M12 4l5 5"/>
+  <path d="M4 20h16"/>
+</symbol>
+
+<symbol id="i-image" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <rect x="3" y="4" width="18" height="16" rx="2"/>
+  <circle cx="9" cy="9" r="1.5"/>
+  <path d="M5 18l5-5 3 3 2-2 4 4"/>
+</symbol>
+
+<symbol id="i-text" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M5 5h14M12 5v14M8 19h8"/>
 </symbol>
 </svg>

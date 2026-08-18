@@ -1,0 +1,246 @@
+/* Operation controls derived from the Figma component page. The operation
+   schema still owns which control appears; this file only gives every kind the
+   same 44px rhythm and state treatment. */
+
+.naffith .field,
+.naffith .select__button,
+.number-field {
+  block-size: var(--control-h-search);
+  border-radius: var(--radius-control);
+}
+
+.naffith .field,
+.number-field {
+  border-color: var(--border-subtle);
+}
+
+.naffith .field:hover,
+.number-field:hover {
+  border-color: var(--border-default);
+}
+
+.naffith .field:not(.field--disabled):hover .field__icon,
+.naffith .field:not(.field--disabled):focus-within .field__icon {
+  color: var(--text-accent);
+}
+
+.naffith .field--invalid,
+.number-field--invalid {
+  border-color: var(--status-danger-border);
+}
+
+.naffith .field input:disabled,
+.number-field__input:disabled {
+  color: var(--text-disabled);
+  cursor: not-allowed;
+}
+
+.naffith .field--disabled,
+.number-field--disabled {
+  background: var(--bg-sunken);
+  opacity: var(--opacity-disabled);
+}
+
+.naffith .field .field__technical-value {
+  direction: ltr;
+  text-align: left;
+  unicode-bidi: isolate;
+  font-family: var(--font-mono);
+  font-variant-ligatures: none;
+}
+
+.naffith .field .field__technical-value::placeholder {
+  direction: rtl;
+  text-align: right;
+  font-family: var(--font-body);
+}
+
+.field--with-action {
+  position: relative;
+}
+
+.field--with-action .path-picker__trigger {
+  block-size: var(--space-32);
+}
+
+.path-picker {
+  position: relative;
+  flex: none;
+}
+
+.path-picker__menu {
+  position: absolute;
+  z-index: var(--z-dropdown);
+  inset-block-start: calc(100% + var(--space-4));
+  inset-inline-end: 0;
+  min-inline-size: calc(var(--sidebar-w) * 0.75);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  background: var(--bg-surface);
+  border: var(--border-hairline) solid var(--border-default);
+  border-radius: var(--radius-control);
+  box-shadow: var(--shadow-lg);
+  animation: operation-menu-in var(--duration-fast) var(--ease-out) both;
+}
+
+.path-picker__menu button {
+  min-block-size: var(--space-32);
+  padding-inline: var(--space-8);
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-control);
+  color: var(--text-secondary);
+  font-family: var(--font-body);
+  font-size: var(--fs-body-secondary);
+  text-align: start;
+  cursor: pointer;
+}
+
+.path-picker__menu button:hover,
+.path-picker__menu button:focus {
+  background: var(--bg-hover);
+  color: var(--text-accent);
+}
+
+.path-picker__menu svg {
+  inline-size: var(--icon-sm);
+  block-size: var(--icon-sm);
+  flex: none;
+  color: var(--text-muted);
+}
+
+.path-picker__menu button:hover svg,
+.path-picker__menu button:focus svg {
+  color: var(--text-accent);
+}
+
+@keyframes operation-menu-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.operation-choice {
+  display: block;
+}
+
+.operation-choice .select {
+  inline-size: 100%;
+  min-inline-size: 0;
+  gap: var(--space-8);
+}
+
+.operation-choice .select__label {
+  color: var(--text-primary);
+  font-size: var(--fs-label);
+  line-height: var(--lh-label);
+  font-weight: var(--fw-bold);
+}
+
+.operation-choice__help {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.number-field {
+  inline-size: 100%;
+  display: grid;
+  grid-template-columns: var(--space-32) minmax(0, 1fr) var(--space-32);
+  align-items: stretch;
+  background: var(--bg-surface);
+  border: var(--border-hairline) solid var(--border-subtle);
+  transition:
+    border-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard);
+}
+
+.number-field:focus-within {
+  border-color: var(--focus-ring-color);
+  box-shadow: var(--focus-ring);
+}
+
+.number-field__step {
+  display: grid;
+  place-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.number-field__step:first-child {
+  border-inline-end: var(--border-hairline) solid var(--border-subtle);
+}
+
+.number-field__step:last-child {
+  border-inline-start: var(--border-hairline) solid var(--border-subtle);
+}
+
+.number-field__step:hover:not(:disabled),
+.number-field__step:focus:not(:disabled),
+.number-field__step:active:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-accent);
+}
+
+.number-field__step:disabled {
+  color: var(--text-disabled);
+  cursor: not-allowed;
+}
+
+.number-field__step svg {
+  inline-size: var(--icon-xs);
+  block-size: var(--icon-xs);
+}
+
+.number-field__input {
+  min-inline-size: 0;
+  inline-size: 100%;
+  padding-inline: var(--space-8);
+  background: transparent;
+  border: 0;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-body-secondary);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  appearance: textfield;
+}
+
+.number-field__input::-webkit-inner-spin-button,
+.number-field__input::-webkit-outer-spin-button {
+  appearance: none;
+}
+
+.number-field__input:focus {
+  outline: 0;
+}
+
+.number-field__description {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-8);
+  flex-wrap: wrap;
+}
+
+.number-field__meta {
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.number-field__meta .num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Figma treats a technical value as LTR but never allows it to force the
+   operation pane wider. Paths remain readable and wrap at safe display bounds. */
+.summary__path {
+  direction: ltr;
+  unicode-bidi: isolate;
+  overflow-wrap: anywhere;
+}

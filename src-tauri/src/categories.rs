@@ -121,6 +121,14 @@ pub static ALL: &[CategoryMeta] = &[
         kind: Kind::Operations,
     },
     CategoryMeta {
+        id: Category::Developer,
+        title_key: "cat.developer.title",
+        description_key: "cat.developer.description",
+        icon: "#i-terminal",
+        sort_order: 95,
+        kind: Kind::Operations,
+    },
+    CategoryMeta {
         id: Category::History,
         title_key: "cat.history.title",
         description_key: "cat.history.description",
@@ -221,11 +229,12 @@ mod tests {
             Category::Security,
             Category::Git,
             Category::System,
+            Category::Developer,
             Category::History,
             Category::Internal,
         ] {
             assert!(find(id).is_some(), "{id:?} has no metadata");
         }
-        assert_eq!(ALL.len(), 11, "adding a category is a deliberate act — update this test");
+        assert_eq!(ALL.len(), 12, "adding a category is a deliberate act — update this test");
     }
 }

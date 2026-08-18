@@ -22,7 +22,10 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-const APP = readFileSync(new URL('./app.css', import.meta.url).pathname, 'utf8');
+const OPERATION = readFileSync(
+  new URL('./operation-layout.css', import.meta.url).pathname,
+  'utf8',
+);
 const BASE = readFileSync(
   new URL('./design-system/base.css', import.meta.url).pathname,
   'utf8',
@@ -100,8 +103,8 @@ const MODES: ReadonlyArray<readonly [string, Map<string, string>]> = [
   ['الليلي', DARK],
 ];
 
-const TEXT = rule(APP, '.stream__text');
-const LINES = rule(APP, '.stream__lines');
+const TEXT = rule(OPERATION, '.stream__text');
+const LINES = rule(OPERATION, '.stream__lines');
 
 describe('سطر الأداة ينزع رقعة `code` التي فرضها الأساس', () => {
   it('الأساس فعلًا يفرض رقعةً على كل `code` — حارسٌ على الحارس', () => {

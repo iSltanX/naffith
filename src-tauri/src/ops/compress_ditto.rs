@@ -190,6 +190,7 @@ fn plan(inputs: &Inputs) -> Result<PlannedCommand> {
         estimate: Some(size),
         stdout_to: None,
         reveal_target: None,
+        extra_path: Vec::new(),
     })
 }
 

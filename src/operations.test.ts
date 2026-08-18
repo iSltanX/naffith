@@ -12,14 +12,20 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  choiceOptions,
   emptyValues,
   extensionHint,
   fieldKeys,
+  inputKind,
+  isChoiceInput,
   isComplete,
   isDirectoryInput,
   isDirty,
   isFlagInput,
+  isNumberInput,
   isPathInput,
+  isUrlInput,
+  numberSpec,
   toRawValues,
   type FormValues,
 } from './operations';
@@ -32,7 +38,7 @@ function input(
   extra: Record<string, unknown> = {},
   required = true,
 ): InputSummary {
-  return { ...extra, id, required, kind };
+  return { ...extra, id, required, kind } as InputSummary;
 }
 
 function op(
@@ -59,8 +65,20 @@ function op(
   };
 }
 
-/** أنواع المدخلات الستة التي تعرفها الواجهة، كما تعلنها `InputKind` في `ipc.ts`. */
-const KNOWN_KINDS = ['existing_dir', 'existing_file', 'target_dir', 'new_name', 'text', 'flag'];
+/** أنواع المدخلات التي تعلنها `InputKind` في `ipc.ts`. */
+const KNOWN_KINDS = [
+  'existing_dir',
+  'existing_file',
+  'existing_path',
+  'target_dir',
+  'new_name',
+  'new_dir_name',
+  'text',
+  'choice',
+  'number',
+  'url',
+  'flag',
+];
 
 describe('مفاتيح نصوص الحقل', () => {
   it('الأخصّ ثم العام', () => {
@@ -86,6 +104,13 @@ describe('النموذج الفارغ', () => {
 
   it('عمليةٌ بلا مدخلات نموذجها فارغ', () => {
     expect(emptyValues(op('mu.count.stars', 'system', 'safe', []))).toEqual({});
+  });
+
+  it('الرقم يبدأ بالقيمة الافتراضية المعلنة', () => {
+    const o = op('nu.numbered', 'files', 'safe', [
+      input('limit', 'number', { min: 1, max: 1000, default: 100 }),
+    ]);
+    expect(emptyValues(o)).toEqual({ limit: '100' });
   });
 
   it('الراية تُخزَّن نصًّا كبقية الحقول', () => {
@@ -144,6 +169,7 @@ describe('التحويل إلى قيم الحدّ', () => {
   const form = op('nu.raw', 'compress', 'creates', [
     input('source', 'existing_dir'),
     input('file', 'existing_file'),
+    input('either', 'existing_path'),
     input('destination', 'target_dir'),
     input('name', 'new_name', { ext: 'zip' }),
     input('note', 'text', { max_len: 40 }),
@@ -153,6 +179,7 @@ describe('التحويل إلى قيم الحدّ', () => {
   const values: FormValues = {
     source: '  /Users/a/src  ',
     file: '/Users/a/f.txt',
+    either: ' /Users/a/thing ',
     destination: '/Users/a/dst\n',
     name: 'archive ',
     note: ' note ',
@@ -164,6 +191,7 @@ describe('التحويل إلى قيم الحدّ', () => {
     const raw = toRawValues(form, values);
     expect(raw['source']).toEqual({ kind: 'path', value: '/Users/a/src' });
     expect(raw['file']).toEqual({ kind: 'path', value: '/Users/a/f.txt' });
+    expect(raw['either']).toEqual({ kind: 'path', value: '/Users/a/thing' });
     expect(raw['destination']).toEqual({ kind: 'path', value: '/Users/a/dst' });
   });
 
@@ -190,7 +218,7 @@ describe('التحويل إلى قيم الحدّ', () => {
     // ناقص» بدل «قيمة فارغة».
     const raw = toRawValues(form, {});
     expect(Object.keys(raw).sort()).toEqual(
-      ['destination', 'file', 'name', 'note', 'quiet', 'source'].sort(),
+      ['destination', 'either', 'file', 'name', 'note', 'quiet', 'source'].sort(),
     );
     expect(raw['source']).toEqual({ kind: 'path', value: '' });
     expect(raw['quiet']).toEqual({ kind: 'flag', value: false });
@@ -228,18 +256,26 @@ describe('لاحقة الاسم', () => {
   });
 
   it('الحقول الأخرى لا لاحقة لها', () => {
-    for (const kind of ['existing_dir', 'existing_file', 'target_dir', 'text', 'flag']) {
+    for (const kind of [
+      'existing_dir',
+      'existing_file',
+      'existing_path',
+      'target_dir',
+      'text',
+      'flag',
+    ]) {
       expect(extensionHint(input('x', kind, { ext: 'zip' }))).toBeNull();
     }
   });
 });
 
 describe('تصنيف المدخل', () => {
-  it('المسارات ثلاثة والاسم ليس منها', () => {
+  it('أنواع المسار الأربعة والاسم ليس منها', () => {
     // التصنيف يقرّر اتجاه النصّ LTR وزرّ الاختيار؛ الاسم يُكتب لا يُختار.
     expect(KNOWN_KINDS.filter((k) => isPathInput(input('x', k)))).toEqual([
       'existing_dir',
       'existing_file',
+      'existing_path',
       'target_dir',
     ]);
   });
@@ -263,6 +299,24 @@ describe('تصنيف المدخل', () => {
       false,
       false,
     ]);
+  });
+
+  it('يميّز الاختيار والرقم والرابط ويقرأ مواصفاتها', () => {
+    const choice = input('format', 'choice', {
+      options: [
+        { value: 'png', label_key: 'choice.image.png' },
+        { value: 'jpeg', label_key: 'choice.image.jpeg' },
+      ],
+    });
+    const number = input('count', 'number', { min: 1, max: 20, default: 5 });
+    const url = input('address', 'url');
+
+    expect(inputKind(choice)).toBe('choice');
+    expect(isChoiceInput(choice)).toBe(true);
+    expect(choiceOptions(choice)).toHaveLength(2);
+    expect(isNumberInput(number)).toBe(true);
+    expect(numberSpec(number)).toEqual({ min: 1, max: 20, default: 5 });
+    expect(isUrlInput(url)).toBe(true);
   });
 });
 
