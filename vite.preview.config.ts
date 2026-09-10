@@ -43,8 +43,8 @@ const MOCK = `<script>
   }));
 
   var DITTO = '/usr/bin/ditto';
-  var SOURCE = '/Users/abutalal/Documents/مشروع الهوية';
-  var DEST = '/Users/abutalal/Desktop';
+  var SOURCE = '/Users/sara/Documents/مشروع الهوية';
+  var DEST = '/Users/sara/Desktop';
 
   /** سجلٌّ مصطنع: يغذّي «المستخدَمة حديثًا» وشاشة السجلّ معًا. */
   var NOW = Math.floor(Date.now() / 1000);
@@ -52,10 +52,10 @@ const MOCK = `<script>
     {
       id: 'r-1', op_id: 'disk.hash.sha256', category: 'disk', at: NOW - 7400,
       duration_ms: 320, program: '/usr/bin/shasum',
-      args: ['-a', '256', '--', '/Users/abutalal/Downloads/installer.dmg'],
-      inputs: [{ id: 'source', value: '/Users/abutalal/Downloads/installer.dmg' }],
-      tail: ['9f2c…a17b  /Users/abutalal/Downloads/installer.dmg'],
-      state: 'succeeded', produced: '/Users/abutalal/Downloads/installer.dmg',
+      args: ['-a', '256', '--', '/Users/sara/Downloads/installer.dmg'],
+      inputs: [{ id: 'source', value: '/Users/sara/Downloads/installer.dmg' }],
+      tail: ['9f2c…a17b  /Users/sara/Downloads/installer.dmg'],
+      state: 'succeeded', produced: '/Users/sara/Downloads/installer.dmg',
     },
     {
       id: 'r-2', op_id: 'net.dns', category: 'network', at: NOW - 5200,
@@ -68,13 +68,13 @@ const MOCK = `<script>
     {
       id: 'r-3', op_id: 'compress.zip.extract', category: 'compress', at: NOW - 3100,
       duration_ms: 90, program: '/usr/bin/ditto',
-      args: ['-x', '-k', '/Users/abutalal/Downloads/assets.zip', DEST + '/.naffith-a1.part'],
+      args: ['-x', '-k', '/Users/sara/Downloads/assets.zip', DEST + '/.naffith-a1.part'],
       inputs: [
-        { id: 'archive', value: '/Users/abutalal/Downloads/assets.zip' },
+        { id: 'archive', value: '/Users/sara/Downloads/assets.zip' },
         { id: 'destination', value: DEST },
         { id: 'folder_name', value: 'assets' },
       ],
-      tail: ['ditto: /Users/abutalal/Downloads/assets.zip: Invalid or incomplete archive'],
+      tail: ['ditto: /Users/sara/Downloads/assets.zip: Invalid or incomplete archive'],
       state: 'failed', reason: 'exit', code: 2,
     },
     {

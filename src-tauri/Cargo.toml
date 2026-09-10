@@ -2,6 +2,7 @@
 name = "naffith"
 version = "0.2.0"
 description = "نَفِّذ (Naffith) · Arabic-first macOS productivity tool"
+license = "MIT"
 edition = "2021"
 rust-version = "1.77"
 
