@@ -232,7 +232,7 @@
 
 الموقع: [bysltan.com](https://www.bysltan.com)
 
-للتواصل: [iSultanby@gmail.com](mailto:iSultanby@gmail.com)
+للتواصل: [S@BySltan.com](mailto:S@BySltan.com)
 
 من الصانع نفسه<br>
 تطبيقات macOS: [بدّل](https://github.com/iSltanX/Baddel) · [رفّ](https://github.com/iSltanX/Raff) · [Luma](https://github.com/iSltanX/Luma)<br>
